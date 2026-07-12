@@ -1,3 +1,6 @@
 /build*/
+/gmon.out
+/perf.data*
+/callgrind.out*
 *.cli
 *.stl

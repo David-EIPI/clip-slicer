@@ -1,6 +1,7 @@
 #include "stl_slicer/slicer.hpp"
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <stdexcept>
 #include <utility>
 
@@ -127,16 +128,61 @@ SliceData Slicer::slice(const TriangleMesh& mesh) const {
     result.sourceBounds = mesh.bounds();
     result.thickness = options_.layerThickness;
 
+    const auto& triangles = mesh.triangles();
+    std::vector<std::size_t> minZIndex(triangles.size());
+    std::vector<std::size_t> maxZIndex(triangles.size());
+    std::iota(minZIndex.begin(), minZIndex.end(), 0);
+    std::iota(maxZIndex.begin(), maxZIndex.end(), 0);
+    std::sort(minZIndex.begin(), minZIndex.end(), [&](std::size_t a, std::size_t b) {
+        return triangles[a].minZ < triangles[b].minZ;
+    });
+    std::sort(maxZIndex.begin(), maxZIndex.end(), [&](std::size_t a, std::size_t b) {
+        return triangles[a].maxZ < triangles[b].maxZ;
+    });
+
+    const std::size_t inactive = triangles.size();
+    std::vector<std::size_t> active;
+    std::vector<std::size_t> activePosition(triangles.size(), inactive);
+    std::size_t minCursor = 0;
+    std::size_t maxCursor = 0;
+
+    const auto removeActive = [&](std::size_t triangleIndex) {
+        const std::size_t position = activePosition[triangleIndex];
+        if (position == inactive) return;
+        const std::size_t moved = active.back();
+        active[position] = moved;
+        activePosition[moved] = position;
+        active.pop_back();
+        activePosition[triangleIndex] = inactive;
+    };
+
     // Calculate z from an integer layer index to avoid accumulated floating-point drift.
     for (std::size_t index = 1;; ++index) {
         const double z = mesh.bounds().min.z + static_cast<double>(index) * options_.layerThickness;
         if (z > mesh.bounds().max.z + options_.joinTolerance) break;
         SliceLayer layer;
         layer.z = std::min(z, mesh.bounds().max.z);
+
+        while (maxCursor < maxZIndex.size() && triangles[maxZIndex[maxCursor]].maxZ < layer.z) {
+            removeActive(maxZIndex[maxCursor]);
+            ++maxCursor;
+        }
+        while (minCursor < minZIndex.size() && triangles[minZIndex[minCursor]].minZ < layer.z) {
+            const std::size_t triangleIndex = minZIndex[minCursor++];
+            // A thin triangle may lie wholly between this and the preceding plane.
+            if (triangles[triangleIndex].maxZ >= layer.z) {
+                activePosition[triangleIndex] = active.size();
+                active.push_back(triangleIndex);
+            }
+        }
+
         std::vector<Segment> segments;
-        for (const auto& triangle : mesh.triangles()) {
+        segments.reserve(active.size());
+        std::vector<std::size_t> orderedActive = active;
+        std::sort(orderedActive.begin(), orderedActive.end());
+        for (const std::size_t triangleIndex : orderedActive) {
             Segment segment;
-            if (triangleSegment(triangle, layer.z, options_.joinTolerance, segment))
+            if (triangleSegment(triangles[triangleIndex], layer.z, options_.joinTolerance, segment))
                 segments.push_back(segment);
         }
         layer.paths = connectSegments(std::move(segments), options_.joinTolerance);

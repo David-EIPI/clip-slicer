@@ -12,6 +12,8 @@ struct Triangle {
     Vec3 normal;
     std::array<Vec3, 3> vertices;
     std::uint16_t attribute = 0;
+    double minZ = 0.0;
+    double maxZ = 0.0;
 };
 
 class TriangleMesh {
@@ -23,6 +25,12 @@ public:
     void setHeader(std::string header) { header_ = std::move(header); }
     void reserve(std::size_t count) { triangles_.reserve(count); }
     void addTriangle(Triangle triangle) {
+        triangle.minZ = triangle.vertices[0].z;
+        triangle.maxZ = triangle.vertices[0].z;
+        for (const auto& vertex : triangle.vertices) {
+            triangle.minZ = std::min(triangle.minZ, vertex.z);
+            triangle.maxZ = std::max(triangle.maxZ, vertex.z);
+        }
         for (const auto& vertex : triangle.vertices) bounds_.include(vertex);
         triangles_.push_back(std::move(triangle));
     }

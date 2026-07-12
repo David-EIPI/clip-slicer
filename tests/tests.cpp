@@ -51,12 +51,14 @@ void appendFloat(std::string& bytes, float value) {
 
 void testBinaryStlReader() {
     std::string bytes(80, 'H'); appendU32(bytes, 1);
-    for (float value : {0.f,0.f,1.f, 0.f,0.f,0.f, 1.f,0.f,0.f, 0.f,1.f,0.f}) appendFloat(bytes, value);
+    for (float value : {0.f,0.f,1.f, 0.f,0.f,-1.f, 1.f,0.f,2.f, 0.f,1.f,0.5f}) appendFloat(bytes, value);
     appendU16(bytes, 7);
     std::istringstream input(bytes, std::ios::binary);
     const auto mesh = BinaryStlReader{}.read(input);
     require(mesh.triangles().size() == 1, "STL triangle count");
     require(mesh.triangles()[0].attribute == 7, "STL attribute");
+    require(mesh.triangles()[0].minZ == -1 && mesh.triangles()[0].maxZ == 2,
+            "STL triangle Z bounds");
     require(mesh.bounds().max.x == 1 && mesh.bounds().max.y == 1, "STL bounds");
 
     bytes.pop_back();
