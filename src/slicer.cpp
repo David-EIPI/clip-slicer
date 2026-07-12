@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
@@ -187,6 +188,58 @@ std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tol
     return paths;
 }
 
+void healOpenPaths(std::vector<SlicePath>& paths, double tolerance) {
+    struct Match {
+        std::size_t first = 0;
+        std::size_t second = 0;
+        bool firstAtFront = false;
+        bool secondAtBack = false;
+        double distanceSquared = std::numeric_limits<double>::infinity();
+    };
+
+    const double toleranceSquared = tolerance * tolerance;
+    for (;;) {
+        bool closedPath = false;
+        for (auto& path : paths) {
+            if (path.type == PathType::Open && path.points.size() > 2 &&
+                squaredDistance(path.points.front(), path.points.back()) <= toleranceSquared) {
+                path.points.back() = path.points.front();
+                path.type = PathType::External;
+                closedPath = true;
+            }
+        }
+
+        Match best;
+        for (std::size_t i = 0; i < paths.size(); ++i) {
+            if (paths[i].type != PathType::Open || paths[i].points.empty()) continue;
+            for (std::size_t j = i + 1; j < paths.size(); ++j) {
+                if (paths[j].type != PathType::Open || paths[j].points.empty()) continue;
+                const Vec2 firstEnds[] = {paths[i].points.back(), paths[i].points.front()};
+                const Vec2 secondEnds[] = {paths[j].points.front(), paths[j].points.back()};
+                for (std::size_t a = 0; a < 2; ++a) {
+                    for (std::size_t b = 0; b < 2; ++b) {
+                        const double distance = squaredDistance(firstEnds[a], secondEnds[b]);
+                        if (distance <= toleranceSquared && distance < best.distanceSquared)
+                            best = {i, j, a == 1, b == 1, distance};
+                    }
+                }
+            }
+        }
+
+        if (!std::isfinite(best.distanceSquared)) {
+            if (!closedPath) break;
+            continue;
+        }
+
+        auto& first = paths[best.first].points;
+        auto& second = paths[best.second].points;
+        if (best.firstAtFront) std::reverse(first.begin(), first.end());
+        if (best.secondAtBack) std::reverse(second.begin(), second.end());
+        first.insert(first.end(), std::next(second.begin()), second.end());
+        paths.erase(paths.begin() + static_cast<std::ptrdiff_t>(best.second));
+    }
+}
+
 void classifyClosedPaths(std::vector<SlicePath>& paths) {
     for (std::size_t i = 0; i < paths.size(); ++i) {
         if (paths[i].type == PathType::Open || paths[i].points.size() < 4) continue;
@@ -212,6 +265,9 @@ Slicer::Slicer(SlicerOptions options) : options_(options) {
         throw std::invalid_argument("Layer thickness must be a positive finite value");
     if (!std::isfinite(options_.joinTolerance) || options_.joinTolerance <= 0.0)
         throw std::invalid_argument("Join tolerance must be a positive finite value");
+    if (!std::isfinite(options_.gapClosingToleranceMultiplier) ||
+        options_.gapClosingToleranceMultiplier < 1.0)
+        throw std::invalid_argument("Gap-closing tolerance multiplier must be at least one");
 }
 
 SliceData Slicer::slice(const TriangleMesh& mesh) const {
@@ -278,6 +334,8 @@ SliceData Slicer::slice(const TriangleMesh& mesh) const {
                 segments.push_back(segment);
         }
         layer.paths = connectSegments(std::move(segments), options_.joinTolerance);
+        healOpenPaths(layer.paths,
+                      options_.joinTolerance * options_.gapClosingToleranceMultiplier);
         classifyClosedPaths(layer.paths);
         result.layers.push_back(std::move(layer));
     }

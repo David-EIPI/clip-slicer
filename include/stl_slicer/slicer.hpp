@@ -8,6 +8,7 @@ namespace stl_slicer {
 struct SlicerOptions {
     double layerThickness = 0.1;
     double joinTolerance = 1e-5;
+    double gapClosingToleranceMultiplier = 2.0;
 };
 
 class Slicer {

@@ -113,6 +113,23 @@ void testToleranceIndexedConnection() {
     require(data.layers[0].paths[0].type == PathType::External, "tolerance path closed");
 }
 
+void testSmallGapHealing() {
+    TriangleMesh mesh;
+    const double gap = 1.5e-5;
+    const auto addSliceSegment = [&](Vec2 a, Vec2 b) {
+        const Vec3 below{(a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0.0};
+        mesh.addTriangle({{}, {below, {a.x, a.y, 0.5}, {b.x, b.y, 0.5}}, 0});
+    };
+    addSliceSegment({0, 0}, {1, 0});
+    addSliceSegment({1 + gap, 0}, {1, 1});
+    addSliceSegment({1, 1 + gap}, {0, 1});
+    addSliceSegment({-gap, 1}, {0, -gap});
+
+    const auto data = Slicer{{0.5, 1e-5}}.slice(mesh);
+    require(data.layers[0].paths.size() == 1, "small STL gaps healed");
+    require(data.layers[0].paths[0].type == PathType::External, "healed path closed");
+}
+
 void testCliWriters() {
     TriangleMesh cube; addBox(cube, -20, 50, 10, -19, 51, 11);
     const auto data = Slicer{{0.5, 1e-7}}.slice(cube);
@@ -149,7 +166,7 @@ void testCliWriters() {
 int main() {
     try {
         testBinaryStlReader(); testCubeSlices(); testNestedContours();
-        testToleranceIndexedConnection(); testCliWriters();
+        testToleranceIndexedConnection(); testSmallGapHealing(); testCliWriters();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception& error) {
