@@ -107,6 +107,7 @@ void CliWriter::write(const SliceData& data, std::ostream& output) const {
                << number((bounds.maxY - yOffset) / unit) << ',' << number(stackHeight / unit) << "\n";
     }
     output << "$$LAYERS/" << data.layers.size() << "\n";
+    output << "$$USERDATA/CLIPSlicer,0," << "\n";
     output << "$$LABEL/" << options_.modelId << ",part\n$$HEADEREND";
 
     if (options_.encoding == CliEncoding::Binary) {

@@ -31,6 +31,10 @@ its bounding-box origin at `(0, 0, 0)`, while the reusable slice objects retain 
 model-space coordinates. CLI `DIMENSION` metadata describes this translated geometry and the full
 layer-stack height.
 
+The writer includes the custom header directive `$$USERDATA/CLIPSlicer,0,`. This compatibility
+instruction tells the target third-party reader to join open contours automatically and determine
+filled and empty regions from the winding rule. It is emitted for both ASCII and binary CLI files.
+
 The library API is divided into reusable data and processing components:
 
 - `TriangleMesh`, `Triangle`, `Vec2`, `Vec3`, and `Bounds3` store model geometry.
