@@ -95,6 +95,24 @@ void testNestedContours() {
     require(external == 1 && internal == 1, "nested classification");
 }
 
+void testToleranceIndexedConnection() {
+    TriangleMesh mesh;
+    const double epsilon = 1e-4;
+    const auto addSliceSegment = [&](Vec2 a, Vec2 b) {
+        const Vec3 below{(a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0.0};
+        mesh.addTriangle({{}, {below, {a.x, a.y, 0.5}, {b.x, b.y, 0.5}}, 0});
+    };
+    addSliceSegment({0, 0}, {1, 0});
+    addSliceSegment({1 + epsilon, 0}, {1, 1});
+    addSliceSegment({1, 1 + epsilon}, {0, 1});
+    addSliceSegment({-epsilon, 1}, {0, -epsilon});
+
+    const auto data = Slicer{{0.5, 1e-3}}.slice(mesh);
+    require(data.layers.size() == 1, "tolerance layer count");
+    require(data.layers[0].paths.size() == 1, "indexed endpoints joined across cells");
+    require(data.layers[0].paths[0].type == PathType::External, "tolerance path closed");
+}
+
 void testCliWriters() {
     TriangleMesh cube; addBox(cube, -20, 50, 10, -19, 51, 11);
     const auto data = Slicer{{0.5, 1e-7}}.slice(cube);
@@ -130,7 +148,8 @@ void testCliWriters() {
 
 int main() {
     try {
-        testBinaryStlReader(); testCubeSlices(); testNestedContours(); testCliWriters();
+        testBinaryStlReader(); testCubeSlices(); testNestedContours();
+        testToleranceIndexedConnection(); testCliWriters();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception& error) {

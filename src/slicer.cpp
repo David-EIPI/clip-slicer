@@ -1,8 +1,11 @@
 #include "stl_slicer/slicer.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
 namespace stl_slicer {
@@ -10,9 +13,85 @@ namespace {
 
 struct Segment { Vec2 a; Vec2 b; };
 
+struct EndpointCell {
+    std::int64_t x;
+    std::int64_t y;
+
+    bool operator==(const EndpointCell& other) const { return x == other.x && y == other.y; }
+};
+
+struct EndpointCellHash {
+    std::size_t operator()(const EndpointCell& cell) const {
+        const std::uint64_t x = static_cast<std::uint64_t>(cell.x);
+        const std::uint64_t y = static_cast<std::uint64_t>(cell.y);
+        const std::uint64_t mixed = x ^ (y + 0x9e3779b97f4a7c15ULL + (x << 6) + (x >> 2));
+        return static_cast<std::size_t>(mixed);
+    }
+};
+
 bool near(const Vec2& a, const Vec2& b, double tolerance) {
     return squaredDistance(a, b) <= tolerance * tolerance;
 }
+
+class EndpointIndex {
+public:
+    EndpointIndex(const std::vector<Segment>& segments, double tolerance)
+        : segments_(segments), tolerance_(tolerance), seen_(segments.size(), 0) {
+        buckets_.reserve(segments.size() * 2);
+        for (std::size_t i = 0; i < segments.size(); ++i) {
+            buckets_[cell(segments[i].a)].push_back(i);
+            buckets_[cell(segments[i].b)].push_back(i);
+        }
+    }
+
+    std::size_t find(const Vec2& front, const Vec2& back, const std::vector<bool>& alive) {
+        if (++generation_ == 0) {
+            std::fill(seen_.begin(), seen_.end(), 0);
+            ++generation_;
+        }
+        std::size_t best = segments_.size();
+        visitNeighbors(front, front, back, alive, best);
+        visitNeighbors(back, front, back, alive, best);
+        return best;
+    }
+
+private:
+    EndpointCell cell(const Vec2& point) const {
+        const long double x = std::floor(static_cast<long double>(point.x) / tolerance_);
+        const long double y = std::floor(static_cast<long double>(point.y) / tolerance_);
+        constexpr long double low = static_cast<long double>(std::numeric_limits<std::int64_t>::min()) + 1;
+        constexpr long double high = static_cast<long double>(std::numeric_limits<std::int64_t>::max()) - 1;
+        if (x < low || x > high || y < low || y > high)
+            throw std::runtime_error("Slice coordinate is too large for endpoint indexing");
+        return {static_cast<std::int64_t>(x), static_cast<std::int64_t>(y)};
+    }
+
+    void visitNeighbors(const Vec2& point, const Vec2& front, const Vec2& back,
+                        const std::vector<bool>& alive, std::size_t& best) {
+        const EndpointCell center = cell(point);
+        for (std::int64_t dx = -1; dx <= 1; ++dx) {
+            for (std::int64_t dy = -1; dy <= 1; ++dy) {
+                const auto bucket = buckets_.find({center.x + dx, center.y + dy});
+                if (bucket == buckets_.end()) continue;
+                for (const std::size_t index : bucket->second) {
+                    if (!alive[index] || seen_[index] == generation_) continue;
+                    seen_[index] = generation_;
+                    const Segment& segment = segments_[index];
+                    if ((near(back, segment.a, tolerance_) || near(back, segment.b, tolerance_) ||
+                         near(front, segment.b, tolerance_) || near(front, segment.a, tolerance_)) &&
+                        index < best)
+                        best = index;
+                }
+            }
+        }
+    }
+
+    const std::vector<Segment>& segments_;
+    double tolerance_;
+    std::unordered_map<EndpointCell, std::vector<std::size_t>, EndpointCellHash> buckets_;
+    std::vector<std::uint64_t> seen_;
+    std::uint64_t generation_ = 0;
+};
 
 Vec2 interpolate(const Vec3& a, const Vec3& b, double z) {
     const double t = (z - a.z) / (b.z - a.z);
@@ -57,31 +136,35 @@ bool pointInPolygon(const Vec2& point, const std::vector<Vec2>& polygon) {
 
 std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tolerance) {
     std::vector<SlicePath> paths;
-    while (!segments.empty()) {
-        SlicePath path;
-        path.points.push_back(segments.back().a);
-        path.points.push_back(segments.back().b);
-        segments.pop_back();
+    if (segments.empty()) return paths;
 
-        bool extended = true;
-        while (extended && !near(path.points.front(), path.points.back(), tolerance)) {
-            extended = false;
-            for (auto it = segments.begin(); it != segments.end(); ++it) {
-                if (near(path.points.back(), it->a, tolerance)) {
-                    path.points.push_back(it->b);
-                } else if (near(path.points.back(), it->b, tolerance)) {
-                    path.points.push_back(it->a);
-                } else if (near(path.points.front(), it->b, tolerance)) {
-                    path.points.insert(path.points.begin(), it->a);
-                } else if (near(path.points.front(), it->a, tolerance)) {
-                    path.points.insert(path.points.begin(), it->b);
-                } else {
-                    continue;
-                }
-                segments.erase(it);
-                extended = true;
-                break;
+    EndpointIndex endpointIndex(segments, tolerance);
+    std::vector<bool> alive(segments.size(), true);
+    std::size_t remaining = segments.size();
+    std::size_t nextSeed = segments.size();
+    while (remaining != 0) {
+        do { --nextSeed; } while (!alive[nextSeed]);
+        SlicePath path;
+        path.points.push_back(segments[nextSeed].a);
+        path.points.push_back(segments[nextSeed].b);
+        alive[nextSeed] = false;
+        --remaining;
+
+        while (!near(path.points.front(), path.points.back(), tolerance)) {
+            const std::size_t index = endpointIndex.find(path.points.front(), path.points.back(), alive);
+            if (index == segments.size()) break;
+            const Segment& segment = segments[index];
+            if (near(path.points.back(), segment.a, tolerance)) {
+                path.points.push_back(segment.b);
+            } else if (near(path.points.back(), segment.b, tolerance)) {
+                path.points.push_back(segment.a);
+            } else if (near(path.points.front(), segment.b, tolerance)) {
+                path.points.insert(path.points.begin(), segment.a);
+            } else {
+                path.points.insert(path.points.begin(), segment.b);
             }
+            alive[index] = false;
+            --remaining;
         }
 
         if (near(path.points.front(), path.points.back(), tolerance)) {
