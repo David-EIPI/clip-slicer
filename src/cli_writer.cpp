@@ -50,6 +50,11 @@ void CliWriter::write(const SliceData& data, const std::filesystem::path& path) 
 
 void CliWriter::write(const SliceData& data, std::ostream& output) const {
     const double unit = options_.unitsMillimeters;
+    if (!std::isfinite(data.thickness) || data.thickness <= 0.0)
+        throw std::invalid_argument("Slice thickness must be a positive finite value");
+    const double zOffset = data.layers.empty()
+        ? 0.0
+        : data.layers.front().z - data.thickness * 0.5;
     output << "$$HEADERSTART\n";
     output << (options_.encoding == CliEncoding::Binary ? "$$BINARY\n" : "$$ASCII\n");
     output << "$$UNITS/" << number(unit) << "\n$$VERSION/200\n";
@@ -64,7 +69,7 @@ void CliWriter::write(const SliceData& data, std::ostream& output) const {
 
     if (options_.encoding == CliEncoding::Binary) {
         for (const auto& layer : data.layers) {
-            u16(output, 127); real32(output, layer.z / unit);
+            u16(output, 127); real32(output, (layer.z - zOffset) / unit);
             for (const auto& path : layer.paths) {
                 if (path.points.size() > std::numeric_limits<std::uint32_t>::max())
                     throw std::runtime_error("CLI polyline has too many points");
@@ -80,7 +85,7 @@ void CliWriter::write(const SliceData& data, std::ostream& output) const {
     } else {
         output << "\n$$GEOMETRYSTART\n";
         for (const auto& layer : data.layers) {
-            output << "$$LAYER/" << number(layer.z / unit) << "\n";
+            output << "$$LAYER/" << number((layer.z - zOffset) / unit) << "\n";
             for (const auto& path : layer.paths) {
                 output << "$$POLYLINE/" << options_.modelId << ',' << static_cast<unsigned>(path.type)
                        << ',' << path.points.size();

@@ -94,10 +94,12 @@ void testNestedContours() {
 }
 
 void testCliWriters() {
-    TriangleMesh cube; addBox(cube, 0, 0, 0, 1, 1, 1);
+    TriangleMesh cube; addBox(cube, 0, 0, 10, 1, 1, 11);
     const auto data = Slicer{{0.5, 1e-7}}.slice(cube);
     std::ostringstream ascii;
     CliWriter{{CliEncoding::Ascii, 1.0, 3}}.write(data, ascii);
+    require(ascii.str().find("$$LAYER/0.25\n") != std::string::npos,
+            "ASCII CLI first layer at half step");
     require(ascii.str().find("$$POLYLINE/3,1,") != std::string::npos, "ASCII CLI polyline");
     require(ascii.str().find("$$GEOMETRYEND") != std::string::npos, "ASCII CLI end");
 
@@ -109,6 +111,9 @@ void testCliWriters() {
     const std::size_t geometry = end + std::strlen("$$HEADEREND");
     require(static_cast<unsigned char>(output[geometry]) == 127 && output[geometry + 1] == 0,
             "binary CLI layer-long command");
+    float firstZ = 0.0f;
+    std::memcpy(&firstZ, output.data() + geometry + 2, sizeof(firstZ));
+    require(std::abs(firstZ - 0.25f) < 1e-6f, "binary CLI first layer at half step");
 }
 
 } // namespace

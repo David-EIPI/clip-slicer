@@ -24,7 +24,9 @@ If the host uses `ccache` with an unavailable cache directory, prefix these comm
 
 The layer thickness defaults to 0.1 mm. Binary CLI output using PolyLine Long commands is the
 default; `--ascii` is useful for inspection. STL coordinates are treated as millimeters because
-STL itself does not store units.
+STL itself does not store units. When writing CLI geometry, layer Z coordinates are translated so
+the lowest generated layer is positioned at half the layer thickness above the build platform.
+The reusable slice objects retain their original model-space Z coordinates.
 
 The library API is divided into reusable data and processing components:
 
