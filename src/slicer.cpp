@@ -99,7 +99,8 @@ Vec2 interpolate(const Vec3& a, const Vec3& b, double z) {
 }
 
 bool triangleSegment(const Triangle& triangle, double z, double tolerance, Segment& result) {
-    std::vector<Vec2> points;
+    Vec2 points[2];
+    std::size_t pointCount = 0;
     for (std::size_t i = 0; i < 3; ++i) {
         const Vec3& a = triangle.vertices[i];
         const Vec3& b = triangle.vertices[(i + 1) % 3];
@@ -107,9 +108,9 @@ bool triangleSegment(const Triangle& triangle, double z, double tolerance, Segme
         // makes a shared vertex contribute consistently and ignores coplanar faces.
         const bool aBelow = a.z < z;
         const bool bBelow = b.z < z;
-        if (aBelow != bBelow) points.push_back(interpolate(a, b, z));
+        if (aBelow != bBelow) points[pointCount++] = interpolate(a, b, z);
     }
-    if (points.size() != 2 || near(points[0], points[1], tolerance)) return false;
+    if (pointCount != 2 || near(points[0], points[1], tolerance)) return false;
     result = {points[0], points[1]};
     return true;
 }
@@ -144,35 +145,43 @@ std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tol
     std::size_t nextSeed = segments.size();
     while (remaining != 0) {
         do { --nextSeed; } while (!alive[nextSeed]);
-        SlicePath path;
-        path.points.push_back(segments[nextSeed].a);
-        path.points.push_back(segments[nextSeed].b);
+        std::vector<Vec2> prepended;
+        std::vector<Vec2> appended;
+        appended.push_back(segments[nextSeed].a);
+        appended.push_back(segments[nextSeed].b);
         alive[nextSeed] = false;
         --remaining;
 
-        while (!near(path.points.front(), path.points.back(), tolerance)) {
-            const std::size_t index = endpointIndex.find(path.points.front(), path.points.back(), alive);
+        const auto front = [&]() -> const Vec2& {
+            return prepended.empty() ? appended.front() : prepended.back();
+        };
+        while (!near(front(), appended.back(), tolerance)) {
+            const std::size_t index = endpointIndex.find(front(), appended.back(), alive);
             if (index == segments.size()) break;
             const Segment& segment = segments[index];
-            if (near(path.points.back(), segment.a, tolerance)) {
-                path.points.push_back(segment.b);
-            } else if (near(path.points.back(), segment.b, tolerance)) {
-                path.points.push_back(segment.a);
-            } else if (near(path.points.front(), segment.b, tolerance)) {
-                path.points.insert(path.points.begin(), segment.a);
+            if (near(appended.back(), segment.a, tolerance)) {
+                appended.push_back(segment.b);
+            } else if (near(appended.back(), segment.b, tolerance)) {
+                appended.push_back(segment.a);
+            } else if (near(front(), segment.b, tolerance)) {
+                prepended.push_back(segment.a);
             } else {
-                path.points.insert(path.points.begin(), segment.b);
+                prepended.push_back(segment.b);
             }
             alive[index] = false;
             --remaining;
         }
 
-        if (near(path.points.front(), path.points.back(), tolerance)) {
-            path.points.back() = path.points.front();
+        SlicePath path;
+        if (near(front(), appended.back(), tolerance)) {
+            appended.back() = front();
             path.type = PathType::External;
         } else {
             path.type = PathType::Open;
         }
+        path.points.reserve(prepended.size() + appended.size());
+        path.points.insert(path.points.end(), prepended.rbegin(), prepended.rend());
+        path.points.insert(path.points.end(), appended.begin(), appended.end());
         paths.push_back(std::move(path));
     }
     return paths;
