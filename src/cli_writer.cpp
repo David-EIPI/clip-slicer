@@ -10,6 +10,18 @@
 namespace stl_slicer {
 namespace {
 
+struct OutputBounds {
+    double minX = std::numeric_limits<double>::infinity();
+    double minY = std::numeric_limits<double>::infinity();
+    double minZ = std::numeric_limits<double>::infinity();
+    double maxX = -std::numeric_limits<double>::infinity();
+    double maxY = -std::numeric_limits<double>::infinity();
+    double maxZ = -std::numeric_limits<double>::infinity();
+
+    bool hasXY() const { return minX <= maxX && minY <= maxY; }
+    bool hasZ() const { return minZ <= maxZ; }
+};
+
 void u16(std::ostream& out, std::uint16_t value) {
     const char bytes[] = {static_cast<char>(value), static_cast<char>(value >> 8)};
     out.write(bytes, 2);
@@ -35,6 +47,34 @@ std::string number(double value) {
     return out.str();
 }
 
+OutputBounds outputBounds(const SliceData& data, double zOffset) {
+    OutputBounds bounds;
+    for (const auto& layer : data.layers) {
+        const double z = layer.z - zOffset;
+        if (!std::isfinite(z)) throw std::invalid_argument("Slice contains a non-finite layer height");
+        bounds.minZ = std::min(bounds.minZ, z);
+        bounds.maxZ = std::max(bounds.maxZ, z);
+        for (const auto& path : layer.paths) {
+            for (const auto& point : path.points) {
+                if (!std::isfinite(point.x) || !std::isfinite(point.y))
+                    throw std::invalid_argument("Slice contains a non-finite path coordinate");
+                bounds.minX = std::min(bounds.minX, point.x);
+                bounds.minY = std::min(bounds.minY, point.y);
+                bounds.maxX = std::max(bounds.maxX, point.x);
+                bounds.maxY = std::max(bounds.maxY, point.y);
+            }
+        }
+    }
+    // Empty slice sets have no serialized XY geometry; retain useful source metadata.
+    if (!bounds.hasXY() && data.sourceBounds.valid()) {
+        bounds.minX = data.sourceBounds.min.x;
+        bounds.minY = data.sourceBounds.min.y;
+        bounds.maxX = data.sourceBounds.max.x;
+        bounds.maxY = data.sourceBounds.max.y;
+    }
+    return bounds;
+}
+
 } // namespace
 
 CliWriter::CliWriter(CliWriterOptions options) : options_(options) {
@@ -55,14 +95,16 @@ void CliWriter::write(const SliceData& data, std::ostream& output) const {
     const double zOffset = data.layers.empty()
         ? 0.0
         : data.layers.front().z - data.thickness * 0.5;
+    const OutputBounds bounds = outputBounds(data, zOffset);
+    const double xOffset = bounds.hasXY() ? bounds.minX : 0.0;
+    const double yOffset = bounds.hasXY() ? bounds.minY : 0.0;
     output << "$$HEADERSTART\n";
     output << (options_.encoding == CliEncoding::Binary ? "$$BINARY\n" : "$$ASCII\n");
     output << "$$UNITS/" << number(unit) << "\n$$VERSION/200\n";
-    if (data.sourceBounds.valid()) {
-        output << "$$DIMENSION/" << number(data.sourceBounds.min.x / unit) << ','
-               << number(data.sourceBounds.min.y / unit) << ',' << number(data.sourceBounds.min.z / unit) << ','
-               << number(data.sourceBounds.max.x / unit) << ',' << number(data.sourceBounds.max.y / unit) << ','
-               << number(data.sourceBounds.max.z / unit) << "\n";
+    if (bounds.hasXY() && bounds.hasZ()) {
+        const double stackHeight = bounds.maxZ + data.thickness * 0.5;
+        output << "$$DIMENSION/0,0,0," << number((bounds.maxX - xOffset) / unit) << ','
+               << number((bounds.maxY - yOffset) / unit) << ',' << number(stackHeight / unit) << "\n";
     }
     output << "$$LAYERS/" << data.layers.size() << "\n";
     output << "$$LABEL/" << options_.modelId << ",part\n$$HEADEREND";
@@ -78,7 +120,8 @@ void CliWriter::write(const SliceData& data, std::ostream& output) const {
                 u32(output, static_cast<std::uint32_t>(path.type));
                 u32(output, static_cast<std::uint32_t>(path.points.size()));
                 for (const auto& point : path.points) {
-                    real32(output, point.x / unit); real32(output, point.y / unit);
+                    real32(output, (point.x - xOffset) / unit);
+                    real32(output, (point.y - yOffset) / unit);
                 }
             }
         }
@@ -90,7 +133,8 @@ void CliWriter::write(const SliceData& data, std::ostream& output) const {
                 output << "$$POLYLINE/" << options_.modelId << ',' << static_cast<unsigned>(path.type)
                        << ',' << path.points.size();
                 for (const auto& point : path.points)
-                    output << ',' << number(point.x / unit) << ',' << number(point.y / unit);
+                    output << ',' << number((point.x - xOffset) / unit)
+                           << ',' << number((point.y - yOffset) / unit);
                 output << '\n';
             }
         }

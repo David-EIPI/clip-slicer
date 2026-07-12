@@ -26,7 +26,10 @@ The layer thickness defaults to 0.1 mm. Binary CLI output using PolyLine Long co
 default; `--ascii` is useful for inspection. STL coordinates are treated as millimeters because
 STL itself does not store units. When writing CLI geometry, layer Z coordinates are translated so
 the lowest generated layer is positioned at half the layer thickness above the build platform.
-The reusable slice objects retain their original model-space Z coordinates.
+X and Y coordinates are translated by their minimum emitted values. The resulting CLI model has
+its bounding-box origin at `(0, 0, 0)`, while the reusable slice objects retain their original
+model-space coordinates. CLI `DIMENSION` metadata describes this translated geometry and the full
+layer-stack height.
 
 The library API is divided into reusable data and processing components:
 
