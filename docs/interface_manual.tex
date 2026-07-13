@@ -1,0 +1,107 @@
+\chapter{Interface Manual}
+
+Each document contains a model list, a toolbar, and an OpenGL viewing area.
+The model list controls selection and visibility. Transformations made in the
+view affect only selected models when the Shift modifier is held; otherwise,
+the same basic gestures manipulate the camera.
+
+\section{Viewport Guides}
+
+\subsection{Build Platform}
+
+The rectangle below the models represents the printer build platform. Its
+width and length follow the combined transformed bounds of all visible models.
+The upper surface is dark gray. The underside remains visible when viewed from
+below and is shown in silver gray, making the platform orientation apparent.
+The first section of the application status bar reports the current build
+volume as width, length, and height.
+
+\subsection{Coordinate Axes}
+
+The three thin lines crossing the viewport are the global X, Y, and Z axes.
+They pass through the global origin and extend in both positive and negative
+directions until clipped by the view. Cross-shaped tick marks remain visible
+from different viewing directions. Tick spacing changes with zoom and always
+uses a power of ten, such as 0.1, 1, 10, or 100 model units.
+
+The axes belong to the global coordinate system. Camera movement changes their
+screen projection, while model transformations move models relative to them.
+
+\subsection{Orientation Vane}
+
+The orientation vane is the group of three thick arrows in the lower-left
+corner of the viewport. Its X arrow is blue, its Y arrow is red, and its Z
+arrow is bright green. The vane rotates with the camera to show the current
+view direction, but its screen position and size remain fixed so that it is
+always legible.
+
+\subsection{Slicing Plane}
+
+The \emph{Plane} toolbar button or \emph{Slice > Interactive slicing} menu
+command enables the interactive slicing plane. The translucent plane spans the
+visible model bounds. Its upper face is pale blue and its lower face is orange,
+which distinguishes the two viewing directions.
+
+Moving the plane recalculates the intersection contours for selected models.
+A filled projection of those contours is drawn on the build platform, and the
+second status-bar field reports the plane height as \texttt{Z: 0.000}. When
+interactive slicing is disabled, the field displays \texttt{Z: --}.
+
+\section{Mouse Actions}
+
+\begin{table}[htbp]
+    \centering
+    \small
+    \begin{tabularx}{\textwidth}{@{}>{\bfseries}p{0.27\textwidth}YY@{}}
+        \toprule
+        Gesture & Camera target & With Shift: selected-model target \\
+        \midrule
+        Left drag
+            & Orbit the camera around the models.
+            & Rotate all selected models around their common geometric center. \\
+        Middle drag
+            & Translate the camera parallel to the screen.
+            & Translate selected models parallel to the screen. \\
+        Right drag
+            & Move the camera along the axis normal to the screen.
+            & Translate selected models along the axis normal to the screen. \\
+        Mouse wheel
+            & Zoom the camera view in or out.
+            & Scale selected models around their common geometric center. \\
+        Ctrl+Left drag
+            & Duplicate mouse-wheel zoom for a mouse without a wheel.
+            & Duplicate mouse-wheel scaling for selected models. \\
+        Ctrl+Right drag
+            & Duplicate middle-button translation.
+            & Duplicate middle-button translation for selected models. \\
+        Alt+Mouse wheel
+            & \multicolumn{2}{Y@{}}{Move the interactive slicing plane. This
+              action is available while interactive slicing is enabled.} \\
+        Alt+Shift+Left drag
+            & \multicolumn{2}{Y@{}}{Duplicate interactive slicing-plane
+              movement for a mouse without a wheel.} \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Mouse controls in the model viewport.}
+\end{table}
+
+\section{Keyboard Shortcuts}
+
+\begin{table}[htbp]
+    \centering
+    \begin{tabularx}{\textwidth}{@{}>{\ttfamily}p{0.24\textwidth}Y@{}}
+        \toprule
+        \normalfont\bfseries Shortcut & \bfseries Action \\
+        \midrule
+        Ctrl+O & Open a model in a new document. \\
+        Alt+F  & Open the File menu. \\
+        Alt+V  & Open the View menu for model visibility commands. \\
+        Alt+S  & Open the Slice menu. \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Application keyboard shortcuts and menu access keys.}
+\end{table}
+
+Menu access keys can vary with desktop environment settings. Modifier names in
+this manual use the conventional Ctrl, Shift, and Alt labels; the operating
+system may display localized equivalents.

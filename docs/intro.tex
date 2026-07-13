@@ -1,0 +1,33 @@
+\chapter{Introduction}
+
+CLIP Slicer is a desktop application for loading, viewing, transforming, and
+processing three-dimensional models for additive manufacturing. It presents
+models in an interactive OpenGL view and keeps model transformations separate
+from the source coordinates, allowing a model to be repositioned, rotated, or
+scaled without modifying the loaded geometry.
+
+The application currently supports two model formats:
+
+\begin{description}
+    \item[Binary STL] A triangulated surface model. CLIP Slicer reads triangle
+        vertices and normals and displays the resulting mesh.
+    \item[CLI] A sliced model represented by layers and contours. CLIP Slicer
+        reads binary CLI files and displays their layers as a three-dimensional
+        model. It exports sliced models in CLI format.
+\end{description}
+
+CLIP Slicer uses a multiple-document interface. A document can contain one or
+more STL and CLI models, and each model can be selected and shown or hidden
+independently. Opening a file normally creates a new document. The
+\emph{Open into document} command adds another model to the active document so
+that several models can be viewed, positioned, and processed together.
+
+Selected models can be sliced with a chosen layer thickness and starting
+height. The resulting sliced model can be added to the current document or
+placed in a new document. When sliced models are exported, the selected models
+can be combined in one CLI file. Their layers are ordered by height, including
+layers from different models that occupy the same height.
+
+The current export format is CLI. Support for additional three-dimensional and
+layer formats, along with manual contour editing, is planned for later
+development.

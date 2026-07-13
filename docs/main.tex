@@ -1,0 +1,39 @@
+\documentclass[11pt,oneside]{report}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[hidelinks]{hyperref}
+
+\geometry{margin=1in}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\title{CLIP Slicer\\User Manual}
+\author{CLIP Slicer Project}
+\date{\today}
+\hypersetup{
+    pdftitle={CLIP Slicer User Manual},
+    pdfauthor={CLIP Slicer Project}
+}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\maketitle
+\clearpage
+\hypersetup{pageanchor=true}
+\pagenumbering{roman}
+\tableofcontents
+
+\clearpage
+\pagenumbering{arabic}
+\input{intro}
+\input{interface_manual}
+
+\end{document}

@@ -28,6 +28,14 @@ Set `-DSTL_SLICER_BUILD_GUI=OFF` for a command-line-only build.
 If the host uses `ccache` with an unavailable cache directory, prefix these commands with
 `CCACHE_DISABLE=1`.
 
+The CLIP Slicer user manual is written in LaTeX and can be built with:
+
+```sh
+make -C docs pdf
+```
+
+The generated manual is stored at `docs/build/main.pdf`.
+
 To enable compile-time CPU-specific vectorization, set the compiler architecture target:
 
 ```sh
