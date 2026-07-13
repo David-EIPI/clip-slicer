@@ -130,6 +130,20 @@ void testSmallGapHealing() {
     require(data.layers[0].paths[0].type == PathType::External, "healed path closed");
 }
 
+void testReversedSharedEdgeInterpolation() {
+    TriangleMesh mesh;
+    const Vec3 low{42.40000534057617, 30.656009674072266, -13.128999710083008};
+    const Vec3 high{42.55600357055664, 30.66800308227539, -12.777997970581055};
+    mesh.addTriangle({{}, {low, high, {42.577003479003906, 30.944011688232422, -12.834999084472656}}, 0});
+    mesh.addTriangle({{}, {high, low, {42.5410041809082, 30.404010772705078, -12.948999404907227}}, 0});
+
+    const auto data = Slicer{{0.350999450683594, 1e-12, 1.0}}.slice(mesh);
+    require(data.layers.size() == 1, "shared-edge interpolation layer");
+    require(data.layers[0].paths.size() == 1, "reversed shared-edge points identical");
+    require(data.layers[0].paths[0].points.size() == 3,
+            "shared-edge segments connected without healing tolerance");
+}
+
 void testCliWriters() {
     TriangleMesh cube; addBox(cube, -20, 50, 10, -19, 51, 11);
     const auto data = Slicer{{0.5, 1e-7}}.slice(cube);
@@ -166,7 +180,8 @@ void testCliWriters() {
 int main() {
     try {
         testBinaryStlReader(); testCubeSlices(); testNestedContours();
-        testToleranceIndexedConnection(); testSmallGapHealing(); testCliWriters();
+        testToleranceIndexedConnection(); testSmallGapHealing();
+        testReversedSharedEdgeInterpolation(); testCliWriters();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception& error) {

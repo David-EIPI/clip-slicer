@@ -95,8 +95,15 @@ private:
 };
 
 Vec2 interpolate(const Vec3& a, const Vec3& b, double z) {
-    const double t = (z - a.z) / (b.z - a.z);
-    return {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
+    // Shared STL edges are commonly traversed in opposite directions by their
+    // two incident triangles. Canonical ordering makes both evaluations perform
+    // identical floating-point operations and therefore produce identical points.
+    const Vec3* low = &a;
+    const Vec3* high = &b;
+    if (low->z > high->z) std::swap(low, high);
+    const double t = (z - low->z) / (high->z - low->z);
+    return {low->x + t * (high->x - low->x),
+            low->y + t * (high->y - low->y)};
 }
 
 bool triangleSegment(const Triangle& triangle, double z, double tolerance, Segment& result) {
