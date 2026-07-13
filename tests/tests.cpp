@@ -85,14 +85,19 @@ void testNestedContours() {
     TriangleMesh mesh;
     addBox(mesh, 0, 0, 0, 10, 10, 1);
     addBox(mesh, 3, 3, 0, 7, 7, 1);
+    addBox(mesh, 4, 4, 0, 6, 6, 1);
     const auto data = Slicer{{0.5, 1e-7}}.slice(mesh);
-    require(data.layers.front().paths.size() == 2, "nested path count");
+    require(data.layers.front().paths.size() == 3, "nested path count");
     unsigned external = 0, internal = 0;
     for (const auto& path : data.layers.front().paths) {
         if (path.type == PathType::External) { ++external; require(area(path) > 0, "external CCW"); }
         if (path.type == PathType::Internal) { ++internal; require(area(path) < 0, "internal CW"); }
     }
-    require(external == 1 && internal == 1, "nested classification");
+    require(external == 2 && internal == 1, "nested classification");
+    require(data.layers.front().paths[0].type == PathType::External &&
+            data.layers.front().paths[1].type == PathType::Internal &&
+            data.layers.front().paths[2].type == PathType::External,
+            "contours ordered from parent to descendant");
 }
 
 void testToleranceIndexedConnection() {

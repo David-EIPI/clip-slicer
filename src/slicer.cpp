@@ -248,21 +248,63 @@ void healOpenPaths(std::vector<SlicePath>& paths, double tolerance) {
 }
 
 void classifyClosedPaths(std::vector<SlicePath>& paths) {
+    struct ContourInfo {
+        double area = 0.0;
+        double minX = std::numeric_limits<double>::infinity();
+        double minY = std::numeric_limits<double>::infinity();
+        double maxX = -std::numeric_limits<double>::infinity();
+        double maxY = -std::numeric_limits<double>::infinity();
+        std::size_t depth = 0;
+        bool closed = false;
+    };
+
+    std::vector<ContourInfo> contours(paths.size());
     for (std::size_t i = 0; i < paths.size(); ++i) {
         if (paths[i].type == PathType::Open || paths[i].points.size() < 4) continue;
-        std::size_t depth = 0;
+        auto& contour = contours[i];
+        contour.closed = true;
+        contour.area = signedArea(paths[i].points);
+        for (const auto& point : paths[i].points) {
+            contour.minX = std::min(contour.minX, point.x);
+            contour.minY = std::min(contour.minY, point.y);
+            contour.maxX = std::max(contour.maxX, point.x);
+            contour.maxY = std::max(contour.maxY, point.y);
+        }
+    }
+
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        auto& contour = contours[i];
+        if (!contour.closed) continue;
         const Vec2 sample = paths[i].points.front();
         for (std::size_t j = 0; j < paths.size(); ++j) {
-            if (i != j && paths[j].type != PathType::Open &&
-                std::abs(signedArea(paths[j].points)) > std::abs(signedArea(paths[i].points)) &&
-                pointInPolygon(sample, paths[j].points))
-                ++depth;
+            if (i == j || !contours[j].closed) continue;
+            const double candidateArea = std::abs(contours[j].area);
+            if (candidateArea <= std::abs(contour.area)) continue;
+            if (sample.x < contours[j].minX || sample.x > contours[j].maxX ||
+                sample.y < contours[j].minY || sample.y > contours[j].maxY)
+                continue;
+            if (pointInPolygon(sample, paths[j].points)) ++contour.depth;
         }
-        const bool external = (depth % 2) == 0;
+    }
+
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        if (!contours[i].closed) continue;
+        const bool external = (contours[i].depth % 2) == 0;
         paths[i].type = external ? PathType::External : PathType::Internal;
-        const bool ccw = signedArea(paths[i].points) > 0.0;
+        const bool ccw = contours[i].area > 0.0;
         if (ccw != external) std::reverse(paths[i].points.begin(), paths[i].points.end());
     }
+
+    std::vector<std::size_t> order(paths.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        if (contours[a].closed != contours[b].closed) return contours[a].closed;
+        return contours[a].closed && contours[a].depth < contours[b].depth;
+    });
+    std::vector<SlicePath> ordered;
+    ordered.reserve(paths.size());
+    for (const std::size_t index : order) ordered.push_back(std::move(paths[index]));
+    paths = std::move(ordered);
 }
 
 } // namespace
