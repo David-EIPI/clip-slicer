@@ -219,6 +219,9 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
 void ModelCanvas::DrawWorldAxes() {
     const wxSize canvasSize = GetClientSize();
     const double aspect = double(std::max(1, canvasSize.x)) / std::max(1, canvasSize.y);
+    const double inverseViewportScale = distance_ * std::tan(fieldOfView_ * 0.5);
+    const double tickSpacing =
+        std::pow(10.0, std::round(std::log10(std::max(inverseViewportScale, 1e-12))));
     const double radius =
         distance_ * (1.0 + 2.0 * std::tan(fieldOfView_ * 0.5) * std::hypot(1.0, aspect)) + 1.0;
     const double tickHalfSize = std::max(
@@ -257,8 +260,10 @@ void ModelCanvas::DrawWorldAxes() {
         const double tickMaximum = center[axis] + tickRadius;
         const double lineMinimum = std::min(-radius, center[axis] - radius);
         const double lineMaximum = std::max(radius, center[axis] + radius);
-        const std::size_t tickCount = static_cast<std::size_t>(
-            std::max(0.0, std::floor(tickMaximum) - std::ceil(tickMinimum) + 1.0));
+        const double firstTick = std::ceil(tickMinimum / tickSpacing);
+        const double lastTick = std::floor(tickMaximum / tickSpacing);
+        const std::size_t tickCount =
+            static_cast<std::size_t>(std::max(0.0, lastTick - firstTick + 1.0));
         vertices.reserve(2 + tickCount * 4);
 
         const stl_slicer::Vec3 start = pointOnAxis(axis, lineMinimum);
@@ -268,8 +273,8 @@ void ModelCanvas::DrawWorldAxes() {
 
         const std::size_t firstPerpendicular = (axis + 1) % 3;
         const std::size_t secondPerpendicular = (axis + 2) % 3;
-        for (double position = std::ceil(tickMinimum); position <= std::floor(tickMaximum);
-             position += 1.0) {
+        for (std::size_t tick = 0; tick < tickCount; ++tick) {
+            const double position = (firstTick + double(tick)) * tickSpacing;
             const stl_slicer::Vec3 point = pointOnAxis(axis, position);
             stl_slicer::Vec3 a = point;
             stl_slicer::Vec3 b = point;
@@ -622,7 +627,7 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
                               stl_slicer::Mat4::scale(scale) *
                               stl_slicer::Mat4::translation(-c.x, -c.y, -c.z));
         } else {
-            fieldOfView_ = std::clamp(fieldOfView_ / std::pow(1.12, steps), 0.15, 2.2);
+            fieldOfView_ = std::clamp(fieldOfView_ / std::pow(1.12, steps), 0.01, 2.2);
             Refresh();
         }
     };

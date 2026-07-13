@@ -96,8 +96,9 @@ The library API is divided into reusable data and processing components:
 active document. Slice export merges every selected sliced model and stably orders their layers by
 Z, including layers from different models at the same height.
 
-The viewport draws global X/Y/Z axes in both directions with one-unit cross ticks. A fixed-size
-orientation vane in the lower-left uses blue for X, red for Y, and bright green for Z.
+The viewport draws global X/Y/Z axes in both directions. Cross-tick spacing follows viewport scale
+in power-of-ten steps. A fixed-size orientation vane in the lower-left uses blue for X, red for Y,
+and bright green for Z.
 
 Model transforms are matrix-based and do not modify source coordinates. Slicing applies the stored
 transforms to a temporary triangle mesh. Render normals are blended across non-crease edges. Sliced
