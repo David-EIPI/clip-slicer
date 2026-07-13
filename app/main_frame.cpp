@@ -25,7 +25,7 @@ MainFrame::MainFrame()
         statusBar->GetTextExtent("Z: 0000.000", &sliceWidth, nullptr);
     }
     const int statusWidths[] = {buildWidth + 12, sliceWidth + 12};
-    const int statusStyles[] = {wxSB_NORMAL, wxSB_NORMAL};
+    const int statusStyles[] = {wxSB_SUNKEN, wxSB_SUNKEN};
     SetStatusWidths(2, statusWidths);
     if (statusBar)
         statusBar->SetStatusStyles(2, statusStyles);
