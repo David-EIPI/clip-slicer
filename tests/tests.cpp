@@ -142,7 +142,7 @@ void testToleranceIndexedConnection() {
 
 void testSmallGapHealing() {
     TriangleMesh mesh;
-    const double gap = 1.5e-5;
+    const double gap = 4e-5;
     const auto addSliceSegment = [&](Vec2 a, Vec2 b) {
         const Vec3 below{(a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0.0};
         mesh.addTriangle({{}, {below, {a.x, a.y, 0.5}, {b.x, b.y, 0.5}}, 0});
@@ -155,6 +155,10 @@ void testSmallGapHealing() {
     const auto data = Slicer{{0.5, 1e-5}}.slice(mesh);
     require(data.layers[0].paths.size() == 1, "small STL gaps healed");
     require(data.layers[0].paths[0].type == PathType::External, "healed path closed");
+
+    const auto strict = Slicer{{0.5, 1e-5, 2.0}}.slice(mesh);
+    require(strict.layers[0].paths[0].type == PathType::Open,
+            "explicit gap-healing multiplier was ignored");
 }
 
 void testReversedSharedEdgeInterpolation() {

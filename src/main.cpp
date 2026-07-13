@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
     try {
         bool ascii = false;
         double tolerance = 1e-5;
-        double gapMultiplier = 2.0;
+        double gapMultiplier = 5.0;
         int arg = 1;
         while (arg < argc && std::string(argv[arg]).rfind("--", 0) == 0) {
             const std::string option = argv[arg++];

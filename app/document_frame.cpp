@@ -354,7 +354,7 @@ void DocumentFrame::OnSlice(wxCommandEvent &) {
     for (const auto &m : models_)
         if (m->selected) {
             try {
-                auto data = stl_slicer::Slicer{{dz, 1e-5, 2.0, start}}.slice(
+                auto data = stl_slicer::Slicer{{dz, 1e-5, 5.0, start}}.slice(
                     stl_slicer::transformedMesh(*m));
                 made.push_back(std::make_shared<stl_slicer::SliceSceneModel>(m->name + " slices",
                                                                              std::move(data)));
@@ -442,7 +442,7 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
                 }
             }
             const stl_slicer::SliceData slices =
-                stl_slicer::Slicer{{0.1, 1e-5, 2.0, 0.05}}.slice(combined);
+                stl_slicer::Slicer{{0.1, 1e-5, 5.0, 0.05}}.slice(combined);
             stl_slicer::UnsupportedAreaResult unsupported =
                 stl_slicer::UnsupportedAreaAnalyzer{{30.0}}.analyze(slices);
             payload->totalArea = unsupported.totalArea;
