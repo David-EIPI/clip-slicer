@@ -44,6 +44,7 @@ if(STL_SLICER_BUILD_GUI)
         app/main.cpp
         app/main_frame.cpp
         app/document_frame.cpp
+        app/embedded_assets.cpp
         app/gl_canvas.cpp
         app/slice_visualization.cpp)
     target_include_directories(clip-slicer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app)
@@ -52,13 +53,6 @@ if(STL_SLICER_BUILD_GUI)
         ${wxWidgets_LIBRARIES}
         PkgConfig::EPOXY
         PkgConfig::GLU)
-    add_custom_target(clip-slicer-assets ALL
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_FILE_DIR:clip-slicer>/assets"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/app/assets/slice-bread-icon.png"
-            "$<TARGET_FILE_DIR:clip-slicer>/assets/slice-bread-icon.png"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/app/assets/slice-bread-icon.png")
     target_compile_features(clip-slicer PRIVATE cxx_std_17)
     if(MSVC)
         target_compile_options(clip-slicer PRIVATE /W4)

@@ -1,4 +1,5 @@
 #include "document_frame.hpp"
+#include "embedded_assets.hpp"
 #include "gl_canvas.hpp"
 #include "main_frame.hpp"
 #include "stl_slicer/cli_reader.hpp"
@@ -11,14 +12,12 @@
 #include <wx/artprov.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
-#include <wx/image.h>
 #include <wx/msgdlg.h>
 #include <wx/radiobox.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
 #include <wx/splitter.h>
 #include <wx/stattext.h>
-#include <wx/stdpaths.h>
 #include <wx/textdlg.h>
 #include <wx/toolbar.h>
 
@@ -35,13 +34,11 @@ enum {
 };
 
 wxBitmap LoadSliceIcon(const wxSize &size) {
-    const wxFileName executable(wxStandardPaths::Get().GetExecutablePath());
-    const wxFileName icon(executable.GetPath() + wxFILE_SEP_PATH + "assets",
-                          "slice-bread-icon.png");
-    wxImage image(icon.GetFullPath(), wxBITMAP_TYPE_PNG);
-    if (!image.IsOk())
+    wxBitmap icon = wxBitmap::NewFromPNGData(clip_slicer::assets::sliceBreadIconPng,
+                                             clip_slicer::assets::sliceBreadIconPngSize);
+    if (!icon.IsOk() || icon.GetSize() != size)
         return wxArtProvider::GetBitmap(wxART_EXECUTABLE_FILE, wxART_TOOLBAR, size);
-    return wxBitmap(image.Scale(size.x, size.y, wxIMAGE_QUALITY_HIGH));
+    return icon;
 }
 } // namespace
 

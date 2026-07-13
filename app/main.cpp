@@ -1,11 +1,12 @@
 #include "main_frame.hpp"
 #include <wx/app.h>
 #include <wx/image.h>
+#include <wx/imagpng.h>
 
 class ClipSlicerApp final : public wxApp {
   public:
     bool OnInit() override {
-        wxInitAllImageHandlers();
+        wxImage::AddHandler(new wxPNGHandler);
         auto *frame = new MainFrame();
         frame->Show();
         if (argc > 1)
