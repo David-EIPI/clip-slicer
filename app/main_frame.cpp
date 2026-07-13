@@ -25,7 +25,10 @@ MainFrame::MainFrame()
         statusBar->GetTextExtent("Z: 0000.000", &sliceWidth, nullptr);
     }
     const int statusWidths[] = {buildWidth + 12, sliceWidth + 12};
+    const int statusStyles[] = {wxSB_NORMAL, wxSB_NORMAL};
     SetStatusWidths(2, statusWidths);
+    if (statusBar)
+        statusBar->SetStatusStyles(2, statusStyles);
     ClearDocumentStatus();
     Bind(wxEVT_MENU, &MainFrame::OnOpen, this, IdOpen);
     Bind(wxEVT_MENU, &MainFrame::OnExit, this, wxID_EXIT);
