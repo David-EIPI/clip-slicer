@@ -315,17 +315,16 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
     const wxPoint now = e.GetPosition();
     const int dx = now.x - lastMouse_.x, dy = now.y - lastMouse_.y;
     if (e.Dragging() && e.LeftIsDown()) {
-        if (e.ControlDown()) {
-            yaw_ += dx * .008;
-            pitch_ += dy * .008;
-        } else {
+        if (e.ShiftDown()) {
             auto c = document_.SelectedCenter();
-            stl_slicer::Mat4 r = e.ShiftDown()
-                                     ? stl_slicer::Mat4::rotation(dx * .008, {0, 0, 1})
-                                     : stl_slicer::Mat4::rotation(std::hypot(dx, dy) * .008,
-                                                                  {-double(dy), double(dx), 0});
+            stl_slicer::Mat4 r =
+                stl_slicer::Mat4::rotation(std::hypot(dx, dy) * .008, {-double(dy), double(dx), 0});
             TransformSelected(stl_slicer::Mat4::translation(c.x, c.y, c.z) * r *
                               stl_slicer::Mat4::translation(-c.x, -c.y, -c.z));
+        } else {
+            yaw_ += dx * .008;
+            pitch_ += dy * .008;
+            Refresh();
         }
     } else if (e.Dragging() && e.RightIsDown()) {
         double scale = distance_ / std::max(200, GetClientSize().y);

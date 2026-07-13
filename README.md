@@ -82,9 +82,8 @@ The library API is divided into reusable data and processing components:
 
 ## CLIP Slicer controls
 
-- Left drag rotates selected models around their combined center.
-- Shift+left drag rotates selected models around the screen-normal axis.
-- Ctrl+left drag rotates the camera.
+- Left drag rotates the camera around the models.
+- Shift+left drag rotates selected models around their combined center.
 - Right drag translates selected models.
 - Mouse wheel zooms the view; Ctrl+wheel scales selected models.
 - Interactive slicing adds a translucent plane; Shift+wheel moves it and updates the projected
