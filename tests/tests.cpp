@@ -277,6 +277,15 @@ void testUnsupportedAreas() {
     const auto orphan = UnsupportedAreaAnalyzer{{30.0}}.analyze(nearbyOrphan);
     require(std::abs(orphan.totalArea - 0.01) < 1e-6,
             "nearby orphan was supported without material beneath its contour");
+
+    SliceData supportedByOverhang;
+    supportedByOverhang.layers = {
+        {0.05, {square(0, 0, 1, 1)}}, {0.15, {square(0, 0, 2, 1)}}, {0.25, {square(0, 0, 2, 1)}}};
+    const auto propagated = UnsupportedAreaAnalyzer{{45.0}}.analyze(supportedByOverhang);
+    require(!propagated.unsupported.layers[1].paths.empty(),
+            "middle-layer overhang was not detected");
+    require(propagated.unsupported.layers[2].paths.empty(),
+            "unsupported layer area did not support the layer above it");
 }
 
 } // namespace

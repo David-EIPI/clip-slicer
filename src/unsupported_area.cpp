@@ -71,7 +71,7 @@ std::vector<SlicePath> slicePaths(const Paths64 &polygons) {
 }
 
 void appendSupportedComponents(const PolyPath64 &node,
-                               const Paths64 &previousSupported,
+                               const Paths64 &previousLayer,
                                const Paths64 &reachable,
                                Paths64 &supported) {
     if (node.Level() > 0 && !node.IsHole()) {
@@ -80,7 +80,7 @@ void appendSupportedComponents(const PolyPath64 &node,
             if (child->IsHole())
                 component.push_back(child->Polygon());
 
-        if (!Clipper2Lib::Intersect(component, previousSupported, FillRule::NonZero).empty()) {
+        if (!Clipper2Lib::Intersect(component, previousLayer, FillRule::NonZero).empty()) {
             Paths64 portion = Clipper2Lib::Intersect(component, reachable, FillRule::NonZero);
             supported.insert(supported.end(),
                              std::make_move_iterator(portion.begin()),
@@ -88,17 +88,17 @@ void appendSupportedComponents(const PolyPath64 &node,
         }
     }
     for (const auto &child : node)
-        appendSupportedComponents(*child, previousSupported, reachable, supported);
+        appendSupportedComponents(*child, previousLayer, reachable, supported);
 }
 
-Paths64 supportedLayer(const Paths64 &complete, const Paths64 &previousSupported, double radius) {
+Paths64 supportedLayer(const Paths64 &complete, const Paths64 &previousLayer, double radius) {
     const Paths64 reachable = Clipper2Lib::InflatePaths(
-        previousSupported, radius, JoinType::Round, EndType::Polygon, 2.0, propagationTolerance);
+        previousLayer, radius, JoinType::Round, EndType::Polygon, 2.0, propagationTolerance);
     PolyTree64 components;
     Clipper2Lib::BooleanOp(
         Clipper2Lib::ClipType::Union, FillRule::NonZero, complete, {}, components);
     Paths64 supported;
-    appendSupportedComponents(components, previousSupported, reachable, supported);
+    appendSupportedComponents(components, previousLayer, reachable, supported);
     supported = Clipper2Lib::SimplifyPaths(supported, propagationTolerance);
     return Clipper2Lib::Union(supported, FillRule::NonZero);
 }
@@ -122,7 +122,7 @@ UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices) 
 
     const double pi = std::acos(-1.0);
     const double tangent = std::tan(options_.criticalAngleDegrees * pi / 180.0);
-    Paths64 previousSupported;
+    Paths64 previousLayer;
 
     for (std::size_t layerIndex = 0; layerIndex < slices.layers.size(); ++layerIndex) {
         const SliceLayer &layer = slices.layers[layerIndex];
@@ -137,7 +137,7 @@ UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices) 
                 throw std::invalid_argument("Slice layers must be ordered by increasing height");
             const double dz = std::max(0.0, layer.z - slices.layers[layerIndex - 1].z);
             const double radius = dz * (1.0 + 1.0 / tangent) * coordinateScale;
-            supported = supportedLayer(complete, previousSupported, radius);
+            supported = supportedLayer(complete, previousLayer, radius);
             unsupported = Clipper2Lib::Difference(complete, supported, FillRule::NonZero);
         }
 
@@ -147,7 +147,7 @@ UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices) 
         result.unsupported.layers.push_back(std::move(unsupportedLayer));
         result.totalArea +=
             std::abs(Clipper2Lib::Area(unsupported)) / (coordinateScale * coordinateScale);
-        previousSupported = std::move(supported);
+        previousLayer = complete;
     }
     return result;
 }
