@@ -33,11 +33,13 @@ enum {
     IdSettings
 };
 
-wxBitmap LoadSliceIcon(const wxSize &size) {
-    wxBitmap icon = wxBitmap::NewFromPNGData(clip_slicer::assets::sliceBreadIconPng,
-                                             clip_slicer::assets::sliceBreadIconPngSize);
+wxBitmap LoadEmbeddedIcon(const unsigned char *data,
+                          std::size_t dataSize,
+                          const wxArtID &fallback,
+                          const wxSize &size) {
+    wxBitmap icon = wxBitmap::NewFromPNGData(data, dataSize);
     if (!icon.IsOk() || icon.GetSize() != size)
-        return wxArtProvider::GetBitmap(wxART_EXECUTABLE_FILE, wxART_TOOLBAR, size);
+        return wxArtProvider::GetBitmap(fallback, wxART_TOOLBAR, size);
     return icon;
 }
 } // namespace
@@ -80,10 +82,18 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     toolbar_->SetToolBitmapSize(toolSize);
     toolbar_->AddTool(
         IdExport, "Export", wxArtProvider::GetBitmap(wxART_FILE_SAVE_AS, wxART_TOOLBAR, toolSize));
-    toolbar_->AddTool(IdSlice, "Slice", LoadSliceIcon(toolSize));
+    toolbar_->AddTool(IdSlice,
+                      "Slice",
+                      LoadEmbeddedIcon(clip_slicer::assets::sliceBreadIconPng,
+                                       clip_slicer::assets::sliceBreadIconPngSize,
+                                       wxART_EXECUTABLE_FILE,
+                                       toolSize));
     toolbar_->AddTool(IdInteractive,
                       "Plane",
-                      wxArtProvider::GetBitmap(wxART_LIST_VIEW, wxART_TOOLBAR, toolSize),
+                      LoadEmbeddedIcon(clip_slicer::assets::planeSliceIconPng,
+                                       clip_slicer::assets::planeSliceIconPngSize,
+                                       wxART_LIST_VIEW,
+                                       toolSize),
                       "Interactive slicing",
                       wxITEM_CHECK);
     toolbar_->AddTool(
