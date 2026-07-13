@@ -206,12 +206,101 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
         auto vp = multiply(projection, view);
         glUseProgram(program_);
         glUniformMatrix4fv(matrixUniform_, 1, GL_FALSE, vp.data());
+        DrawWorldAxes();
         DrawModels(vp.data());
         DrawOverlays(vp.data());
+        DrawOrientationVane();
         glUseProgram(0);
         SwapBuffers();
     } catch (const std::exception &e) {
         wxLogError("OpenGL: %s", e.what());
+    }
+}
+void ModelCanvas::DrawWorldAxes() {
+    const wxSize canvasSize = GetClientSize();
+    const double aspect = double(std::max(1, canvasSize.x)) / std::max(1, canvasSize.y);
+    const double radius =
+        distance_ * (1.0 + 2.0 * std::tan(fieldOfView_ * 0.5) * std::hypot(1.0, aspect)) + 1.0;
+    const double tickHalfSize = std::max(
+        0.12, 6.0 * distance_ * std::tan(fieldOfView_ * 0.5) / std::max(200, canvasSize.y));
+    const std::array<double, 3> center = {viewCenter_.x, viewCenter_.y, viewCenter_.z};
+    const std::array<std::array<float, 4>, 3> colors = {
+        {{.16f, .34f, .62f, .72f}, {.68f, .20f, .20f, .72f}, {.12f, .62f, .22f, .72f}}};
+    const auto pointOnAxis = [](std::size_t axis, double position) {
+        stl_slicer::Vec3 point;
+        if (axis == 0)
+            point.x = position;
+        else if (axis == 1)
+            point.y = position;
+        else
+            point.z = position;
+        return point;
+    };
+    const auto offsetCoordinate =
+        [](stl_slicer::Vec3 &point, std::size_t coordinate, double offset) {
+            if (coordinate == 0)
+                point.x += offset;
+            else if (coordinate == 1)
+                point.y += offset;
+            else
+                point.z += offset;
+        };
+
+    auto identityMatrix = identity();
+    glUniformMatrix4fv(modelUniform_, 1, GL_FALSE, identityMatrix.data());
+    glUniform1i(litUniform_, 0);
+    glLineWidth(1.0f);
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        std::vector<stl_slicer::RenderVertex> vertices;
+        const double tickRadius = std::min(radius, 10000.0);
+        const double tickMinimum = center[axis] - tickRadius;
+        const double tickMaximum = center[axis] + tickRadius;
+        const double lineMinimum = std::min(-radius, center[axis] - radius);
+        const double lineMaximum = std::max(radius, center[axis] + radius);
+        const std::size_t tickCount = static_cast<std::size_t>(
+            std::max(0.0, std::floor(tickMaximum) - std::ceil(tickMinimum) + 1.0));
+        vertices.reserve(2 + tickCount * 4);
+
+        const stl_slicer::Vec3 start = pointOnAxis(axis, lineMinimum);
+        const stl_slicer::Vec3 end = pointOnAxis(axis, lineMaximum);
+        vertices.push_back({float(start.x), float(start.y), float(start.z), 0.0f, 0.0f, 1.0f});
+        vertices.push_back({float(end.x), float(end.y), float(end.z), 0.0f, 0.0f, 1.0f});
+
+        const std::size_t firstPerpendicular = (axis + 1) % 3;
+        const std::size_t secondPerpendicular = (axis + 2) % 3;
+        for (double position = std::ceil(tickMinimum); position <= std::floor(tickMaximum);
+             position += 1.0) {
+            const stl_slicer::Vec3 point = pointOnAxis(axis, position);
+            stl_slicer::Vec3 a = point;
+            stl_slicer::Vec3 b = point;
+            offsetCoordinate(a, firstPerpendicular, -tickHalfSize);
+            offsetCoordinate(b, firstPerpendicular, tickHalfSize);
+            vertices.push_back({float(a.x), float(a.y), float(a.z), 0.0f, 0.0f, 1.0f});
+            vertices.push_back({float(b.x), float(b.y), float(b.z), 0.0f, 0.0f, 1.0f});
+            a = point;
+            b = point;
+            offsetCoordinate(a, secondPerpendicular, -tickHalfSize);
+            offsetCoordinate(b, secondPerpendicular, tickHalfSize);
+            vertices.push_back({float(a.x), float(a.y), float(a.z), 0.0f, 0.0f, 1.0f});
+            vertices.push_back({float(b.x), float(b.y), float(b.z), 0.0f, 0.0f, 1.0f});
+        }
+
+        glBindBuffer(GL_ARRAY_BUFFER, overlayBuffer_);
+        glBufferData(GL_ARRAY_BUFFER,
+                     vertices.size() * sizeof(vertices[0]),
+                     vertices.data(),
+                     GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(stl_slicer::RenderVertex), nullptr);
+        glVertexAttribPointer(1,
+                              3,
+                              GL_FLOAT,
+                              GL_FALSE,
+                              sizeof(stl_slicer::RenderVertex),
+                              reinterpret_cast<void *>(3 * sizeof(float)));
+        glUniform4fv(colorUniform_, 1, colors[axis].data());
+        glDrawArrays(GL_LINES, 0, GLsizei(vertices.size()));
     }
 }
 void ModelCanvas::DrawModels(const float *) {
@@ -293,6 +382,88 @@ void ModelCanvas::DrawModels(const float *) {
         }
         ++ci;
     }
+}
+void ModelCanvas::DrawOrientationVane() {
+    const wxSize size = GetClientSize();
+    if (size.x <= 0 || size.y <= 0)
+        return;
+
+    const stl_slicer::Mat4 worldToCamera =
+        stl_slicer::Mat4::rotation(pitch_, {1, 0, 0}) * stl_slicer::Mat4::rotation(yaw_, {0, 0, 1});
+    const std::array<stl_slicer::Vec3, 3> directions = {worldToCamera.transformVector({1, 0, 0}),
+                                                        worldToCamera.transformVector({0, 1, 0}),
+                                                        worldToCamera.transformVector({0, 0, 1})};
+    const std::array<std::array<float, 4>, 3> colors = {
+        {{.08f, .35f, 1.0f, 1.0f}, {1.0f, .12f, .10f, 1.0f}, {.12f, 1.0f, .20f, 1.0f}}};
+    const double centerX = std::max(42.0, size.x * 0.065);
+    const double centerY = std::max(42.0, size.y * 0.065);
+    const double arrowLength = std::min(size.x, size.y) * 0.055;
+    const auto vertex = [&](double x, double y) {
+        return stl_slicer::RenderVertex{
+            float(x * 2.0 / size.x - 1.0), float(y * 2.0 / size.y - 1.0), 0, 0, 0, 1};
+    };
+    const auto upload = [&](const std::vector<stl_slicer::RenderVertex> &vertices,
+                            const std::array<float, 4> &color) {
+        glBindBuffer(GL_ARRAY_BUFFER, overlayBuffer_);
+        glBufferData(GL_ARRAY_BUFFER,
+                     vertices.size() * sizeof(vertices[0]),
+                     vertices.data(),
+                     GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(stl_slicer::RenderVertex), nullptr);
+        glVertexAttribPointer(1,
+                              3,
+                              GL_FLOAT,
+                              GL_FALSE,
+                              sizeof(stl_slicer::RenderVertex),
+                              reinterpret_cast<void *>(3 * sizeof(float)));
+        glUniform4fv(colorUniform_, 1, color.data());
+        glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
+    };
+
+    auto identityMatrix = identity();
+    glUniformMatrix4fv(matrixUniform_, 1, GL_FALSE, identityMatrix.data());
+    glUniformMatrix4fv(modelUniform_, 1, GL_FALSE, identityMatrix.data());
+    glUniform1i(litUniform_, 0);
+    glDisable(GL_DEPTH_TEST);
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        const double endX = centerX + directions[axis].x * arrowLength;
+        const double endY = centerY + directions[axis].y * arrowLength;
+        const double dx = endX - centerX;
+        const double dy = endY - centerY;
+        const double length = std::hypot(dx, dy);
+        std::vector<stl_slicer::RenderVertex> vertices;
+        if (length < 8.0) {
+            constexpr double radius = 5.0;
+            vertices = {vertex(centerX, centerY + radius),
+                        vertex(centerX - radius, centerY),
+                        vertex(centerX, centerY - radius),
+                        vertex(centerX, centerY + radius),
+                        vertex(centerX, centerY - radius),
+                        vertex(centerX + radius, centerY)};
+        } else {
+            const double ux = dx / length;
+            const double uy = dy / length;
+            const double px = -uy;
+            const double py = ux;
+            const double shaftEndX = endX - ux * 9.0;
+            const double shaftEndY = endY - uy * 9.0;
+            constexpr double halfWidth = 2.2;
+            constexpr double headHalfWidth = 6.0;
+            vertices = {vertex(centerX + px * halfWidth, centerY + py * halfWidth),
+                        vertex(centerX - px * halfWidth, centerY - py * halfWidth),
+                        vertex(shaftEndX - px * halfWidth, shaftEndY - py * halfWidth),
+                        vertex(centerX + px * halfWidth, centerY + py * halfWidth),
+                        vertex(shaftEndX - px * halfWidth, shaftEndY - py * halfWidth),
+                        vertex(shaftEndX + px * halfWidth, shaftEndY + py * halfWidth),
+                        vertex(endX, endY),
+                        vertex(shaftEndX + px * headHalfWidth, shaftEndY + py * headHalfWidth),
+                        vertex(shaftEndX - px * headHalfWidth, shaftEndY - py * headHalfWidth)};
+        }
+        upload(vertices, colors[axis]);
+    }
+    glEnable(GL_DEPTH_TEST);
 }
 void ModelCanvas::DrawOverlays(const float *) {
     auto b = document_.VisibleBounds();

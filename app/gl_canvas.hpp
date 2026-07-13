@@ -35,8 +35,10 @@ class ModelCanvas final : public wxGLCanvas {
     void OnSize(wxSizeEvent &event);
     void OnMouse(wxMouseEvent &event);
     void InitializeGl();
+    void DrawWorldAxes();
     void DrawModels(const float *viewProjection);
     void DrawOverlays(const float *viewProjection);
+    void DrawOrientationVane();
     void UpdateInteractiveSlice();
     void TransformSelected(const stl_slicer::Mat4 &transform);
 
