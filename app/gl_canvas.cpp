@@ -104,6 +104,8 @@ ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
     for (const auto event : {wxEVT_MOTION,
                              wxEVT_LEFT_DOWN,
                              wxEVT_LEFT_UP,
+                             wxEVT_MIDDLE_DOWN,
+                             wxEVT_MIDDLE_UP,
                              wxEVT_RIGHT_DOWN,
                              wxEVT_RIGHT_UP,
                              wxEVT_MOUSEWHEEL})
@@ -191,7 +193,7 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
         glViewport(0, 0, size.x, size.y);
         glClearColor(0.72f, 0.86f, 0.72f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        auto projection = perspective(0.75f,
+        auto projection = perspective(float(fieldOfView_),
                                       std::max(1, size.x) / float(std::max(1, size.y)),
                                       0.1f,
                                       float(distance_ * 20 + 1000));
@@ -428,43 +430,80 @@ void ModelCanvas::TransformSelected(const stl_slicer::Mat4 &t) {
 void ModelCanvas::OnMouse(wxMouseEvent &e) {
     const wxPoint now = e.GetPosition();
     const int dx = now.x - lastMouse_.x, dy = now.y - lastMouse_.y;
-    if (e.Dragging() && e.LeftIsDown()) {
-        if (e.ShiftDown()) {
+    const bool transformModels = e.ShiftDown();
+    const stl_slicer::Mat4 screenToWorld = stl_slicer::Mat4::rotation(-yaw_, {0, 0, 1}) *
+                                           stl_slicer::Mat4::rotation(-pitch_, {1, 0, 0});
+    const double worldUnitsPerPixel =
+        2.0 * distance_ * std::tan(fieldOfView_ * 0.5) / std::max(200, GetClientSize().y);
+    const auto scaleTarget = [&](double steps) {
+        if (transformModels) {
             auto c = document_.SelectedCenter();
-            stl_slicer::Mat4 r =
-                stl_slicer::Mat4::rotation(std::hypot(dx, dy) * .008, {-double(dy), double(dx), 0});
-            TransformSelected(stl_slicer::Mat4::translation(c.x, c.y, c.z) * r *
+            const double scale = std::pow(1.05, steps);
+            TransformSelected(stl_slicer::Mat4::translation(c.x, c.y, c.z) *
+                              stl_slicer::Mat4::scale(scale) *
                               stl_slicer::Mat4::translation(-c.x, -c.y, -c.z));
         } else {
-            yaw_ += dx * .008;
-            pitch_ += dy * .008;
+            fieldOfView_ = std::clamp(fieldOfView_ / std::pow(1.12, steps), 0.15, 2.2);
             Refresh();
         }
-    } else if (e.Dragging() && e.RightIsDown()) {
-        const double scale = distance_ / std::max(200, GetClientSize().y);
-        const stl_slicer::Mat4 screenToWorld = stl_slicer::Mat4::rotation(-yaw_, {0, 0, 1}) *
-                                               stl_slicer::Mat4::rotation(-pitch_, {1, 0, 0});
-        const stl_slicer::Vec3 screenDelta = e.ShiftDown()
-                                                 ? stl_slicer::Vec3{0, 0, -dy * scale}
-                                                 : stl_slicer::Vec3{dx * scale, -dy * scale, 0};
+    };
+    const auto translateParallel = [&]() {
+        const stl_slicer::Vec3 screenDelta{dx * worldUnitsPerPixel, -dy * worldUnitsPerPixel, 0};
         const stl_slicer::Vec3 worldDelta = screenToWorld.transformVector(screenDelta);
-        TransformSelected(stl_slicer::Mat4::translation(worldDelta.x, worldDelta.y, worldDelta.z));
+        if (transformModels) {
+            TransformSelected(
+                stl_slicer::Mat4::translation(worldDelta.x, worldDelta.y, worldDelta.z));
+        } else {
+            viewCenter_.x -= worldDelta.x;
+            viewCenter_.y -= worldDelta.y;
+            viewCenter_.z -= worldDelta.z;
+            Refresh();
+        }
+    };
+    const auto translateNormal = [&]() {
+        if (transformModels) {
+            const stl_slicer::Vec3 worldDelta =
+                screenToWorld.transformVector({0, 0, -dy * worldUnitsPerPixel});
+            TransformSelected(
+                stl_slicer::Mat4::translation(worldDelta.x, worldDelta.y, worldDelta.z));
+        } else {
+            distance_ = std::max(0.1, distance_ + dy * worldUnitsPerPixel);
+            Refresh();
+        }
+    };
+
+    if (e.Dragging()) {
+        if (e.LeftIsDown()) {
+            if (e.ControlDown()) {
+                scaleTarget(-dy / 24.0);
+            } else if (transformModels) {
+                auto c = document_.SelectedCenter();
+                const stl_slicer::Vec3 axis =
+                    screenToWorld.transformVector({-double(dy), double(dx), 0});
+                const stl_slicer::Mat4 rotation =
+                    stl_slicer::Mat4::rotation(std::hypot(dx, dy) * .008, axis);
+                TransformSelected(stl_slicer::Mat4::translation(c.x, c.y, c.z) * rotation *
+                                  stl_slicer::Mat4::translation(-c.x, -c.y, -c.z));
+            } else {
+                yaw_ += dx * .008;
+                pitch_ += dy * .008;
+                Refresh();
+            }
+        } else if (e.MiddleIsDown() || (e.RightIsDown() && e.ControlDown())) {
+            translateParallel();
+        } else if (e.RightIsDown()) {
+            translateNormal();
+        }
     }
     if (e.GetWheelRotation()) {
-        double steps = double(e.GetWheelRotation()) / e.GetWheelDelta();
-        if (e.ShiftDown() && interactiveSlice_) {
+        const double steps = double(e.GetWheelRotation()) / e.GetWheelDelta();
+        if (e.AltDown() && interactiveSlice_) {
             slicePosition_ += steps * .1;
             auto b = document_.VisibleBounds();
             slicePosition_ = std::clamp(slicePosition_, b.min.z, b.max.z);
             UpdateInteractiveSlice();
-        } else if (e.ControlDown()) {
-            auto c = document_.SelectedCenter();
-            double s = std::pow(1.05, steps);
-            TransformSelected(stl_slicer::Mat4::translation(c.x, c.y, c.z) *
-                              stl_slicer::Mat4::scale(s) *
-                              stl_slicer::Mat4::translation(-c.x, -c.y, -c.z));
         } else
-            distance_ /= std::pow(1.12, steps);
+            scaleTarget(steps);
         Refresh();
     }
     lastMouse_ = now;
