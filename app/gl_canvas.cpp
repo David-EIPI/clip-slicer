@@ -220,8 +220,9 @@ void ModelCanvas::DrawWorldAxes() {
     const wxSize canvasSize = GetClientSize();
     const double aspect = double(std::max(1, canvasSize.x)) / std::max(1, canvasSize.y);
     const double inverseViewportScale = distance_ * std::tan(fieldOfView_ * 0.5);
+    constexpr double tickDensity = 2.0;
     const double tickSpacing =
-        std::pow(10.0, std::round(std::log10(std::max(inverseViewportScale, 1e-12))));
+        std::pow(10.0, std::round(std::log10(std::max(inverseViewportScale / tickDensity, 1e-12))));
     const double radius =
         distance_ * (1.0 + 2.0 * std::tan(fieldOfView_ * 0.5) * std::hypot(1.0, aspect)) + 1.0;
     const double tickHalfSize = std::max(
