@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 project(stl_slicer VERSION 0.1.0 LANGUAGES CXX)
 
+find_package(Clipper2 CONFIG REQUIRED)
+
 option(STL_SLICER_BUILD_TESTS "Build slicer tests" ON)
 option(STL_SLICER_BUILD_GUI "Build the CLIP Slicer wxWidgets application" ON)
 set(STL_SLICER_ARCH "" CACHE STRING
@@ -11,9 +13,11 @@ add_library(stl_slicer_lib
     src/cli_reader.cpp
     src/slice.cpp
     src/slicer.cpp
+    src/unsupported_area.cpp
     src/cli_writer.cpp
     src/scene_model.cpp)
 target_include_directories(stl_slicer_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(stl_slicer_lib PUBLIC Clipper2::Clipper2)
 target_compile_features(stl_slicer_lib PUBLIC cxx_std_17)
 if(MSVC)
     target_compile_options(stl_slicer_lib PRIVATE /W4)

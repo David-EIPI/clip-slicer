@@ -1,5 +1,6 @@
 #pragma once
 
+#include "slice_visualization.hpp"
 #include "stl_slicer/scene_model.hpp"
 #include "stl_slicer/slice.hpp"
 #include <epoxy/gl.h>
@@ -25,6 +26,8 @@ class ModelCanvas final : public wxGLCanvas {
     double SliceArea() const {
         return sliceArea_;
     }
+    void SetUnsupportedVisualization(VisualizationMesh visualization);
+    void ClearUnsupportedVisualization();
 
   private:
     struct Buffer {
@@ -40,6 +43,7 @@ class ModelCanvas final : public wxGLCanvas {
     void InitializeGl();
     void DrawWorldAxes();
     void DrawModels(const float *viewProjection);
+    void DrawUnsupportedVisualization();
     void DrawOverlays(const float *viewProjection);
     void DrawOrientationVane();
     void UpdateInteractiveSlice();
@@ -48,10 +52,14 @@ class ModelCanvas final : public wxGLCanvas {
     DocumentFrame &document_;
     wxGLContext *context_ = nullptr;
     GLuint program_ = 0, overlayBuffer_ = 0;
+    GLuint unsupportedVertexBuffer_ = 0, unsupportedIndexBuffer_ = 0;
+    GLsizei unsupportedIndexCount_ = 0;
     GLint matrixUniform_ = -1, modelUniform_ = -1, colorUniform_ = -1, litUniform_ = -1;
     std::unordered_map<const stl_slicer::SceneModel *, Buffer> buffers_;
     std::unordered_map<const stl_slicer::SceneModel *, stl_slicer::TriangleMesh> sliceMeshes_;
     std::vector<stl_slicer::SliceLayer> interactiveLayers_;
+    VisualizationMesh unsupportedVisualization_;
+    bool unsupportedVisualizationDirty_ = false;
     bool initialized_ = false, interactiveSlice_ = false;
     double slicePosition_ = 0.0, sliceArea_ = 0.0;
     double yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;

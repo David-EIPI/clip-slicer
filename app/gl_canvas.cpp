@@ -123,6 +123,10 @@ ModelCanvas::~ModelCanvas() {
         }
         if (overlayBuffer_)
             glDeleteBuffers(1, &overlayBuffer_);
+        if (unsupportedVertexBuffer_)
+            glDeleteBuffers(1, &unsupportedVertexBuffer_);
+        if (unsupportedIndexBuffer_)
+            glDeleteBuffers(1, &unsupportedIndexBuffer_);
         if (program_)
             glDeleteProgram(program_);
         delete context_;
@@ -158,6 +162,7 @@ void ModelCanvas::InitializeGl() {
     initialized_ = true;
 }
 void ModelCanvas::ModelsChanged() {
+    ClearUnsupportedVisualization();
     if (initialized_) {
         SetCurrent(*context_);
         for (auto &e : buffers_) {
@@ -208,6 +213,7 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
         glUniformMatrix4fv(matrixUniform_, 1, GL_FALSE, vp.data());
         DrawWorldAxes();
         DrawModels(vp.data());
+        DrawUnsupportedVisualization();
         DrawOverlays(vp.data());
         DrawOrientationVane();
         glUseProgram(0);
@@ -215,6 +221,60 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
     } catch (const std::exception &e) {
         wxLogError("OpenGL: %s", e.what());
     }
+}
+void ModelCanvas::SetUnsupportedVisualization(VisualizationMesh visualization) {
+    unsupportedVisualization_ = std::move(visualization);
+    unsupportedVisualizationDirty_ = true;
+    Refresh();
+}
+void ModelCanvas::ClearUnsupportedVisualization() {
+    unsupportedVisualization_.vertices.clear();
+    unsupportedVisualization_.indices.clear();
+    unsupportedVisualizationDirty_ = true;
+    Refresh();
+}
+void ModelCanvas::DrawUnsupportedVisualization() {
+    if (unsupportedVisualizationDirty_) {
+        if (!unsupportedVertexBuffer_)
+            glGenBuffers(1, &unsupportedVertexBuffer_);
+        if (!unsupportedIndexBuffer_)
+            glGenBuffers(1, &unsupportedIndexBuffer_);
+        glBindBuffer(GL_ARRAY_BUFFER, unsupportedVertexBuffer_);
+        glBufferData(GL_ARRAY_BUFFER,
+                     unsupportedVisualization_.vertices.size() * sizeof(stl_slicer::RenderVertex),
+                     unsupportedVisualization_.vertices.data(),
+                     GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, unsupportedIndexBuffer_);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     unsupportedVisualization_.indices.size() * sizeof(std::uint32_t),
+                     unsupportedVisualization_.indices.data(),
+                     GL_STATIC_DRAW);
+        unsupportedIndexCount_ = GLsizei(unsupportedVisualization_.indices.size());
+        unsupportedVisualizationDirty_ = false;
+    }
+    if (!unsupportedIndexCount_)
+        return;
+
+    glBindBuffer(GL_ARRAY_BUFFER, unsupportedVertexBuffer_);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, unsupportedIndexBuffer_);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(stl_slicer::RenderVertex), nullptr);
+    glVertexAttribPointer(1,
+                          3,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          sizeof(stl_slicer::RenderVertex),
+                          reinterpret_cast<void *>(3 * sizeof(float)));
+    const auto model = identity();
+    glUniformMatrix4fv(modelUniform_, 1, GL_FALSE, model.data());
+    const float color[] = {1.0f, 0.12f, 0.04f, 0.88f};
+    glUniform4fv(colorUniform_, 1, color);
+    glUniform1i(litUniform_, 0);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(-1.0f, -1.0f);
+    glDrawElements(GL_TRIANGLES, unsupportedIndexCount_, GL_UNSIGNED_INT, nullptr);
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 void ModelCanvas::DrawWorldAxes() {
     const wxSize canvasSize = GetClientSize();
@@ -643,6 +703,7 @@ void ModelCanvas::TransformSelected(const stl_slicer::Mat4 &t) {
             m->transform = t * m->transform;
             sliceMeshes_.erase(m.get());
         }
+    document_.InvalidateUnsupportedAnalysis();
     UpdateInteractiveSlice();
     Refresh();
 }

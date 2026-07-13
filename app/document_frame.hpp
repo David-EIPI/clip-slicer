@@ -1,7 +1,9 @@
 #pragma once
 
 #include "stl_slicer/scene_model.hpp"
+#include <cstdint>
 #include <memory>
+#include <thread>
 #include <vector>
 #include <wx/checklst.h>
 #include <wx/mdi.h>
@@ -11,10 +13,12 @@ class wxActivateEvent;
 class wxCloseEvent;
 class wxMenuItem;
 class wxToolBar;
+class wxThreadEvent;
 
 class DocumentFrame final : public wxMDIChildFrame {
   public:
     DocumentFrame(wxMDIParentFrame *parent, const wxString &title);
+    ~DocumentFrame() override;
     const std::vector<std::shared_ptr<stl_slicer::SceneModel>> &Models() const {
         return models_;
     }
@@ -27,6 +31,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void RefreshModelList();
     void UpdateStatus();
     void OpenPath(const wxString &path);
+    void InvalidateUnsupportedAnalysis();
 
   private:
     void BuildMenus();
@@ -36,6 +41,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnExport(wxCommandEvent &);
     void OnSlice(wxCommandEvent &);
     void OnInteractiveSlice(wxCommandEvent &);
+    void OnAnalyzeUnsupported(wxCommandEvent &);
+    void OnUnsupportedAnalysisFinished(wxThreadEvent &event);
     void OnShow(wxCommandEvent &);
     void OnHide(wxCommandEvent &);
     void OnListSelection(wxCommandEvent &);
@@ -48,4 +55,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     ModelCanvas *canvas_ = nullptr;
     wxToolBar *toolbar_ = nullptr;
     wxMenuItem *exportItem_ = nullptr;
+    wxMenuItem *unsupportedItem_ = nullptr;
+    std::thread unsupportedWorker_;
+    std::uint64_t modelRevision_ = 0;
+    bool unsupportedAnalysisRunning_ = false;
 };

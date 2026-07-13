@@ -48,6 +48,21 @@ A filled projection of those contours is drawn on the build platform, and the
 second status-bar field reports the plane height as \texttt{Z: 0.000}. When
 interactive slicing is disabled, the field displays \texttt{Z: --}.
 
+\subsection{Unsupported Areas}
+
+The \emph{Supports} toolbar button or \emph{Slice > Highlight unsupported
+areas} command analyzes the selected models in their transformed positions.
+The analysis uses 0.1 model-unit layers and a 30-degree critical support angle.
+It runs in the background so that document viewing remains responsive.
+
+When analysis finishes, unsupported portions of layer surfaces are overlaid in
+bright red-orange. The first layer is treated as fully supported. On each
+subsequent layer, support propagates only from supported material in the
+previous layer, within the distance allowed by the critical angle. This marks
+both disconnected new contours and overhanging edges. Transforming a model
+clears the overlay because the previous result no longer represents its
+current position.
+
 \section{Mouse Actions}
 
 \begin{table}[htbp]

@@ -2,6 +2,7 @@
 #include "stl_slicer/cli_writer.hpp"
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
+#include "stl_slicer/unsupported_area.hpp"
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -249,6 +250,35 @@ void testMergeSlices() {
             "CLI export did not preserve layers from every merged model");
 }
 
+SlicePath square(double x0, double y0, double x1, double y1) {
+    return {PathType::External, {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}, {x0, y0}}};
+}
+
+void testUnsupportedAreas() {
+    SliceData slices;
+    slices.thickness = 0.1;
+    slices.layers = {{0.05, {square(0, 0, 10, 10)}},
+                     {0.15, {square(0, 0, 12, 10), square(20, 20, 21, 21)}}};
+
+    const UnsupportedAreaResult result = UnsupportedAreaAnalyzer{{45.0}}.analyze(slices);
+    require(result.unsupported.layers.size() == 2, "unsupported layer count");
+    require(result.unsupported.layers.front().paths.empty(), "first layer must be supported");
+    require(!result.unsupported.layers.back().paths.empty(), "overhang was not detected");
+    require(result.totalArea > 16.0 && result.totalArea < 21.1,
+            "unsupported overhang and orphan area are incorrect");
+
+    SliceData supportedStack;
+    supportedStack.layers = {{0.05, {square(0, 0, 10, 10)}}, {0.15, {square(0.1, 0.1, 9.9, 9.9)}}};
+    const auto supported = UnsupportedAreaAnalyzer{{30.0}}.analyze(supportedStack);
+    require(supported.totalArea < 1e-9, "supported inset was marked unsupported");
+
+    SliceData nearbyOrphan;
+    nearbyOrphan.layers = {{0.05, {square(0, 0, 10, 10)}}, {0.15, {square(10.1, 0, 10.2, 0.1)}}};
+    const auto orphan = UnsupportedAreaAnalyzer{{30.0}}.analyze(nearbyOrphan);
+    require(std::abs(orphan.totalArea - 0.01) < 1e-6,
+            "nearby orphan was supported without material beneath its contour");
+}
+
 } // namespace
 
 int main() {
@@ -262,6 +292,7 @@ int main() {
         testCliWriters();
         testSingleAndOffsetSlices();
         testMergeSlices();
+        testUnsupportedAreas();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception &error) {

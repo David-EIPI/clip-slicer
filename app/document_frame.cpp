@@ -2,10 +2,12 @@
 #include "embedded_assets.hpp"
 #include "gl_canvas.hpp"
 #include "main_frame.hpp"
+#include "slice_visualization.hpp"
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
+#include "stl_slicer/unsupported_area.hpp"
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
@@ -19,6 +21,7 @@
 #include <wx/splitter.h>
 #include <wx/stattext.h>
 #include <wx/textdlg.h>
+#include <wx/thread.h>
 #include <wx/toolbar.h>
 
 namespace {
@@ -28,9 +31,17 @@ enum {
     IdExport,
     IdSlice,
     IdInteractive,
+    IdAnalyzeUnsupported,
     IdShow,
     IdHide,
     IdSettings
+};
+
+struct UnsupportedAnalysisPayload {
+    VisualizationMesh visualization;
+    double totalArea = 0.0;
+    std::uint64_t modelRevision = 0;
+    std::string error;
 };
 
 wxBitmap LoadEmbeddedIcon(const unsigned char *data,
@@ -96,6 +107,13 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        toolSize),
                       "Interactive slicing",
                       wxITEM_CHECK);
+    toolbar_->AddTool(IdAnalyzeUnsupported,
+                      "Supports",
+                      LoadEmbeddedIcon(clip_slicer::assets::unsupportedAreaIconPng,
+                                       clip_slicer::assets::unsupportedAreaIconPngSize,
+                                       wxART_REPORT_VIEW,
+                                       toolSize),
+                      "Highlight unsupported areas");
     toolbar_->AddTool(
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->AddTool(
@@ -120,6 +138,8 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnExport, this, IdExport);
     Bind(wxEVT_MENU, &DocumentFrame::OnSlice, this, IdSlice);
     Bind(wxEVT_MENU, &DocumentFrame::OnInteractiveSlice, this, IdInteractive);
+    Bind(wxEVT_MENU, &DocumentFrame::OnAnalyzeUnsupported, this, IdAnalyzeUnsupported);
+    Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdAnalyzeUnsupported);
     Bind(wxEVT_MENU, &DocumentFrame::OnShow, this, IdShow);
     Bind(wxEVT_MENU, &DocumentFrame::OnHide, this, IdHide);
     Bind(
@@ -136,6 +156,10 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     UpdateStatus();
     UpdateCommandState();
 }
+DocumentFrame::~DocumentFrame() {
+    if (unsupportedWorker_.joinable())
+        unsupportedWorker_.join();
+}
 void DocumentFrame::BuildMenus() {
     auto *file = new wxMenu;
     file->Append(IdOpen, "&Open...\tCtrl+O");
@@ -150,6 +174,7 @@ void DocumentFrame::BuildMenus() {
     auto *slice = new wxMenu;
     slice->Append(IdSlice, "&Slice selected...");
     slice->AppendCheckItem(IdInteractive, "&Interactive slicing");
+    unsupportedItem_ = slice->Append(IdAnalyzeUnsupported, "Highlight &unsupported areas");
     slice->Append(IdSettings, "Settings...");
     auto *bar = new wxMenuBar;
     bar->Append(file, "&File");
@@ -162,10 +187,16 @@ void DocumentFrame::BuildMenus() {
         wxEVT_MENU, [this](wxCommandEvent &) { GetMDIParent()->Close(); }, wxID_EXIT);
 }
 void DocumentFrame::AddModel(std::shared_ptr<stl_slicer::SceneModel> model) {
+    InvalidateUnsupportedAnalysis();
     models_.push_back(std::move(model));
     RefreshModelList();
     canvas_->ModelsChanged();
     UpdateStatus();
+}
+void DocumentFrame::InvalidateUnsupportedAnalysis() {
+    ++modelRevision_;
+    if (canvas_)
+        canvas_->ClearUnsupportedVisualization();
 }
 void DocumentFrame::OpenPath(const wxString &path) {
     try {
@@ -210,6 +241,14 @@ void DocumentFrame::UpdateCommandState() {
         exportItem_->Enable(sliced);
     if (toolbar_)
         toolbar_->EnableTool(IdExport, sliced);
+    const bool canAnalyze = !unsupportedAnalysisRunning_ &&
+                            std::any_of(models_.begin(), models_.end(), [](const auto &model) {
+                                return model->selected;
+                            });
+    if (unsupportedItem_)
+        unsupportedItem_->Enable(canAnalyze);
+    if (toolbar_)
+        toolbar_->EnableTool(IdAnalyzeUnsupported, canAnalyze);
 }
 void DocumentFrame::OnListSelection(wxCommandEvent &) {
     for (std::size_t i = 0; i < models_.size(); ++i)
@@ -359,4 +398,75 @@ void DocumentFrame::OnExport(wxCommandEvent &) {
 }
 void DocumentFrame::OnInteractiveSlice(wxCommandEvent &) {
     canvas_->SetInteractiveSlice(!canvas_->InteractiveSlice());
+}
+void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
+    struct ModelSnapshot {
+        std::shared_ptr<const stl_slicer::SceneModel> model;
+        stl_slicer::Mat4 transform;
+        std::size_t triangleCount = 0;
+    };
+    std::vector<ModelSnapshot> snapshots;
+    for (const auto &model : models_)
+        if (model->selected)
+            snapshots.push_back({model, model->transform, model->renderVertices().size() / 3});
+    if (snapshots.empty()) {
+        wxMessageBox("Select at least one model to analyze.",
+                     "Unsupported areas",
+                     wxOK | wxICON_INFORMATION,
+                     this);
+        return;
+    }
+    if (unsupportedWorker_.joinable())
+        unsupportedWorker_.join();
+
+    canvas_->ClearUnsupportedVisualization();
+    unsupportedAnalysisRunning_ = true;
+    UpdateCommandState();
+    const std::uint64_t revision = modelRevision_;
+    unsupportedWorker_ = std::thread([this, snapshots = std::move(snapshots), revision]() mutable {
+        auto payload = std::make_shared<UnsupportedAnalysisPayload>();
+        payload->modelRevision = revision;
+        try {
+            stl_slicer::TriangleMesh combined;
+            std::size_t triangleCount = 0;
+            for (const auto &snapshot : snapshots)
+                triangleCount += snapshot.triangleCount;
+            combined.reserve(triangleCount);
+            for (const auto &snapshot : snapshots) {
+                const stl_slicer::TriangleMesh mesh = snapshot.model->triangleMesh();
+                for (auto triangle : mesh.triangles()) {
+                    for (auto &vertex : triangle.vertices)
+                        vertex = snapshot.transform.transformPoint(vertex);
+                    triangle.normal = snapshot.transform.transformVector(triangle.normal);
+                    combined.addTriangle(std::move(triangle));
+                }
+            }
+            const stl_slicer::SliceData slices =
+                stl_slicer::Slicer{{0.1, 1e-5, 2.0, 0.05}}.slice(combined);
+            stl_slicer::UnsupportedAreaResult unsupported =
+                stl_slicer::UnsupportedAreaAnalyzer{{30.0}}.analyze(slices);
+            payload->totalArea = unsupported.totalArea;
+            payload->visualization = BuildSliceSurfaces(unsupported.unsupported);
+        } catch (const std::exception &error) {
+            payload->error = error.what();
+        }
+        auto *event = new wxThreadEvent(wxEVT_THREAD, IdAnalyzeUnsupported);
+        event->SetPayload(payload);
+        wxQueueEvent(this, event);
+    });
+}
+void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
+    if (unsupportedWorker_.joinable())
+        unsupportedWorker_.join();
+    unsupportedAnalysisRunning_ = false;
+    UpdateCommandState();
+
+    const auto payload = event.GetPayload<std::shared_ptr<UnsupportedAnalysisPayload>>();
+    if (!payload->error.empty()) {
+        wxMessageBox(payload->error, "Unsupported-area analysis failed", wxOK | wxICON_ERROR, this);
+        return;
+    }
+    if (payload->modelRevision != modelRevision_)
+        return;
+    canvas_->SetUnsupportedVisualization(std::move(payload->visualization));
 }

@@ -180,7 +180,9 @@ float normalLength(const RenderVertex &vertex) {
 }
 } // namespace
 
-VisualizationMesh BuildSliceCaps(const stl_slicer::SliceData &slices) {
+namespace {
+
+VisualizationMesh buildSliceFaces(const stl_slicer::SliceData &slices, bool includeBottomFaces) {
     VisualizationMesh result;
     if (slices.layers.empty())
         return result;
@@ -189,7 +191,9 @@ VisualizationMesh BuildSliceCaps(const stl_slicer::SliceData &slices) {
         slices.layers.size() > 1 ? slices.layers[1].z - slices.layers[0].z : 1.0;
     for (std::size_t layerIndex = 0; layerIndex < slices.layers.size(); ++layerIndex) {
         const auto &layer = slices.layers[layerIndex];
-        const double bottom = layerIndex ? slices.layers[layerIndex - 1].z : layer.z - fallback;
+        const double bottom =
+            includeBottomFaces ? (layerIndex ? slices.layers[layerIndex - 1].z : layer.z - fallback)
+                               : layer.z;
         Tessellation tessellation(float(layer.z), float(bottom), result);
         GLUtesselator *tessellator = gluNewTess();
         if (!tessellator)
@@ -226,6 +230,16 @@ VisualizationMesh BuildSliceCaps(const stl_slicer::SliceData &slices) {
             throw std::runtime_error("Unable to tessellate sliced model: " + tessellation.error());
     }
     return result;
+}
+
+} // namespace
+
+VisualizationMesh BuildSliceCaps(const stl_slicer::SliceData &slices) {
+    return buildSliceFaces(slices, true);
+}
+
+VisualizationMesh BuildSliceSurfaces(const stl_slicer::SliceData &slices) {
+    return buildSliceFaces(slices, false);
 }
 
 void SmoothRenderNormals(std::vector<RenderVertex> &vertices) {
