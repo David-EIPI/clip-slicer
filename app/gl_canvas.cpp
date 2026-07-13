@@ -150,9 +150,15 @@ void ModelCanvas::ModelsChanged() {
             glDeleteBuffers(1, &e.second.id);
         buffers_.clear();
     }
+    sliceMeshes_.clear();
     auto b = document_.VisibleBounds();
     if (b.valid())
         distance_ = std::max({b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z}) * 2.3 + 1;
+    UpdateInteractiveSlice();
+    Refresh();
+}
+void ModelCanvas::SelectionChanged() {
+    UpdateInteractiveSlice();
     Refresh();
 }
 void ModelCanvas::OnPaint(wxPaintEvent &) {
@@ -294,8 +300,12 @@ void ModelCanvas::UpdateInteractiveSlice() {
     if (interactiveSlice_)
         for (const auto &m : document_.Models())
             if (m->selected) {
+                auto mesh = sliceMeshes_.find(m.get());
+                if (mesh == sliceMeshes_.end()) {
+                    mesh = sliceMeshes_.emplace(m.get(), stl_slicer::transformedMesh(*m)).first;
+                }
                 interactiveLayers_.push_back(
-                    stl_slicer::Slicer{}.sliceAt(stl_slicer::transformedMesh(*m), slicePosition_));
+                    stl_slicer::Slicer{}.sliceAt(mesh->second, slicePosition_));
                 for (const auto &p : interactiveLayers_.back().paths)
                     for (std::size_t i = 0; i + 1 < p.points.size(); ++i)
                         area += (p.points[i].x * p.points[i + 1].y -
@@ -306,8 +316,10 @@ void ModelCanvas::UpdateInteractiveSlice() {
 }
 void ModelCanvas::TransformSelected(const stl_slicer::Mat4 &t) {
     for (auto &m : document_.Models())
-        if (m->selected)
+        if (m->selected) {
             m->transform = t * m->transform;
+            sliceMeshes_.erase(m.get());
+        }
     UpdateInteractiveSlice();
     Refresh();
 }

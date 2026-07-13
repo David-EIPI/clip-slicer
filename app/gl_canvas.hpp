@@ -14,6 +14,7 @@ class ModelCanvas final : public wxGLCanvas {
     ModelCanvas(wxWindow *parent, DocumentFrame &document);
     ~ModelCanvas() override;
     void ModelsChanged();
+    void SelectionChanged();
     void SetInteractiveSlice(bool enabled);
     bool InteractiveSlice() const {
         return interactiveSlice_;
@@ -41,6 +42,7 @@ class ModelCanvas final : public wxGLCanvas {
     GLuint program_ = 0, overlayBuffer_ = 0;
     GLint matrixUniform_ = -1, modelUniform_ = -1, colorUniform_ = -1, litUniform_ = -1;
     std::unordered_map<const stl_slicer::SceneModel *, Buffer> buffers_;
+    std::unordered_map<const stl_slicer::SceneModel *, stl_slicer::TriangleMesh> sliceMeshes_;
     std::vector<stl_slicer::SliceLayer> interactiveLayers_;
     bool initialized_ = false, interactiveSlice_ = false;
     double slicePosition_ = 0.0, yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;

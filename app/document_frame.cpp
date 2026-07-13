@@ -177,7 +177,7 @@ void DocumentFrame::OnListSelection(wxCommandEvent &) {
     for (std::size_t i = 0; i < models_.size(); ++i)
         models_[i]->selected = modelList_->IsSelected(i);
     UpdateCommandState();
-    canvas_->Refresh();
+    canvas_->SelectionChanged();
 }
 void DocumentFrame::OnListCheck(wxCommandEvent &e) {
     models_[e.GetInt()]->visible = modelList_->IsChecked(e.GetInt());
