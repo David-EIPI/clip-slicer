@@ -86,16 +86,16 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     split->SplitVertically(modelList_, canvas_, 220);
     split->SetMinimumPaneSize(120);
     root->Add(split, 1, wxEXPAND);
-    SetSizer(root);
-    wxStatusBar *statusBar = CreateStatusBar(2);
+    statusBar_ = new wxStatusBar(this, wxID_ANY, wxSTB_DEFAULT_STYLE & ~wxSTB_SIZEGRIP);
+    statusBar_->SetFieldsCount(2);
     int buildWidth = 210;
     int sliceWidth = 90;
-    if (statusBar) {
-        statusBar->GetTextExtent("0000.00 x 0000.00 x 0000.00", &buildWidth, nullptr);
-        statusBar->GetTextExtent("Z: 0000.000", &sliceWidth, nullptr);
-    }
+    statusBar_->GetTextExtent("0000.00 x 0000.00 x 0000.00", &buildWidth, nullptr);
+    statusBar_->GetTextExtent("Z: 0000.000", &sliceWidth, nullptr);
     const int statusWidths[] = {buildWidth + 12, sliceWidth + 12};
-    SetStatusWidths(2, statusWidths);
+    statusBar_->SetStatusWidths(2, statusWidths);
+    root->Add(statusBar_, 0, wxEXPAND);
+    SetSizer(root);
     Bind(
         wxEVT_MENU,
         [this](wxCommandEvent &) { static_cast<MainFrame *>(GetMDIParent())->OpenDialog(); },
@@ -258,7 +258,7 @@ void DocumentFrame::UpdateStatus() {
                     << (b.max.z - b.min.z);
     else
         buildVolume << "0.00 x 0.00 x 0.00";
-    SetStatusText(buildVolume.str(), 0);
+    statusBar_->SetStatusText(buildVolume.str(), 0);
 
     std::ostringstream slicePosition;
     slicePosition << "Z: ";
@@ -266,7 +266,7 @@ void DocumentFrame::UpdateStatus() {
         slicePosition << std::fixed << std::setprecision(3) << canvas_->SlicePosition();
     else
         slicePosition << "--";
-    SetStatusText(slicePosition.str(), 1);
+    statusBar_->SetStatusText(slicePosition.str(), 1);
 }
 void DocumentFrame::OnSlice(wxCommandEvent &) {
     SliceDialog d(this);

@@ -8,6 +8,7 @@
 
 class ModelCanvas;
 class wxMenuItem;
+class wxStatusBar;
 class wxToolBar;
 
 class DocumentFrame final : public wxMDIChildFrame {
@@ -42,5 +43,6 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxCheckListBox *modelList_ = nullptr;
     ModelCanvas *canvas_ = nullptr;
     wxToolBar *toolbar_ = nullptr;
+    wxStatusBar *statusBar_ = nullptr;
     wxMenuItem *exportItem_ = nullptr;
 };
