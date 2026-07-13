@@ -15,6 +15,22 @@ ctest --test-dir build --output-on-failure
 If the host uses `ccache` with an unavailable cache directory, prefix these commands with
 `CCACHE_DISABLE=1`.
 
+To enable compile-time CPU-specific vectorization, set the compiler architecture target:
+
+```sh
+cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DSTL_SLICER_ARCH=native
+cmake --build build-native
+```
+
+The target is intentionally opt-in so normal release binaries remain portable. A named GCC target
+such as `core-avx-i` can be used instead of `native` when building for another machine. GCC
+vectorization decisions and source-interleaved assembly can be inspected with:
+
+```sh
+c++ -std=c++17 -O3 -march=native -fopt-info-vec-all=vectorization.txt \
+  -S -g -fverbose-asm -Iinclude src/slicer.cpp -o slicer.s
+```
+
 ## Use
 
 ```sh
