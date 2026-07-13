@@ -86,10 +86,16 @@ out vec3 worldNormal; void main(){gl_Position=viewProjection*model*vec4(position
 const char *fragmentShader = R"(#version 150
 in vec3 worldNormal; uniform vec4 color; uniform int lit; out vec4 outputColor;
 void main(){float light=lit==0?1.0:0.28+0.72*abs(dot(normalize(worldNormal),normalize(vec3(0.3,-0.5,0.8))));outputColor=vec4(color.rgb*light,color.a);})";
+
+const int *glAttributes() {
+    static const int attributes[] = {
+        WX_GL_RGBA, WX_GL_DOUBLEBUFFER, WX_GL_DEPTH_SIZE, 24, WX_GL_STENCIL_SIZE, 8, 0};
+    return attributes;
+}
 } // namespace
 
 ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
-    : wxGLCanvas(parent, wxID_ANY, nullptr), document_(document) {
+    : wxGLCanvas(parent, wxID_ANY, glAttributes()), document_(document) {
     context_ = new wxGLContext(this);
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     Bind(wxEVT_PAINT, &ModelCanvas::OnPaint, this);
@@ -265,6 +271,14 @@ void ModelCanvas::DrawOverlays(const float *) {
     };
     const float plate[] = {.22f, .24f, .24f, 1};
     upload(GL_TRIANGLES, plate);
+    v = {{float(b.min.x), float(b.min.y), z, 0, 0, -1},
+         {float(b.max.x), float(b.max.y), z, 0, 0, -1},
+         {float(b.max.x), float(b.min.y), z, 0, 0, -1},
+         {float(b.min.x), float(b.min.y), z, 0, 0, -1},
+         {float(b.min.x), float(b.max.y), z, 0, 0, -1},
+         {float(b.max.x), float(b.max.y), z, 0, 0, -1}};
+    const float plateUnderside[] = {.62f, .65f, .67f, 1};
+    upload(GL_TRIANGLES, plateUnderside);
     if (interactiveSlice_) {
         v = {{float(b.min.x), float(b.min.y), float(slicePosition_), 0, 0, 1},
              {float(b.max.x), float(b.min.y), float(slicePosition_), 0, 0, 1},
@@ -276,14 +290,47 @@ void ModelCanvas::DrawOverlays(const float *) {
         const float plane[] = {.25f, .65f, .80f, .28f};
         upload(GL_TRIANGLES, plane);
         glDepthMask(GL_TRUE);
+
+        const float projectionZ = z;
+        v.clear();
         for (const auto &layer : interactiveLayers_)
-            for (const auto &p : layer.paths) {
-                v.clear();
-                for (const auto &q : p.points)
-                    v.push_back({float(q.x), float(q.y), z + .02f, 0, 0, 1});
-                const float line[] = {.05f, .15f, .08f, 1};
-                upload(GL_LINE_STRIP, line);
-            }
+            for (const auto &path : layer.paths)
+                for (std::size_t i = 0; i + 1 < path.points.size(); ++i) {
+                    const auto &a = path.points[i];
+                    const auto &edge = path.points[i + 1];
+                    v.push_back({float(b.min.x), float(b.min.y), projectionZ, 0, 0, 1});
+                    v.push_back({float(a.x), float(a.y), projectionZ, 0, 0, 1});
+                    v.push_back({float(edge.x), float(edge.y), projectionZ, 0, 0, 1});
+                }
+
+        glClear(GL_STENCIL_BUFFER_BIT);
+        glEnable(GL_STENCIL_TEST);
+        glStencilMask(0xff);
+        glStencilFunc(GL_ALWAYS, 0, 0xff);
+        glStencilOpSeparate(GL_FRONT, GL_KEEP, GL_KEEP, GL_INCR_WRAP);
+        glStencilOpSeparate(GL_BACK, GL_KEEP, GL_KEEP, GL_DECR_WRAP);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_DEPTH_TEST);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        upload(GL_TRIANGLES, plate);
+
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glStencilMask(0x00);
+        glStencilFunc(GL_NOTEQUAL, 0, 0xff);
+        v = {{float(b.min.x), float(b.min.y), projectionZ, 0, 0, 1},
+             {float(b.max.x), float(b.min.y), projectionZ, 0, 0, 1},
+             {float(b.max.x), float(b.max.y), projectionZ, 0, 0, 1},
+             {float(b.min.x), float(b.min.y), projectionZ, 0, 0, 1},
+             {float(b.max.x), float(b.max.y), projectionZ, 0, 0, 1},
+             {float(b.min.x), float(b.max.y), projectionZ, 0, 0, 1}};
+        const float projection[] = {.08f, .34f, .16f, 1};
+        glDepthFunc(GL_LEQUAL);
+        upload(GL_TRIANGLES, projection);
+        glDepthFunc(GL_LESS);
+        glDisable(GL_STENCIL_TEST);
+        glStencilMask(0xff);
     }
 }
 void ModelCanvas::SetInteractiveSlice(bool enabled) {
