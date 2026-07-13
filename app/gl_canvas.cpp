@@ -435,6 +435,14 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
                                            stl_slicer::Mat4::rotation(-pitch_, {1, 0, 0});
     const double worldUnitsPerPixel =
         2.0 * distance_ * std::tan(fieldOfView_ * 0.5) / std::max(200, GetClientSize().y);
+    const auto moveSlicePlane = [&](double steps) {
+        slicePosition_ += steps * 0.1;
+        const auto bounds = document_.VisibleBounds();
+        if (bounds.valid())
+            slicePosition_ = std::clamp(slicePosition_, bounds.min.z, bounds.max.z);
+        UpdateInteractiveSlice();
+        Refresh();
+    };
     const auto scaleTarget = [&](double steps) {
         if (transformModels) {
             auto c = document_.SelectedCenter();
@@ -474,7 +482,9 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
 
     if (e.Dragging()) {
         if (e.LeftIsDown()) {
-            if (e.ControlDown()) {
+            if (e.AltDown() && e.ShiftDown() && interactiveSlice_) {
+                moveSlicePlane(-dy / 24.0);
+            } else if (e.ControlDown()) {
                 scaleTarget(-dy / 24.0);
             } else if (transformModels) {
                 auto c = document_.SelectedCenter();
@@ -498,10 +508,7 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
     if (e.GetWheelRotation()) {
         const double steps = double(e.GetWheelRotation()) / e.GetWheelDelta();
         if (e.AltDown() && interactiveSlice_) {
-            slicePosition_ += steps * .1;
-            auto b = document_.VisibleBounds();
-            slicePosition_ = std::clamp(slicePosition_, b.min.z, b.max.z);
-            UpdateInteractiveSlice();
+            moveSlicePlane(steps);
         } else
             scaleTarget(steps);
         Refresh();

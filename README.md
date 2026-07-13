@@ -90,7 +90,7 @@ The library API is divided into reusable data and processing components:
 - Holding Shift with a mouse operation applies the corresponding rotation, translation, or scaling
   to selected models instead of the camera.
 - Interactive slicing adds a translucent plane; Alt+wheel moves it and updates the projected
-  contour and status-bar area.
+  contour and status-bar area. Alt+Shift+left drag provides the same control without a wheel.
 
 `File > Open...` creates a new document, while `File > Open into document...` adds a model to the
 active document. Slice export merges every selected sliced model and stably orders their layers by
