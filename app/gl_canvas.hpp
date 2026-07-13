@@ -1,0 +1,48 @@
+#pragma once
+
+#include "stl_slicer/scene_model.hpp"
+#include "stl_slicer/slice.hpp"
+#include <epoxy/gl.h>
+#include <memory>
+#include <unordered_map>
+#include <wx/glcanvas.h>
+
+class DocumentFrame;
+
+class ModelCanvas final : public wxGLCanvas {
+  public:
+    ModelCanvas(wxWindow *parent, DocumentFrame &document);
+    ~ModelCanvas() override;
+    void ModelsChanged();
+    void SetInteractiveSlice(bool enabled);
+    bool InteractiveSlice() const {
+        return interactiveSlice_;
+    }
+    double SlicePosition() const {
+        return slicePosition_;
+    }
+
+  private:
+    struct Buffer {
+        GLuint id = 0;
+        GLsizei count = 0;
+    };
+    void OnPaint(wxPaintEvent &event);
+    void OnSize(wxSizeEvent &event);
+    void OnMouse(wxMouseEvent &event);
+    void InitializeGl();
+    void DrawModels(const float *viewProjection);
+    void DrawOverlays(const float *viewProjection);
+    void UpdateInteractiveSlice();
+    void TransformSelected(const stl_slicer::Mat4 &transform);
+
+    DocumentFrame &document_;
+    wxGLContext *context_ = nullptr;
+    GLuint program_ = 0, overlayBuffer_ = 0;
+    GLint matrixUniform_ = -1, modelUniform_ = -1, colorUniform_ = -1, litUniform_ = -1;
+    std::unordered_map<const stl_slicer::SceneModel *, Buffer> buffers_;
+    std::vector<stl_slicer::SliceLayer> interactiveLayers_;
+    bool initialized_ = false, interactiveSlice_ = false;
+    double slicePosition_ = 0.0, yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
+    wxPoint lastMouse_;
+};

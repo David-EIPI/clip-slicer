@@ -9,14 +9,16 @@ struct SlicerOptions {
     double layerThickness = 0.1;
     double joinTolerance = 1e-5;
     double gapClosingToleranceMultiplier = 2.0;
+    double firstLayerOffset = -1.0;
 };
 
 class Slicer {
-public:
+  public:
     explicit Slicer(SlicerOptions options = {});
-    SliceData slice(const TriangleMesh& mesh) const;
+    SliceData slice(const TriangleMesh &mesh) const;
+    SliceLayer sliceAt(const TriangleMesh &mesh, double z) const;
 
-private:
+  private:
     SlicerOptions options_;
 };
 

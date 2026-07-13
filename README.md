@@ -4,6 +4,9 @@ A dependency-free C++17 library and command-line program that reads binary STL t
 intersects them with horizontal planes, connects the segments into contours, and writes Common
 Layer Interface (CLI) files.
 
+The repository also contains **CLIP Slicer**, a wxWidgets MDI desktop application for loading,
+viewing, transforming, slicing, and exporting STL and CLI models.
+
 ## Build and test
 
 ```sh
@@ -11,6 +14,16 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+The GUI build requires wxWidgets 3.2, OpenGL, and libepoxy. It is built by default when those
+development packages are available:
+
+```sh
+./build/clip-slicer
+./build/clip-slicer model.stl
+```
+
+Set `-DSTL_SLICER_BUILD_GUI=OFF` for a command-line-only build.
 
 If the host uses `ccache` with an unavailable cache directory, prefix these commands with
 `CCACHE_DISABLE=1`.
@@ -63,6 +76,23 @@ The library API is divided into reusable data and processing components:
 - `BinaryStlReader` validates and reads little-endian binary STL streams or files.
 - `Slicer` produces reusable `SliceData`, `SliceLayer`, and `SlicePath` objects.
 - `CliWriter` writes binary or ASCII CLI streams or files.
+- `CliReader` reads binary CLI layer files.
+- `SceneModel`, `MeshSceneModel`, and `SliceSceneModel` provide shared transformed/renderable
+  model abstractions for applications.
+
+## CLIP Slicer controls
+
+- Left drag rotates selected models around their combined center.
+- Shift+left drag rotates selected models around the screen-normal axis.
+- Ctrl+left drag rotates the camera.
+- Right drag translates selected models.
+- Mouse wheel zooms the view; Ctrl+wheel scales selected models.
+- Interactive slicing adds a translucent plane; Shift+wheel moves it and updates the projected
+  contour and status-bar area.
+
+Model transforms are matrix-based and do not modify source coordinates. Slicing applies the stored
+transforms to a temporary triangle mesh. STL rendering and sliced side-wall rendering use cached
+OpenGL vertex buffers and one batched triangle draw per model.
 
 Closed contours are classified by containment depth. External contours are emitted
 counter-clockwise (`dir = 1`), internal contours clockwise (`dir = 0`), and unconnected paths as
@@ -73,5 +103,8 @@ intersection rule.
 
 The slicer assumes a clean, watertight triangle mesh for closed output. Endpoint tolerance can
 bridge small numeric discrepancies, but this version does not repair holes, self-intersections,
-overlapping shells, or non-manifold geometry. Segment connection is intentionally straightforward;
-large production meshes would benefit from spatial indexing and active-triangle bucketing.
+overlapping shells, or non-manifold geometry.
+
+Sliced-model rendering currently builds the vertical prism facets. Robust triangulation of concave
+top/bottom surfaces, contour editing tools, settings persistence, and cross-layer exposed-surface
+optimization remain planned geometry/editor work.

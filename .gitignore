@@ -2,5 +2,6 @@
 /gmon.out
 /perf.data*
 /callgrind.out*
+/.wx-*
 *.cli
 *.stl

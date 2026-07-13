@@ -12,17 +12,22 @@
 namespace stl_slicer {
 namespace {
 
-struct Segment { Vec2 a; Vec2 b; };
+struct Segment {
+    Vec2 a;
+    Vec2 b;
+};
 
 struct EndpointCell {
     std::int64_t x;
     std::int64_t y;
 
-    bool operator==(const EndpointCell& other) const { return x == other.x && y == other.y; }
+    bool operator==(const EndpointCell &other) const {
+        return x == other.x && y == other.y;
+    }
 };
 
 struct EndpointCellHash {
-    std::size_t operator()(const EndpointCell& cell) const {
+    std::size_t operator()(const EndpointCell &cell) const {
         const std::uint64_t x = static_cast<std::uint64_t>(cell.x);
         const std::uint64_t y = static_cast<std::uint64_t>(cell.y);
         const std::uint64_t mixed = x ^ (y + 0x9e3779b97f4a7c15ULL + (x << 6) + (x >> 2));
@@ -30,13 +35,13 @@ struct EndpointCellHash {
     }
 };
 
-bool near(const Vec2& a, const Vec2& b, double tolerance) {
+bool near(const Vec2 &a, const Vec2 &b, double tolerance) {
     return squaredDistance(a, b) <= tolerance * tolerance;
 }
 
 class EndpointIndex {
-public:
-    EndpointIndex(const std::vector<Segment>& segments, double tolerance)
+  public:
+    EndpointIndex(const std::vector<Segment> &segments, double tolerance)
         : segments_(segments), tolerance_(tolerance), seen_(segments.size(), 0) {
         buckets_.reserve(segments.size() * 2);
         for (std::size_t i = 0; i < segments.size(); ++i) {
@@ -45,7 +50,7 @@ public:
         }
     }
 
-    std::size_t find(const Vec2& front, const Vec2& back, const std::vector<bool>& alive) {
+    std::size_t find(const Vec2 &front, const Vec2 &back, const std::vector<bool> &alive) {
         if (++generation_ == 0) {
             std::fill(seen_.begin(), seen_.end(), 0);
             ++generation_;
@@ -56,30 +61,38 @@ public:
         return best;
     }
 
-private:
-    EndpointCell cell(const Vec2& point) const {
+  private:
+    EndpointCell cell(const Vec2 &point) const {
         const long double x = std::floor(static_cast<long double>(point.x) / tolerance_);
         const long double y = std::floor(static_cast<long double>(point.y) / tolerance_);
-        constexpr long double low = static_cast<long double>(std::numeric_limits<std::int64_t>::min()) + 1;
-        constexpr long double high = static_cast<long double>(std::numeric_limits<std::int64_t>::max()) - 1;
+        constexpr long double low =
+            static_cast<long double>(std::numeric_limits<std::int64_t>::min()) + 1;
+        constexpr long double high =
+            static_cast<long double>(std::numeric_limits<std::int64_t>::max()) - 1;
         if (x < low || x > high || y < low || y > high)
             throw std::runtime_error("Slice coordinate is too large for endpoint indexing");
         return {static_cast<std::int64_t>(x), static_cast<std::int64_t>(y)};
     }
 
-    void visitNeighbors(const Vec2& point, const Vec2& front, const Vec2& back,
-                        const std::vector<bool>& alive, std::size_t& best) {
+    void visitNeighbors(const Vec2 &point,
+                        const Vec2 &front,
+                        const Vec2 &back,
+                        const std::vector<bool> &alive,
+                        std::size_t &best) {
         const EndpointCell center = cell(point);
         for (std::int64_t dx = -1; dx <= 1; ++dx) {
             for (std::int64_t dy = -1; dy <= 1; ++dy) {
                 const auto bucket = buckets_.find({center.x + dx, center.y + dy});
-                if (bucket == buckets_.end()) continue;
+                if (bucket == buckets_.end())
+                    continue;
                 for (const std::size_t index : bucket->second) {
-                    if (!alive[index] || seen_[index] == generation_) continue;
+                    if (!alive[index] || seen_[index] == generation_)
+                        continue;
                     seen_[index] = generation_;
-                    const Segment& segment = segments_[index];
+                    const Segment &segment = segments_[index];
                     if ((near(back, segment.a, tolerance_) || near(back, segment.b, tolerance_) ||
-                         near(front, segment.b, tolerance_) || near(front, segment.a, tolerance_)) &&
+                         near(front, segment.b, tolerance_) ||
+                         near(front, segment.a, tolerance_)) &&
                         index < best)
                         best = index;
                 }
@@ -87,55 +100,57 @@ private:
         }
     }
 
-    const std::vector<Segment>& segments_;
+    const std::vector<Segment> &segments_;
     double tolerance_;
     std::unordered_map<EndpointCell, std::vector<std::size_t>, EndpointCellHash> buckets_;
     std::vector<std::uint64_t> seen_;
     std::uint64_t generation_ = 0;
 };
 
-Vec2 interpolate(const Vec3& a, const Vec3& b, double z) {
+Vec2 interpolate(const Vec3 &a, const Vec3 &b, double z) {
     // Shared STL edges are commonly traversed in opposite directions by their
     // two incident triangles. Canonical ordering makes both evaluations perform
     // identical floating-point operations and therefore produce identical points.
-    const Vec3* low = &a;
-    const Vec3* high = &b;
-    if (low->z > high->z) std::swap(low, high);
+    const Vec3 *low = &a;
+    const Vec3 *high = &b;
+    if (low->z > high->z)
+        std::swap(low, high);
     const double t = (z - low->z) / (high->z - low->z);
-    return {low->x + t * (high->x - low->x),
-            low->y + t * (high->y - low->y)};
+    return {low->x + t * (high->x - low->x), low->y + t * (high->y - low->y)};
 }
 
-bool triangleSegment(const Triangle& triangle, double z, double tolerance, Segment& result) {
+bool triangleSegment(const Triangle &triangle, double z, double tolerance, Segment &result) {
     Vec2 points[2];
     std::size_t pointCount = 0;
     for (std::size_t i = 0; i < 3; ++i) {
-        const Vec3& a = triangle.vertices[i];
-        const Vec3& b = triangle.vertices[(i + 1) % 3];
+        const Vec3 &a = triangle.vertices[i];
+        const Vec3 &b = triangle.vertices[(i + 1) % 3];
         // Vertices on the plane belong to the upper half-space. This half-open rule
         // makes a shared vertex contribute consistently and ignores coplanar faces.
         const bool aBelow = a.z < z;
         const bool bBelow = b.z < z;
-        if (aBelow != bBelow) points[pointCount++] = interpolate(a, b, z);
+        if (aBelow != bBelow)
+            points[pointCount++] = interpolate(a, b, z);
     }
-    if (pointCount != 2 || near(points[0], points[1], tolerance)) return false;
+    if (pointCount != 2 || near(points[0], points[1], tolerance))
+        return false;
     result = {points[0], points[1]};
     return true;
 }
 
-double signedArea(const std::vector<Vec2>& points) {
+double signedArea(const std::vector<Vec2> &points) {
     double area = 0.0;
     for (std::size_t i = 0; i + 1 < points.size(); ++i)
         area += points[i].x * points[i + 1].y - points[i + 1].x * points[i].y;
     return area * 0.5;
 }
 
-bool pointInPolygon(const Vec2& point, const std::vector<Vec2>& polygon) {
+bool pointInPolygon(const Vec2 &point, const std::vector<Vec2> &polygon) {
     bool inside = false;
     const std::size_t count = polygon.size() - 1;
     for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
-        const Vec2& a = polygon[i];
-        const Vec2& b = polygon[j];
+        const Vec2 &a = polygon[i];
+        const Vec2 &b = polygon[j];
         if ((a.y > point.y) != (b.y > point.y) &&
             point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x)
             inside = !inside;
@@ -145,14 +160,17 @@ bool pointInPolygon(const Vec2& point, const std::vector<Vec2>& polygon) {
 
 std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tolerance) {
     std::vector<SlicePath> paths;
-    if (segments.empty()) return paths;
+    if (segments.empty())
+        return paths;
 
     EndpointIndex endpointIndex(segments, tolerance);
     std::vector<bool> alive(segments.size(), true);
     std::size_t remaining = segments.size();
     std::size_t nextSeed = segments.size();
     while (remaining != 0) {
-        do { --nextSeed; } while (!alive[nextSeed]);
+        do {
+            --nextSeed;
+        } while (!alive[nextSeed]);
         std::vector<Vec2> prepended;
         std::vector<Vec2> appended;
         appended.push_back(segments[nextSeed].a);
@@ -160,13 +178,14 @@ std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tol
         alive[nextSeed] = false;
         --remaining;
 
-        const auto front = [&]() -> const Vec2& {
+        const auto front = [&]() -> const Vec2 & {
             return prepended.empty() ? appended.front() : prepended.back();
         };
         while (!near(front(), appended.back(), tolerance)) {
             const std::size_t index = endpointIndex.find(front(), appended.back(), alive);
-            if (index == segments.size()) break;
-            const Segment& segment = segments[index];
+            if (index == segments.size())
+                break;
+            const Segment &segment = segments[index];
             if (near(appended.back(), segment.a, tolerance)) {
                 appended.push_back(segment.b);
             } else if (near(appended.back(), segment.b, tolerance)) {
@@ -195,7 +214,7 @@ std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tol
     return paths;
 }
 
-void healOpenPaths(std::vector<SlicePath>& paths, double tolerance) {
+void healOpenPaths(std::vector<SlicePath> &paths, double tolerance) {
     struct Match {
         std::size_t first = 0;
         std::size_t second = 0;
@@ -207,7 +226,7 @@ void healOpenPaths(std::vector<SlicePath>& paths, double tolerance) {
     const double toleranceSquared = tolerance * tolerance;
     for (;;) {
         bool closedPath = false;
-        for (auto& path : paths) {
+        for (auto &path : paths) {
             if (path.type == PathType::Open && path.points.size() > 2 &&
                 squaredDistance(path.points.front(), path.points.back()) <= toleranceSquared) {
                 path.points.back() = path.points.front();
@@ -218,9 +237,11 @@ void healOpenPaths(std::vector<SlicePath>& paths, double tolerance) {
 
         Match best;
         for (std::size_t i = 0; i < paths.size(); ++i) {
-            if (paths[i].type != PathType::Open || paths[i].points.empty()) continue;
+            if (paths[i].type != PathType::Open || paths[i].points.empty())
+                continue;
             for (std::size_t j = i + 1; j < paths.size(); ++j) {
-                if (paths[j].type != PathType::Open || paths[j].points.empty()) continue;
+                if (paths[j].type != PathType::Open || paths[j].points.empty())
+                    continue;
                 const Vec2 firstEnds[] = {paths[i].points.back(), paths[i].points.front()};
                 const Vec2 secondEnds[] = {paths[j].points.front(), paths[j].points.back()};
                 for (std::size_t a = 0; a < 2; ++a) {
@@ -234,20 +255,23 @@ void healOpenPaths(std::vector<SlicePath>& paths, double tolerance) {
         }
 
         if (!std::isfinite(best.distanceSquared)) {
-            if (!closedPath) break;
+            if (!closedPath)
+                break;
             continue;
         }
 
-        auto& first = paths[best.first].points;
-        auto& second = paths[best.second].points;
-        if (best.firstAtFront) std::reverse(first.begin(), first.end());
-        if (best.secondAtBack) std::reverse(second.begin(), second.end());
+        auto &first = paths[best.first].points;
+        auto &second = paths[best.second].points;
+        if (best.firstAtFront)
+            std::reverse(first.begin(), first.end());
+        if (best.secondAtBack)
+            std::reverse(second.begin(), second.end());
         first.insert(first.end(), std::next(second.begin()), second.end());
         paths.erase(paths.begin() + static_cast<std::ptrdiff_t>(best.second));
     }
 }
 
-void classifyClosedPaths(std::vector<SlicePath>& paths) {
+void classifyClosedPaths(std::vector<SlicePath> &paths) {
     struct ContourInfo {
         double area = 0.0;
         double minX = std::numeric_limits<double>::infinity();
@@ -260,11 +284,12 @@ void classifyClosedPaths(std::vector<SlicePath>& paths) {
 
     std::vector<ContourInfo> contours(paths.size());
     for (std::size_t i = 0; i < paths.size(); ++i) {
-        if (paths[i].type == PathType::Open || paths[i].points.size() < 4) continue;
-        auto& contour = contours[i];
+        if (paths[i].type == PathType::Open || paths[i].points.size() < 4)
+            continue;
+        auto &contour = contours[i];
         contour.closed = true;
         contour.area = signedArea(paths[i].points);
-        for (const auto& point : paths[i].points) {
+        for (const auto &point : paths[i].points) {
             contour.minX = std::min(contour.minX, point.x);
             contour.minY = std::min(contour.minY, point.y);
             contour.maxX = std::max(contour.maxX, point.x);
@@ -273,37 +298,45 @@ void classifyClosedPaths(std::vector<SlicePath>& paths) {
     }
 
     for (std::size_t i = 0; i < paths.size(); ++i) {
-        auto& contour = contours[i];
-        if (!contour.closed) continue;
+        auto &contour = contours[i];
+        if (!contour.closed)
+            continue;
         const Vec2 sample = paths[i].points.front();
         for (std::size_t j = 0; j < paths.size(); ++j) {
-            if (i == j || !contours[j].closed) continue;
+            if (i == j || !contours[j].closed)
+                continue;
             const double candidateArea = std::abs(contours[j].area);
-            if (candidateArea <= std::abs(contour.area)) continue;
+            if (candidateArea <= std::abs(contour.area))
+                continue;
             if (sample.x < contours[j].minX || sample.x > contours[j].maxX ||
                 sample.y < contours[j].minY || sample.y > contours[j].maxY)
                 continue;
-            if (pointInPolygon(sample, paths[j].points)) ++contour.depth;
+            if (pointInPolygon(sample, paths[j].points))
+                ++contour.depth;
         }
     }
 
     for (std::size_t i = 0; i < paths.size(); ++i) {
-        if (!contours[i].closed) continue;
+        if (!contours[i].closed)
+            continue;
         const bool external = (contours[i].depth % 2) == 0;
         paths[i].type = external ? PathType::External : PathType::Internal;
         const bool ccw = contours[i].area > 0.0;
-        if (ccw != external) std::reverse(paths[i].points.begin(), paths[i].points.end());
+        if (ccw != external)
+            std::reverse(paths[i].points.begin(), paths[i].points.end());
     }
 
     std::vector<std::size_t> order(paths.size());
     std::iota(order.begin(), order.end(), 0);
     std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
-        if (contours[a].closed != contours[b].closed) return contours[a].closed;
+        if (contours[a].closed != contours[b].closed)
+            return contours[a].closed;
         return contours[a].closed && contours[a].depth < contours[b].depth;
     });
     std::vector<SlicePath> ordered;
     ordered.reserve(paths.size());
-    for (const std::size_t index : order) ordered.push_back(std::move(paths[index]));
+    for (const std::size_t index : order)
+        ordered.push_back(std::move(paths[index]));
     paths = std::move(ordered);
 }
 
@@ -317,15 +350,38 @@ Slicer::Slicer(SlicerOptions options) : options_(options) {
     if (!std::isfinite(options_.gapClosingToleranceMultiplier) ||
         options_.gapClosingToleranceMultiplier < 1.0)
         throw std::invalid_argument("Gap-closing tolerance multiplier must be at least one");
+    if (!std::isfinite(options_.firstLayerOffset))
+        throw std::invalid_argument("First-layer offset must be finite");
 }
 
-SliceData Slicer::slice(const TriangleMesh& mesh) const {
-    if (!mesh.bounds().valid()) throw std::invalid_argument("Cannot slice an empty mesh");
+SliceLayer Slicer::sliceAt(const TriangleMesh &mesh, double z) const {
+    if (!mesh.bounds().valid())
+        throw std::invalid_argument("Cannot slice an empty mesh");
+    SliceLayer layer;
+    layer.z = z;
+    std::vector<Segment> segments;
+    for (std::size_t i = 0; i < mesh.triangles().size(); ++i) {
+        const auto &triangle = mesh.triangles()[i];
+        if (triangle.minZ >= z || triangle.maxZ < z)
+            continue;
+        Segment segment;
+        if (triangleSegment(triangle, z, options_.joinTolerance, segment))
+            segments.push_back(segment);
+    }
+    layer.paths = connectSegments(std::move(segments), options_.joinTolerance);
+    healOpenPaths(layer.paths, options_.joinTolerance * options_.gapClosingToleranceMultiplier);
+    classifyClosedPaths(layer.paths);
+    return layer;
+}
+
+SliceData Slicer::slice(const TriangleMesh &mesh) const {
+    if (!mesh.bounds().valid())
+        throw std::invalid_argument("Cannot slice an empty mesh");
     SliceData result;
     result.sourceBounds = mesh.bounds();
     result.thickness = options_.layerThickness;
 
-    const auto& triangles = mesh.triangles();
+    const auto &triangles = mesh.triangles();
     std::vector<std::size_t> minZIndex(triangles.size());
     std::vector<std::size_t> maxZIndex(triangles.size());
     std::iota(minZIndex.begin(), minZIndex.end(), 0);
@@ -345,7 +401,8 @@ SliceData Slicer::slice(const TriangleMesh& mesh) const {
 
     const auto removeActive = [&](std::size_t triangleIndex) {
         const std::size_t position = activePosition[triangleIndex];
-        if (position == inactive) return;
+        if (position == inactive)
+            return;
         const std::size_t moved = active.back();
         active[position] = moved;
         activePosition[moved] = position;
@@ -353,10 +410,14 @@ SliceData Slicer::slice(const TriangleMesh& mesh) const {
         activePosition[triangleIndex] = inactive;
     };
 
+    const double firstOffset =
+        options_.firstLayerOffset >= 0.0 ? options_.firstLayerOffset : options_.layerThickness;
     // Calculate z from an integer layer index to avoid accumulated floating-point drift.
-    for (std::size_t index = 1;; ++index) {
-        const double z = mesh.bounds().min.z + static_cast<double>(index) * options_.layerThickness;
-        if (z > mesh.bounds().max.z + options_.joinTolerance) break;
+    for (std::size_t index = 0;; ++index) {
+        const double z = mesh.bounds().min.z + firstOffset +
+                         static_cast<double>(index) * options_.layerThickness;
+        if (z > mesh.bounds().max.z + options_.joinTolerance)
+            break;
         SliceLayer layer;
         layer.z = std::min(z, mesh.bounds().max.z);
 
@@ -383,8 +444,7 @@ SliceData Slicer::slice(const TriangleMesh& mesh) const {
                 segments.push_back(segment);
         }
         layer.paths = connectSegments(std::move(segments), options_.joinTolerance);
-        healOpenPaths(layer.paths,
-                      options_.joinTolerance * options_.gapClosingToleranceMultiplier);
+        healOpenPaths(layer.paths, options_.joinTolerance * options_.gapClosingToleranceMultiplier);
         classifyClosedPaths(layer.paths);
         result.layers.push_back(std::move(layer));
     }

@@ -7,9 +7,9 @@
 namespace stl_slicer {
 
 class BinaryStlReader {
-public:
-    TriangleMesh read(const std::filesystem::path& path) const;
-    TriangleMesh read(std::istream& input) const;
+  public:
+    TriangleMesh read(const std::filesystem::path &path) const;
+    TriangleMesh read(std::istream &input) const;
 };
 
 } // namespace stl_slicer

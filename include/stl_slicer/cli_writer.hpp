@@ -15,12 +15,12 @@ struct CliWriterOptions {
 };
 
 class CliWriter {
-public:
+  public:
     explicit CliWriter(CliWriterOptions options = {});
-    void write(const SliceData& data, const std::filesystem::path& path) const;
-    void write(const SliceData& data, std::ostream& output) const;
+    void write(const SliceData &data, const std::filesystem::path &path) const;
+    void write(const SliceData &data, std::ostream &output) const;
 
-private:
+  private:
     CliWriterOptions options_;
 };
 
