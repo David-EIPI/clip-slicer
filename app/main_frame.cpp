@@ -21,6 +21,9 @@ MainFrame::MainFrame()
     Bind(wxEVT_MENU, &MainFrame::OnExit, this, wxID_EXIT);
 }
 void MainFrame::OnOpen(wxCommandEvent &) {
+    OpenDialog();
+}
+void MainFrame::OpenDialog() {
     wxFileDialog dialog(this,
                         "Open model",
                         {},

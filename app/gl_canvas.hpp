@@ -49,5 +49,6 @@ class ModelCanvas final : public wxGLCanvas {
     std::vector<stl_slicer::SliceLayer> interactiveLayers_;
     bool initialized_ = false, interactiveSlice_ = false;
     double slicePosition_ = 0.0, yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
+    stl_slicer::Vec3 viewCenter_;
     wxPoint lastMouse_;
 };

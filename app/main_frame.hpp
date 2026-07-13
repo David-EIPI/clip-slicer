@@ -4,6 +4,7 @@
 class MainFrame final : public wxMDIParentFrame {
   public:
     MainFrame();
+    void OpenDialog();
     void OpenFile(const wxString &path);
 
   private:

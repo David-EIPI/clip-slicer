@@ -84,10 +84,15 @@ The library API is divided into reusable data and processing components:
 
 - Left drag rotates the camera around the models.
 - Shift+left drag rotates selected models around their combined center.
-- Right drag translates selected models.
+- Right drag translates selected models parallel to the screen; Shift+right drag translates them
+  perpendicular to the screen.
 - Mouse wheel zooms the view; Ctrl+wheel scales selected models.
 - Interactive slicing adds a translucent plane; Shift+wheel moves it and updates the projected
   contour and status-bar area.
+
+`File > Open...` creates a new document, while `File > Open into document...` adds a model to the
+active document. Slice export merges every selected sliced model and stably orders their layers by
+Z, including layers from different models at the same height.
 
 Model transforms are matrix-based and do not modify source coordinates. Slicing applies the stored
 transforms to a temporary triangle mesh. Render normals are blended across non-crease edges. Sliced

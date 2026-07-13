@@ -1,5 +1,6 @@
 #include "document_frame.hpp"
 #include "gl_canvas.hpp"
+#include "main_frame.hpp"
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
 #include "stl_slicer/slicer.hpp"
@@ -20,7 +21,16 @@
 #include <wx/toolbar.h>
 
 namespace {
-enum { IdOpen = wxID_HIGHEST + 20, IdExport, IdSlice, IdInteractive, IdShow, IdHide, IdSettings };
+enum {
+    IdOpen = wxID_HIGHEST + 20,
+    IdOpenIntoDocument,
+    IdExport,
+    IdSlice,
+    IdInteractive,
+    IdShow,
+    IdHide,
+    IdSettings
+};
 }
 
 class SliceDialog final : public wxDialog {
@@ -79,7 +89,11 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     const int statusWidths[] = {-2, -1};
     CreateStatusBar(2);
     SetStatusWidths(2, statusWidths);
-    Bind(wxEVT_MENU, &DocumentFrame::OnOpen, this, IdOpen);
+    Bind(
+        wxEVT_MENU,
+        [this](wxCommandEvent &) { static_cast<MainFrame *>(GetMDIParent())->OpenDialog(); },
+        IdOpen);
+    Bind(wxEVT_MENU, &DocumentFrame::OnOpen, this, IdOpenIntoDocument);
     Bind(wxEVT_MENU, &DocumentFrame::OnExport, this, IdExport);
     Bind(wxEVT_MENU, &DocumentFrame::OnSlice, this, IdSlice);
     Bind(wxEVT_MENU, &DocumentFrame::OnInteractiveSlice, this, IdInteractive);
@@ -101,7 +115,8 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
 }
 void DocumentFrame::BuildMenus() {
     auto *file = new wxMenu;
-    file->Append(IdOpen, "&Open into document...");
+    file->Append(IdOpen, "&Open...\tCtrl+O");
+    file->Append(IdOpenIntoDocument, "Open into &document...");
     exportItem_ = file->Append(IdExport, "&Export Slices...");
     file->Append(wxID_CLOSE, "&Close");
     file->AppendSeparator();
@@ -270,31 +285,22 @@ void DocumentFrame::OnSlice(wxCommandEvent &) {
         for (auto &m : made)
             AddModel(m);
     } else if (!made.empty()) {
-        auto *child = new DocumentFrame(static_cast<wxMDIParentFrame *>(GetParent()), "Slices");
+        auto *child = new DocumentFrame(GetMDIParent(), "Slices");
         child->Show();
         for (auto &m : made)
             child->AddModel(m);
     }
 }
 void DocumentFrame::OnExport(wxCommandEvent &) {
-    stl_slicer::SliceData combined;
+    std::vector<std::reference_wrapper<const stl_slicer::SliceData>> slices;
     for (const auto &m : models_)
-        if (m->selected && m->isSliced()) {
-            const auto *s = m->slices();
-            combined.thickness = s->thickness;
-            combined.layers.insert(combined.layers.end(), s->layers.begin(), s->layers.end());
-        }
-    if (combined.layers.empty()) {
+        if (m->selected && m->isSliced())
+            slices.emplace_back(*m->slices());
+    if (slices.empty()) {
         wxMessageBox("Select at least one sliced model.");
         return;
     }
-    std::stable_sort(combined.layers.begin(),
-                     combined.layers.end(),
-                     [](const auto &a, const auto &b) { return a.z < b.z; });
-    for (const auto &l : combined.layers)
-        for (const auto &p : l.paths)
-            for (const auto &q : p.points)
-                combined.sourceBounds.include({q.x, q.y, l.z});
+    const stl_slicer::SliceData combined = stl_slicer::mergeSlices(slices);
     wxFileDialog d(this,
                    "Export slices",
                    {},

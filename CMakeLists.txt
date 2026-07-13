@@ -9,6 +9,7 @@ set(STL_SLICER_ARCH "" CACHE STRING
 add_library(stl_slicer_lib
     src/stl_reader.cpp
     src/cli_reader.cpp
+    src/slice.cpp
     src/slicer.cpp
     src/cli_writer.cpp
     src/scene_model.cpp)

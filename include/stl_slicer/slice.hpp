@@ -2,6 +2,7 @@
 
 #include "stl_slicer/geometry.hpp"
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace stl_slicer {
@@ -23,5 +24,7 @@ struct SliceData {
     double thickness = 0.1;
     std::vector<SliceLayer> layers;
 };
+
+SliceData mergeSlices(const std::vector<std::reference_wrapper<const SliceData>> &inputs);
 
 } // namespace stl_slicer

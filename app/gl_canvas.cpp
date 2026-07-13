@@ -169,8 +169,10 @@ void ModelCanvas::ModelsChanged() {
     }
     sliceMeshes_.clear();
     auto b = document_.VisibleBounds();
-    if (b.valid())
+    if (b.valid()) {
         distance_ = std::max({b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z}) * 2.3 + 1;
+        viewCenter_ = {(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2};
+    }
     UpdateInteractiveSlice();
     Refresh();
 }
@@ -189,20 +191,16 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
         glViewport(0, 0, size.x, size.y);
         glClearColor(0.72f, 0.86f, 0.72f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        auto b = document_.VisibleBounds();
-        stl_slicer::Vec3 c = b.valid() ? stl_slicer::Vec3{(b.min.x + b.max.x) / 2,
-                                                          (b.min.y + b.max.y) / 2,
-                                                          (b.min.z + b.max.z) / 2}
-                                       : stl_slicer::Vec3{};
         auto projection = perspective(0.75f,
                                       std::max(1, size.x) / float(std::max(1, size.y)),
                                       0.1f,
                                       float(distance_ * 20 + 1000));
-        auto view =
-            multiply(translation(0, 0, float(-distance_)),
-                     multiply(rotation(float(pitch_), 1, 0, 0),
-                              multiply(rotation(float(yaw_), 0, 0, 1),
-                                       translation(float(-c.x), float(-c.y), float(-c.z)))));
+        auto view = multiply(translation(0, 0, float(-distance_)),
+                             multiply(rotation(float(pitch_), 1, 0, 0),
+                                      multiply(rotation(float(yaw_), 0, 0, 1),
+                                               translation(float(-viewCenter_.x),
+                                                           float(-viewCenter_.y),
+                                                           float(-viewCenter_.z)))));
         auto vp = multiply(projection, view);
         glUseProgram(program_);
         glUniformMatrix4fv(matrixUniform_, 1, GL_FALSE, vp.data());
@@ -338,6 +336,14 @@ void ModelCanvas::DrawOverlays(const float *) {
         glDepthMask(GL_FALSE);
         const float plane[] = {.25f, .65f, .80f, .28f};
         upload(GL_TRIANGLES, plane);
+        v = {{float(b.min.x), float(b.min.y), float(slicePosition_), 0, 0, -1},
+             {float(b.max.x), float(b.max.y), float(slicePosition_), 0, 0, -1},
+             {float(b.max.x), float(b.min.y), float(slicePosition_), 0, 0, -1},
+             {float(b.min.x), float(b.min.y), float(slicePosition_), 0, 0, -1},
+             {float(b.min.x), float(b.max.y), float(slicePosition_), 0, 0, -1},
+             {float(b.max.x), float(b.max.y), float(slicePosition_), 0, 0, -1}};
+        const float planeUnderside[] = {.92f, .43f, .16f, .34f};
+        upload(GL_TRIANGLES, planeUnderside);
         glDepthMask(GL_TRUE);
 
         const float projectionZ = z;
@@ -435,8 +441,14 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
             Refresh();
         }
     } else if (e.Dragging() && e.RightIsDown()) {
-        double scale = distance_ / std::max(200, GetClientSize().y);
-        TransformSelected(stl_slicer::Mat4::translation(dx * scale, -dy * scale, 0));
+        const double scale = distance_ / std::max(200, GetClientSize().y);
+        const stl_slicer::Mat4 screenToWorld = stl_slicer::Mat4::rotation(-yaw_, {0, 0, 1}) *
+                                               stl_slicer::Mat4::rotation(-pitch_, {1, 0, 0});
+        const stl_slicer::Vec3 screenDelta = e.ShiftDown()
+                                                 ? stl_slicer::Vec3{0, 0, -dy * scale}
+                                                 : stl_slicer::Vec3{dx * scale, -dy * scale, 0};
+        const stl_slicer::Vec3 worldDelta = screenToWorld.transformVector(screenDelta);
+        TransformSelected(stl_slicer::Mat4::translation(worldDelta.x, worldDelta.y, worldDelta.z));
     }
     if (e.GetWheelRotation()) {
         double steps = double(e.GetWheelRotation()) / e.GetWheelDelta();

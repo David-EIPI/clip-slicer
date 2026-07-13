@@ -222,6 +222,33 @@ void testSingleAndOffsetSlices() {
             "custom first-layer offset");
 }
 
+void testMergeSlices() {
+    SliceData first;
+    first.thickness = 0.1;
+    first.layers = {{0.1, {{{PathType::External, {{0, 0}, {1, 0}}}}}},
+                    {0.3, {{{PathType::External, {{3, 0}, {4, 0}}}}}}};
+    SliceData second;
+    second.thickness = 0.1;
+    second.layers = {{0.2, {{{PathType::External, {{1, 0}, {2, 0}}}}}},
+                     {0.3, {{{PathType::External, {{4, 0}, {5, 0}}}}}}};
+
+    const SliceData merged = mergeSlices({std::cref(first), std::cref(second)});
+    require(merged.layers.size() == 4, "Merged slices lost a model's layers");
+    require(merged.layers[0].z == 0.1 && merged.layers[1].z == 0.2 && merged.layers[2].z == 0.3 &&
+                merged.layers[3].z == 0.3,
+            "Merged slices are not stably ordered by height");
+    require(merged.layers[2].paths[0].points[0].x == 3 &&
+                merged.layers[3].paths[0].points[0].x == 4,
+            "Equal-height layers did not preserve model order");
+
+    std::ostringstream output(std::ios::binary);
+    CliWriter{}.write(merged, output);
+    std::istringstream input(output.str(), std::ios::binary);
+    const SliceData roundTrip = CliReader{}.read(input);
+    require(roundTrip.layers.size() == 4,
+            "CLI export did not preserve layers from every merged model");
+}
+
 } // namespace
 
 int main() {
@@ -234,6 +261,7 @@ int main() {
         testReversedSharedEdgeInterpolation();
         testCliWriters();
         testSingleAndOffsetSlices();
+        testMergeSlices();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception &error) {
