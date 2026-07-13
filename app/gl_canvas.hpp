@@ -22,6 +22,9 @@ class ModelCanvas final : public wxGLCanvas {
     double SlicePosition() const {
         return slicePosition_;
     }
+    double SliceArea() const {
+        return sliceArea_;
+    }
 
   private:
     struct Buffer {
@@ -50,7 +53,8 @@ class ModelCanvas final : public wxGLCanvas {
     std::unordered_map<const stl_slicer::SceneModel *, stl_slicer::TriangleMesh> sliceMeshes_;
     std::vector<stl_slicer::SliceLayer> interactiveLayers_;
     bool initialized_ = false, interactiveSlice_ = false;
-    double slicePosition_ = 0.0, yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
+    double slicePosition_ = 0.0, sliceArea_ = 0.0;
+    double yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
     double fieldOfView_ = 0.75;
     stl_slicer::Vec3 viewCenter_;
     wxPoint lastMouse_;

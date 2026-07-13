@@ -576,7 +576,7 @@ void ModelCanvas::SetInteractiveSlice(bool enabled) {
     Refresh();
 }
 void ModelCanvas::UpdateInteractiveSlice() {
-    double area = 0;
+    double area = 0.0;
     interactiveLayers_.clear();
     if (interactiveSlice_)
         for (const auto &m : document_.Models())
@@ -587,13 +587,14 @@ void ModelCanvas::UpdateInteractiveSlice() {
                 }
                 interactiveLayers_.push_back(
                     stl_slicer::Slicer{}.sliceAt(mesh->second, slicePosition_));
-                for (const auto &p : interactiveLayers_.back().paths)
-                    for (std::size_t i = 0; i + 1 < p.points.size(); ++i)
-                        area += (p.points[i].x * p.points[i + 1].y -
-                                 p.points[i + 1].x * p.points[i].y) /
+                for (const auto &path : interactiveLayers_.back().paths)
+                    for (std::size_t i = 0; i + 1 < path.points.size(); ++i)
+                        area += (path.points[i].x * path.points[i + 1].y -
+                                 path.points[i + 1].x * path.points[i].y) /
                                 2;
             }
-    document_.UpdateStatus(slicePosition_, std::abs(area), interactiveSlice_);
+    sliceArea_ = std::abs(area);
+    document_.UpdateStatus();
 }
 void ModelCanvas::TransformSelected(const stl_slicer::Mat4 &t) {
     for (auto &m : document_.Models())

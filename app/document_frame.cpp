@@ -17,6 +17,7 @@
 #include <wx/spinctrl.h>
 #include <wx/splitter.h>
 #include <wx/stattext.h>
+#include <wx/statusbr.h>
 #include <wx/textdlg.h>
 #include <wx/toolbar.h>
 
@@ -86,8 +87,14 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     split->SetMinimumPaneSize(120);
     root->Add(split, 1, wxEXPAND);
     SetSizer(root);
-    const int statusWidths[] = {-2, -1};
-    CreateStatusBar(2);
+    wxStatusBar *statusBar = CreateStatusBar(2);
+    int buildWidth = 210;
+    int sliceWidth = 90;
+    if (statusBar) {
+        statusBar->GetTextExtent("0000.00 x 0000.00 x 0000.00", &buildWidth, nullptr);
+        statusBar->GetTextExtent("Z: 0000.000", &sliceWidth, nullptr);
+    }
+    const int statusWidths[] = {buildWidth + 12, sliceWidth + 12};
     SetStatusWidths(2, statusWidths);
     Bind(
         wxEVT_MENU,
@@ -242,21 +249,24 @@ stl_slicer::Vec3 DocumentFrame::SelectedCenter() const {
                                         (b.min.z + b.max.z) / 2}
                      : stl_slicer::Vec3{};
 }
-void DocumentFrame::UpdateStatus(double z, double area, bool slicing) {
+void DocumentFrame::UpdateStatus() {
     auto b = VisibleBounds();
-    std::ostringstream a;
-    a << std::fixed << std::setprecision(2);
+    std::ostringstream buildVolume;
+    buildVolume << std::fixed << std::setprecision(2);
     if (b.valid())
-        a << (b.max.x - b.min.x) << " x " << (b.max.y - b.min.y) << " x " << (b.max.z - b.min.z)
-          << " mm";
+        buildVolume << (b.max.x - b.min.x) << " x " << (b.max.y - b.min.y) << " x "
+                    << (b.max.z - b.min.z);
     else
-        a << "No models";
-    SetStatusText(a.str(), 0);
-    std::ostringstream s;
-    s << std::fixed << std::setprecision(2);
-    if (slicing)
-        s << "Slice Z: " << z << " mm   Area: " << area << " mm2";
-    SetStatusText(s.str(), 1);
+        buildVolume << "0.00 x 0.00 x 0.00";
+    SetStatusText(buildVolume.str(), 0);
+
+    std::ostringstream slicePosition;
+    slicePosition << "Z: ";
+    if (canvas_->InteractiveSlice())
+        slicePosition << std::fixed << std::setprecision(3) << canvas_->SlicePosition();
+    else
+        slicePosition << "--";
+    SetStatusText(slicePosition.str(), 1);
 }
 void DocumentFrame::OnSlice(wxCommandEvent &) {
     SliceDialog d(this);

@@ -23,7 +23,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     stl_slicer::Bounds3 VisibleBounds() const;
     stl_slicer::Vec3 SelectedCenter() const;
     void RefreshModelList();
-    void UpdateStatus(double sliceZ = 0.0, double sliceArea = 0.0, bool slicing = false);
+    void UpdateStatus();
     void OpenPath(const wxString &path);
 
   private:
