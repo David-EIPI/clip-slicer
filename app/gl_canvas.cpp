@@ -408,7 +408,8 @@ void ModelCanvas::DrawOrientationVane() {
         return stl_slicer::RenderVertex{
             float(x * 2.0 / size.x - 1.0), float(y * 2.0 / size.y - 1.0), 0, 0, 0, 1};
     };
-    const auto upload = [&](const std::vector<stl_slicer::RenderVertex> &vertices,
+    const auto upload = [&](GLenum mode,
+                            const std::vector<stl_slicer::RenderVertex> &vertices,
                             const std::array<float, 4> &color) {
         glBindBuffer(GL_ARRAY_BUFFER, overlayBuffer_);
         glBufferData(GL_ARRAY_BUFFER,
@@ -425,7 +426,7 @@ void ModelCanvas::DrawOrientationVane() {
                               sizeof(stl_slicer::RenderVertex),
                               reinterpret_cast<void *>(3 * sizeof(float)));
         glUniform4fv(colorUniform_, 1, color.data());
-        glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
+        glDrawArrays(mode, 0, GLsizei(vertices.size()));
     };
 
     auto identityMatrix = identity();
@@ -467,8 +468,48 @@ void ModelCanvas::DrawOrientationVane() {
                         vertex(shaftEndX + px * headHalfWidth, shaftEndY + py * headHalfWidth),
                         vertex(shaftEndX - px * headHalfWidth, shaftEndY - py * headHalfWidth)};
         }
-        upload(vertices, colors[axis]);
+        upload(GL_TRIANGLES, vertices, colors[axis]);
     }
+
+    const std::array<std::array<double, 2>, 3> fallbackDirections = {
+        {{{-0.7, -0.7}}, {{0.7, -0.7}}, {{0.0, 1.0}}}};
+    const std::array<float, 4> labelColor = {0.0f, 0.0f, 0.0f, 1.0f};
+    constexpr double halfWidth = 4.0;
+    constexpr double halfHeight = 5.0;
+    constexpr double labelOffset = 11.0;
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        const double dx = directions[axis].x * arrowLength;
+        const double dy = directions[axis].y * arrowLength;
+        const double length = std::hypot(dx, dy);
+        const double ux = length > 1.0 ? dx / length : fallbackDirections[axis][0];
+        const double uy = length > 1.0 ? dy / length : fallbackDirections[axis][1];
+        const double x = centerX + dx + ux * labelOffset;
+        const double y = centerY + dy + uy * labelOffset;
+        std::vector<stl_slicer::RenderVertex> label;
+        if (axis == 0) {
+            label = {vertex(x - halfWidth, y - halfHeight),
+                     vertex(x + halfWidth, y + halfHeight),
+                     vertex(x - halfWidth, y + halfHeight),
+                     vertex(x + halfWidth, y - halfHeight)};
+        } else if (axis == 1) {
+            label = {vertex(x - halfWidth, y + halfHeight),
+                     vertex(x, y),
+                     vertex(x + halfWidth, y + halfHeight),
+                     vertex(x, y),
+                     vertex(x, y),
+                     vertex(x, y - halfHeight)};
+        } else {
+            label = {vertex(x - halfWidth, y + halfHeight),
+                     vertex(x + halfWidth, y + halfHeight),
+                     vertex(x + halfWidth, y + halfHeight),
+                     vertex(x - halfWidth, y - halfHeight),
+                     vertex(x - halfWidth, y - halfHeight),
+                     vertex(x + halfWidth, y - halfHeight)};
+        }
+        glLineWidth(2.0f);
+        upload(GL_LINES, label, labelColor);
+    }
+    glLineWidth(1.0f);
     glEnable(GL_DEPTH_TEST);
 }
 void ModelCanvas::DrawOverlays(const float *) {

@@ -11,12 +11,14 @@
 #include <wx/artprov.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
+#include <wx/image.h>
 #include <wx/msgdlg.h>
 #include <wx/radiobox.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
 #include <wx/splitter.h>
 #include <wx/stattext.h>
+#include <wx/stdpaths.h>
 #include <wx/textdlg.h>
 #include <wx/toolbar.h>
 
@@ -31,7 +33,17 @@ enum {
     IdHide,
     IdSettings
 };
+
+wxBitmap LoadSliceIcon(const wxSize &size) {
+    const wxFileName executable(wxStandardPaths::Get().GetExecutablePath());
+    const wxFileName icon(executable.GetPath() + wxFILE_SEP_PATH + "assets",
+                          "slice-bread-icon.png");
+    wxImage image(icon.GetFullPath(), wxBITMAP_TYPE_PNG);
+    if (!image.IsOk())
+        return wxArtProvider::GetBitmap(wxART_EXECUTABLE_FILE, wxART_TOOLBAR, size);
+    return wxBitmap(image.Scale(size.x, size.y, wxIMAGE_QUALITY_HIGH));
 }
+} // namespace
 
 class SliceDialog final : public wxDialog {
   public:
@@ -67,15 +79,20 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     auto *root = new wxBoxSizer(wxVERTICAL);
     toolbar_ = new wxToolBar(
         this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTB_HORIZONTAL | wxTB_TEXT);
-    toolbar_->AddTool(IdExport, "Export", wxArtProvider::GetBitmap(wxART_FILE_SAVE));
-    toolbar_->AddTool(IdSlice, "Slice", wxArtProvider::GetBitmap(wxART_EXECUTABLE_FILE));
+    const wxSize toolSize{24, 24};
+    toolbar_->SetToolBitmapSize(toolSize);
+    toolbar_->AddTool(
+        IdExport, "Export", wxArtProvider::GetBitmap(wxART_FILE_SAVE_AS, wxART_TOOLBAR, toolSize));
+    toolbar_->AddTool(IdSlice, "Slice", LoadSliceIcon(toolSize));
     toolbar_->AddTool(IdInteractive,
                       "Plane",
-                      wxArtProvider::GetBitmap(wxART_FIND),
+                      wxArtProvider::GetBitmap(wxART_LIST_VIEW, wxART_TOOLBAR, toolSize),
                       "Interactive slicing",
                       wxITEM_CHECK);
-    toolbar_->AddTool(IdHide, "Hide", wxArtProvider::GetBitmap(wxART_MINUS));
-    toolbar_->AddTool(IdShow, "Show", wxArtProvider::GetBitmap(wxART_PLUS));
+    toolbar_->AddTool(
+        IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
+    toolbar_->AddTool(
+        IdShow, "Show", wxArtProvider::GetBitmap(wxART_TICK_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->Realize();
     root->Add(toolbar_, 0, wxEXPAND);
     auto *split = new wxSplitterWindow(this);
