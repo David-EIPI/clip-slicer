@@ -37,14 +37,20 @@ if(STL_SLICER_BUILD_GUI)
     find_package(wxWidgets 3.2 REQUIRED COMPONENTS core base gl)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
+    pkg_check_modules(GLU REQUIRED IMPORTED_TARGET glu)
     include(${wxWidgets_USE_FILE})
     add_executable(clip-slicer
         app/main.cpp
         app/main_frame.cpp
         app/document_frame.cpp
-        app/gl_canvas.cpp)
+        app/gl_canvas.cpp
+        app/slice_visualization.cpp)
     target_include_directories(clip-slicer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app)
-    target_link_libraries(clip-slicer PRIVATE stl_slicer_lib ${wxWidgets_LIBRARIES} PkgConfig::EPOXY)
+    target_link_libraries(clip-slicer PRIVATE
+        stl_slicer_lib
+        ${wxWidgets_LIBRARIES}
+        PkgConfig::EPOXY
+        PkgConfig::GLU)
     target_compile_features(clip-slicer PRIVATE cxx_std_17)
     if(MSVC)
         target_compile_options(clip-slicer PRIVATE /W4)
@@ -58,4 +64,15 @@ if(STL_SLICER_BUILD_TESTS)
     add_executable(stl_slicer_tests tests/tests.cpp)
     target_link_libraries(stl_slicer_tests PRIVATE stl_slicer_lib)
     add_test(NAME stl_slicer_tests COMMAND stl_slicer_tests)
+    if(STL_SLICER_BUILD_GUI)
+        add_executable(slice_visualization_tests
+            tests/slice_visualization_tests.cpp
+            app/slice_visualization.cpp)
+        target_include_directories(slice_visualization_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app)
+        target_link_libraries(slice_visualization_tests PRIVATE
+            stl_slicer_lib
+            PkgConfig::GLU)
+        target_compile_features(slice_visualization_tests PRIVATE cxx_std_17)
+        add_test(NAME slice_visualization_tests COMMAND slice_visualization_tests)
+    endif()
 endif()

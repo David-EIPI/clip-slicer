@@ -1,5 +1,6 @@
 #include "gl_canvas.hpp"
 #include "document_frame.hpp"
+#include "slice_visualization.hpp"
 #include "stl_slicer/slicer.hpp"
 #include <algorithm>
 #include <array>
@@ -85,7 +86,7 @@ in vec3 position; in vec3 normal; uniform mat4 viewProjection; uniform mat4 mode
 out vec3 worldNormal; void main(){gl_Position=viewProjection*model*vec4(position,1.0);worldNormal=mat3(model)*normal;})";
 const char *fragmentShader = R"(#version 150
 in vec3 worldNormal; uniform vec4 color; uniform int lit; out vec4 outputColor;
-void main(){float light=lit==0?1.0:0.28+0.72*abs(dot(normalize(worldNormal),normalize(vec3(0.3,-0.5,0.8))));outputColor=vec4(color.rgb*light,color.a);})";
+void main(){float light=lit==0?1.0:0.68+0.32*abs(dot(normalize(worldNormal),normalize(vec3(0.3,-0.5,0.8))));outputColor=vec4(color.rgb*light,color.a);})";
 
 const int *glAttributes() {
     static const int attributes[] = {
@@ -111,8 +112,13 @@ ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
 ModelCanvas::~ModelCanvas() {
     if (context_) {
         SetCurrent(*context_);
-        for (auto &entry : buffers_)
+        for (auto &entry : buffers_) {
             glDeleteBuffers(1, &entry.second.id);
+            if (entry.second.capId)
+                glDeleteBuffers(1, &entry.second.capId);
+            if (entry.second.capIndexId)
+                glDeleteBuffers(1, &entry.second.capIndexId);
+        }
         if (overlayBuffer_)
             glDeleteBuffers(1, &overlayBuffer_);
         if (program_)
@@ -152,8 +158,13 @@ void ModelCanvas::InitializeGl() {
 void ModelCanvas::ModelsChanged() {
     if (initialized_) {
         SetCurrent(*context_);
-        for (auto &e : buffers_)
+        for (auto &e : buffers_) {
             glDeleteBuffers(1, &e.second.id);
+            if (e.second.capId)
+                glDeleteBuffers(1, &e.second.capId);
+            if (e.second.capIndexId)
+                glDeleteBuffers(1, &e.second.capIndexId);
+        }
         buffers_.clear();
     }
     sliceMeshes_.clear();
@@ -205,7 +216,7 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
 }
 void ModelCanvas::DrawModels(const float *) {
     const std::array<std::array<float, 4>, 3> colors = {
-        {{.30f, .48f, .70f, 1}, {.68f, .42f, .24f, 1}, {.36f, .62f, .48f, 1}}};
+        {{.18f, .62f, .72f, 1}, {.68f, .42f, .24f, 1}, {.36f, .62f, .48f, 1}}};
     std::size_t ci = 0;
     for (const auto &m : document_.Models()) {
         if (!m->visible) {
@@ -218,8 +229,33 @@ void ModelCanvas::DrawModels(const float *) {
             glGenBuffers(1, &b.id);
             glBindBuffer(GL_ARRAY_BUFFER, b.id);
             const auto &v = m->renderVertices();
-            glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(v[0]), v.data(), GL_STATIC_DRAW);
+            if (m->isSliced()) {
+                glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(v[0]), v.data(), GL_STATIC_DRAW);
+            } else {
+                std::vector<stl_slicer::RenderVertex> smoothVertices(v.begin(), v.end());
+                SmoothRenderNormals(smoothVertices);
+                glBufferData(GL_ARRAY_BUFFER,
+                             smoothVertices.size() * sizeof(smoothVertices[0]),
+                             smoothVertices.data(),
+                             GL_STATIC_DRAW);
+            }
             b.count = GLsizei(v.size());
+            if (const auto *slices = m->slices()) {
+                auto caps = BuildSliceCaps(*slices);
+                glGenBuffers(1, &b.capId);
+                glBindBuffer(GL_ARRAY_BUFFER, b.capId);
+                glBufferData(GL_ARRAY_BUFFER,
+                             caps.vertices.size() * sizeof(caps.vertices[0]),
+                             caps.vertices.data(),
+                             GL_STATIC_DRAW);
+                glGenBuffers(1, &b.capIndexId);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, b.capIndexId);
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                             caps.indices.size() * sizeof(caps.indices[0]),
+                             caps.indices.data(),
+                             GL_STATIC_DRAW);
+                b.capCount = GLsizei(caps.indices.size());
+            }
             it = buffers_.emplace(m.get(), b).first;
         }
         glBindBuffer(GL_ARRAY_BUFFER, it->second.id);
@@ -242,6 +278,19 @@ void ModelCanvas::DrawModels(const float *) {
         glUniform4fv(colorUniform_, 1, color.data());
         glUniform1i(litUniform_, 1);
         glDrawArrays(GL_TRIANGLES, 0, it->second.count);
+        if (it->second.capId) {
+            glBindBuffer(GL_ARRAY_BUFFER, it->second.capId);
+            glVertexAttribPointer(
+                0, 3, GL_FLOAT, GL_FALSE, sizeof(stl_slicer::RenderVertex), nullptr);
+            glVertexAttribPointer(1,
+                                  3,
+                                  GL_FLOAT,
+                                  GL_FALSE,
+                                  sizeof(stl_slicer::RenderVertex),
+                                  reinterpret_cast<void *>(3 * sizeof(float)));
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, it->second.capIndexId);
+            glDrawElements(GL_TRIANGLES, it->second.capCount, GL_UNSIGNED_INT, nullptr);
+        }
         ++ci;
     }
 }

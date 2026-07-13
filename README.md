@@ -15,7 +15,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-The GUI build requires wxWidgets 3.2, OpenGL, and libepoxy. It is built by default when those
+The GUI build requires wxWidgets 3.2, OpenGL, GLU, and libepoxy. It is built by default when those
 development packages are available:
 
 ```sh
@@ -90,8 +90,10 @@ The library API is divided into reusable data and processing components:
   contour and status-bar area.
 
 Model transforms are matrix-based and do not modify source coordinates. Slicing applies the stored
-transforms to a temporary triangle mesh. STL rendering and sliced side-wall rendering use cached
-OpenGL vertex buffers and one batched triangle draw per model.
+transforms to a temporary triangle mesh. Render normals are blended across non-crease edges. Sliced
+models use GLU winding-rule tessellation for concave top and bottom caps, including holes. Side and
+cap geometry are cached in static OpenGL vertex buffers and rebuilt only when model geometry
+changes.
 
 Closed contours are classified by containment depth. External contours are emitted
 counter-clockwise (`dir = 1`), internal contours clockwise (`dir = 0`), and unconnected paths as

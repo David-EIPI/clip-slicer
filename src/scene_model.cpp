@@ -46,7 +46,11 @@ void SliceSceneModel::buildMesh() {
     for (std::size_t li = 0; li < slices_.layers.size(); ++li) {
         const auto &layer = slices_.layers[li];
         const double bottom = li ? slices_.layers[li - 1].z : layer.z - fallback;
-        for (const auto &path : layer.paths)
+        for (const auto &path : layer.paths) {
+            if (path.points.size() < 2)
+                continue;
+            std::vector<Vec3> edgeNormals;
+            edgeNormals.reserve(path.points.size() - 1);
             for (std::size_t i = 0; i + 1 < path.points.size(); ++i) {
                 const auto a = path.points[i], b = path.points[i + 1];
                 Vec3 n{b.y - a.y, a.x - b.x, 0};
@@ -55,23 +59,56 @@ void SliceSceneModel::buildMesh() {
                     n.y = -n.y;
                 }
                 const double length = std::hypot(n.x, n.y);
-                if (length == 0)
+                if (length != 0) {
+                    n.x /= length;
+                    n.y /= length;
+                }
+                edgeNormals.push_back(n);
+            }
+            const bool closed = path.points.size() > 2 &&
+                                squaredDistance(path.points.front(), path.points.back()) <= 1e-12;
+            for (std::size_t i = 0; i < edgeNormals.size(); ++i) {
+                const auto a = path.points[i], b = path.points[i + 1];
+                const Vec3 segmentNormal = edgeNormals[i];
+                if (segmentNormal.x == 0.0 && segmentNormal.y == 0.0)
                     continue;
-                n.x /= length;
-                n.y /= length;
+                const auto blendedNormal = [&](std::size_t vertexIndex) {
+                    if (!closed && (vertexIndex == 0 || vertexIndex == edgeNormals.size()))
+                        return segmentNormal;
+                    const Vec3 first =
+                        edgeNormals[(vertexIndex + edgeNormals.size() - 1) % edgeNormals.size()];
+                    const Vec3 second = edgeNormals[vertexIndex % edgeNormals.size()];
+                    if (first.x * second.x + first.y * second.y < 0.5)
+                        return segmentNormal;
+                    const double length = std::hypot(first.x + second.x, first.y + second.y);
+                    if (length == 0.0)
+                        return segmentNormal;
+                    return Vec3{(first.x + second.x) / length, (first.y + second.y) / length, 0.0};
+                };
+                const Vec3 normalA = blendedNormal(i);
+                const Vec3 normalB = blendedNormal(i + 1);
                 Vec3 p0{a.x, a.y, bottom}, p1{b.x, b.y, bottom}, p2{b.x, b.y, layer.z},
                     p3{a.x, a.y, layer.z};
                 if (path.type == PathType::Internal)
-                    vertices_.insert(
-                        vertices_.end(),
-                        {rv(p0, n), rv(p2, n), rv(p1, n), rv(p0, n), rv(p3, n), rv(p2, n)});
+                    vertices_.insert(vertices_.end(),
+                                     {rv(p0, normalA),
+                                      rv(p2, normalB),
+                                      rv(p1, normalB),
+                                      rv(p0, normalA),
+                                      rv(p3, normalA),
+                                      rv(p2, normalB)});
                 else
-                    vertices_.insert(
-                        vertices_.end(),
-                        {rv(p0, n), rv(p1, n), rv(p2, n), rv(p0, n), rv(p2, n), rv(p3, n)});
+                    vertices_.insert(vertices_.end(),
+                                     {rv(p0, normalA),
+                                      rv(p1, normalB),
+                                      rv(p2, normalB),
+                                      rv(p0, normalA),
+                                      rv(p2, normalB),
+                                      rv(p3, normalA)});
                 bounds_.include(p0);
                 bounds_.include(p2);
             }
+        }
     }
 }
 TriangleMesh SliceSceneModel::triangleMesh() const {

@@ -27,6 +27,9 @@ class ModelCanvas final : public wxGLCanvas {
     struct Buffer {
         GLuint id = 0;
         GLsizei count = 0;
+        GLuint capId = 0;
+        GLuint capIndexId = 0;
+        GLsizei capCount = 0;
     };
     void OnPaint(wxPaintEvent &event);
     void OnSize(wxSizeEvent &event);
