@@ -6,8 +6,10 @@ class MainFrame final : public wxMDIParentFrame {
     MainFrame();
     void OpenDialog();
     void OpenFile(const wxString &path);
+    void SetDocumentStatus(const wxString &buildVolume, const wxString &slicePosition);
 
   private:
+    void ClearDocumentStatus();
     void OnOpen(wxCommandEvent &);
     void OnExit(wxCommandEvent &);
 };

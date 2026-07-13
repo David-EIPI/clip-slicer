@@ -17,7 +17,6 @@
 #include <wx/spinctrl.h>
 #include <wx/splitter.h>
 #include <wx/stattext.h>
-#include <wx/statusbr.h>
 #include <wx/textdlg.h>
 #include <wx/toolbar.h>
 
@@ -86,16 +85,9 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     split->SplitVertically(modelList_, canvas_, 220);
     split->SetMinimumPaneSize(120);
     root->Add(split, 1, wxEXPAND);
-    statusBar_ = new wxStatusBar(this, wxID_ANY, wxSTB_DEFAULT_STYLE & ~wxSTB_SIZEGRIP);
-    statusBar_->SetFieldsCount(2);
-    int buildWidth = 210;
-    int sliceWidth = 90;
-    statusBar_->GetTextExtent("0000.00 x 0000.00 x 0000.00", &buildWidth, nullptr);
-    statusBar_->GetTextExtent("Z: 0000.000", &sliceWidth, nullptr);
-    const int statusWidths[] = {buildWidth + 12, sliceWidth + 12};
-    statusBar_->SetStatusWidths(2, statusWidths);
-    root->Add(statusBar_, 0, wxEXPAND);
     SetSizer(root);
+    Bind(wxEVT_ACTIVATE, &DocumentFrame::OnActivate, this);
+    Bind(wxEVT_CLOSE_WINDOW, &DocumentFrame::OnClose, this);
     Bind(
         wxEVT_MENU,
         [this](wxCommandEvent &) { static_cast<MainFrame *>(GetMDIParent())->OpenDialog(); },
@@ -250,6 +242,14 @@ stl_slicer::Vec3 DocumentFrame::SelectedCenter() const {
                      : stl_slicer::Vec3{};
 }
 void DocumentFrame::UpdateStatus() {
+    auto *parent = static_cast<MainFrame *>(GetMDIParent());
+    if (parent->GetActiveChild() != this)
+        return;
+    PublishStatus();
+}
+
+void DocumentFrame::PublishStatus() {
+    auto *parent = static_cast<MainFrame *>(GetMDIParent());
     auto b = VisibleBounds();
     std::ostringstream buildVolume;
     buildVolume << std::fixed << std::setprecision(2);
@@ -258,15 +258,24 @@ void DocumentFrame::UpdateStatus() {
                     << (b.max.z - b.min.z);
     else
         buildVolume << "0.00 x 0.00 x 0.00";
-    statusBar_->SetStatusText(buildVolume.str(), 0);
-
     std::ostringstream slicePosition;
     slicePosition << "Z: ";
     if (canvas_->InteractiveSlice())
         slicePosition << std::fixed << std::setprecision(3) << canvas_->SlicePosition();
     else
         slicePosition << "--";
-    statusBar_->SetStatusText(slicePosition.str(), 1);
+    parent->SetDocumentStatus(buildVolume.str(), slicePosition.str());
+}
+void DocumentFrame::OnActivate(wxActivateEvent &event) {
+    if (event.GetActive())
+        PublishStatus();
+    event.Skip();
+}
+void DocumentFrame::OnClose(wxCloseEvent &event) {
+    auto *parent = static_cast<MainFrame *>(GetMDIParent());
+    if (parent->GetActiveChild() == this)
+        parent->SetDocumentStatus({}, {});
+    event.Skip();
 }
 void DocumentFrame::OnSlice(wxCommandEvent &) {
     SliceDialog d(this);

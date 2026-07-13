@@ -7,8 +7,9 @@
 #include <wx/mdi.h>
 
 class ModelCanvas;
+class wxActivateEvent;
+class wxCloseEvent;
 class wxMenuItem;
-class wxStatusBar;
 class wxToolBar;
 
 class DocumentFrame final : public wxMDIChildFrame {
@@ -30,6 +31,8 @@ class DocumentFrame final : public wxMDIChildFrame {
   private:
     void BuildMenus();
     void OnOpen(wxCommandEvent &);
+    void OnActivate(wxActivateEvent &);
+    void OnClose(wxCloseEvent &);
     void OnExport(wxCommandEvent &);
     void OnSlice(wxCommandEvent &);
     void OnInteractiveSlice(wxCommandEvent &);
@@ -37,12 +40,12 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnHide(wxCommandEvent &);
     void OnListSelection(wxCommandEvent &);
     void OnListCheck(wxCommandEvent &);
+    void PublishStatus();
     void UpdateCommandState();
 
     std::vector<std::shared_ptr<stl_slicer::SceneModel>> models_;
     wxCheckListBox *modelList_ = nullptr;
     ModelCanvas *canvas_ = nullptr;
     wxToolBar *toolbar_ = nullptr;
-    wxStatusBar *statusBar_ = nullptr;
     wxMenuItem *exportItem_ = nullptr;
 };

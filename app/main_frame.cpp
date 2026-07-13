@@ -2,6 +2,7 @@
 #include "document_frame.hpp"
 #include <wx/filedlg.h>
 #include <wx/filename.h>
+#include <wx/statusbr.h>
 
 namespace {
 enum { IdOpen = wxID_HIGHEST + 1 };
@@ -16,7 +17,16 @@ MainFrame::MainFrame()
     auto *bar = new wxMenuBar;
     bar->Append(file, "&File");
     SetMenuBar(bar);
-    CreateStatusBar();
+    wxStatusBar *statusBar = CreateStatusBar(2);
+    int buildWidth = 210;
+    int sliceWidth = 90;
+    if (statusBar) {
+        statusBar->GetTextExtent("0000.00 x 0000.00 x 0000.00", &buildWidth, nullptr);
+        statusBar->GetTextExtent("Z: 0000.000", &sliceWidth, nullptr);
+    }
+    const int statusWidths[] = {buildWidth + 12, sliceWidth + 12};
+    SetStatusWidths(2, statusWidths);
+    ClearDocumentStatus();
     Bind(wxEVT_MENU, &MainFrame::OnOpen, this, IdOpen);
     Bind(wxEVT_MENU, &MainFrame::OnExit, this, wxID_EXIT);
 }
@@ -37,6 +47,13 @@ void MainFrame::OpenFile(const wxString &path) {
     auto *child = new DocumentFrame(this, wxFileName(path).GetFullName());
     child->Show();
     child->OpenPath(path);
+}
+void MainFrame::SetDocumentStatus(const wxString &buildVolume, const wxString &slicePosition) {
+    SetStatusText(buildVolume, 0);
+    SetStatusText(slicePosition, 1);
+}
+void MainFrame::ClearDocumentStatus() {
+    SetDocumentStatus({}, {});
 }
 void MainFrame::OnExit(wxCommandEvent &) {
     Close();
