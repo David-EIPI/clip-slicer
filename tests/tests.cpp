@@ -1,5 +1,6 @@
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
+#include "stl_slicer/orientation_optimizer.hpp"
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
 #include "stl_slicer/unsupported_area.hpp"
@@ -317,6 +318,28 @@ void testUnsupportedAreas() {
             "overhang coefficient did not extend the supported radius");
 }
 
+void testOrientationOptimizer() {
+    TriangleMesh cube;
+    addBox(cube, 0, 0, 0, 1, 1, 1);
+    OrientationOptimizerOptions options;
+    options.attempts = 1;
+    options.workerCount = 1;
+    options.layerThickness = 0.5;
+    std::size_t completed = 0;
+    const auto result = optimizeOrientation(
+        cube,
+        options,
+        nullptr,
+        {},
+        [&](std::size_t current, std::size_t total) {
+            completed = current;
+            require(total == 1, "optimizer progress total");
+        });
+    require(!result.cancelled, "optimizer unexpectedly cancelled");
+    require(result.completedAttempts == 1 && completed == 1, "optimizer attempt progress");
+    require(result.best.unsupportedArea < 1e-9, "supported cube optimization score");
+}
+
 } // namespace
 
 int main() {
@@ -332,6 +355,7 @@ int main() {
         testSingleAndOffsetSlices();
         testMergeSlices();
         testUnsupportedAreas();
+        testOrientationOptimizer();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception &error) {

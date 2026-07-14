@@ -15,6 +15,7 @@ class ModelCanvas final : public wxGLCanvas {
     ModelCanvas(wxWindow *parent, DocumentFrame &document);
     ~ModelCanvas() override;
     void ModelsChanged();
+    void ModelTransformsChanged();
     void SelectionChanged();
     void SettingsChanged();
     void SetInteractiveSlice(bool enabled);

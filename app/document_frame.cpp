@@ -5,6 +5,7 @@
 #include "slice_visualization.hpp"
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
+#include "stl_slicer/orientation_optimizer.hpp"
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
 #include "stl_slicer/unsupported_area.hpp"
@@ -32,6 +33,7 @@ enum {
     IdSlice,
     IdInteractive,
     IdAnalyzeUnsupported,
+    IdOptimizeOrientation,
     IdShow,
     IdHide,
     IdSettings
@@ -40,6 +42,19 @@ enum {
 struct UnsupportedAnalysisPayload {
     VisualizationMesh visualization;
     double totalArea = 0.0;
+    std::uint64_t modelRevision = 0;
+    std::string error;
+};
+
+enum class OrientationEventType { Improvement, Progress, Finished, Error };
+
+struct OrientationOptimizationPayload {
+    OrientationEventType type = OrientationEventType::Progress;
+    std::shared_ptr<stl_slicer::SceneModel> model;
+    stl_slicer::Mat4 transform;
+    double score = 0.0;
+    std::size_t completed = 0;
+    std::size_t total = 0;
     std::uint64_t modelRevision = 0;
     std::string error;
 };
@@ -114,6 +129,13 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        wxART_REPORT_VIEW,
                                        toolSize),
                       "Highlight unsupported areas");
+    toolbar_->AddTool(IdOptimizeOrientation,
+                      "Optimize",
+                      LoadEmbeddedIcon(clip_slicer::assets::orientationOptimizerIconPng,
+                                       clip_slicer::assets::orientationOptimizerIconPngSize,
+                                       wxART_GO_UP,
+                                       toolSize),
+                      "Optimize model orientation");
     toolbar_->AddTool(
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->AddTool(
@@ -140,6 +162,11 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnInteractiveSlice, this, IdInteractive);
     Bind(wxEVT_MENU, &DocumentFrame::OnAnalyzeUnsupported, this, IdAnalyzeUnsupported);
     Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdAnalyzeUnsupported);
+    Bind(wxEVT_MENU, &DocumentFrame::OnOptimizeOrientation, this, IdOptimizeOrientation);
+    Bind(wxEVT_THREAD,
+         &DocumentFrame::OnOrientationOptimizationEvent,
+         this,
+         IdOptimizeOrientation);
     Bind(wxEVT_MENU, &DocumentFrame::OnShow, this, IdShow);
     Bind(wxEVT_MENU, &DocumentFrame::OnHide, this, IdHide);
     Bind(
@@ -154,8 +181,12 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     UpdateCommandState();
 }
 DocumentFrame::~DocumentFrame() {
+    closing_.store(true, std::memory_order_relaxed);
+    optimizationCancel_.store(true, std::memory_order_relaxed);
     if (unsupportedWorker_.joinable())
         unsupportedWorker_.join();
+    if (optimizationWorker_.joinable())
+        optimizationWorker_.join();
 }
 void DocumentFrame::BuildMenus() {
     auto *file = new wxMenu;
@@ -173,6 +204,7 @@ void DocumentFrame::BuildMenus() {
     slice->Append(IdSlice, "&Slice selected...");
     slice->AppendCheckItem(IdInteractive, "&Interactive slicing");
     unsupportedItem_ = slice->Append(IdAnalyzeUnsupported, "Highlight &unsupported areas");
+    optimizationItem_ = slice->Append(IdOptimizeOrientation, "&Optimize orientation");
     auto *bar = new wxMenuBar;
     bar->Append(file, "&File");
     bar->Append(view, "&View");
@@ -192,6 +224,8 @@ void DocumentFrame::AddModel(std::shared_ptr<stl_slicer::SceneModel> model) {
 }
 void DocumentFrame::InvalidateUnsupportedAnalysis() {
     ++modelRevision_;
+    if (optimizationRunning_)
+        optimizationCancel_.store(true, std::memory_order_relaxed);
     if (canvas_)
         canvas_->ClearUnsupportedVisualization();
 }
@@ -254,7 +288,7 @@ void DocumentFrame::UpdateCommandState() {
         exportItem_->Enable(sliced);
     if (toolbar_)
         toolbar_->EnableTool(IdExport, sliced);
-    const bool canAnalyze = !unsupportedAnalysisRunning_ &&
+    const bool canAnalyze = !unsupportedAnalysisRunning_ && !optimizationRunning_ &&
                             std::any_of(models_.begin(), models_.end(), [](const auto &model) {
                                 return model->selected;
                             });
@@ -262,6 +296,10 @@ void DocumentFrame::UpdateCommandState() {
         unsupportedItem_->Enable(canAnalyze);
     if (toolbar_)
         toolbar_->EnableTool(IdAnalyzeUnsupported, canAnalyze);
+    if (optimizationItem_)
+        optimizationItem_->Enable(canAnalyze);
+    if (toolbar_)
+        toolbar_->EnableTool(IdOptimizeOrientation, canAnalyze);
 }
 void DocumentFrame::OnListSelection(wxCommandEvent &) {
     for (std::size_t i = 0; i < models_.size(); ++i)
@@ -340,7 +378,11 @@ void DocumentFrame::PublishStatus() {
         slicePosition << std::fixed << std::setprecision(3) << canvas_->SlicePosition();
     else
         slicePosition << "--";
-    parent->SetDocumentStatus(buildVolume.str(), slicePosition.str());
+    std::ostringstream optimizationProgress;
+    if (optimizationRunning_)
+        optimizationProgress << "Run " << optimizationCompleted_ << " of " << optimizationTotal_;
+    parent->SetDocumentStatus(
+        buildVolume.str(), slicePosition.str(), optimizationProgress.str());
 }
 void DocumentFrame::OnActivate(wxActivateEvent &event) {
     if (event.GetActive())
@@ -350,7 +392,7 @@ void DocumentFrame::OnActivate(wxActivateEvent &event) {
 void DocumentFrame::OnClose(wxCloseEvent &event) {
     auto *parent = static_cast<MainFrame *>(GetMDIParent());
     if (parent->GetActiveChild() == this)
-        parent->SetDocumentStatus({}, {});
+        parent->SetDocumentStatus({}, {}, {});
     event.Skip();
 }
 void DocumentFrame::OnSlice(wxCommandEvent &) {
@@ -416,6 +458,8 @@ void DocumentFrame::OnInteractiveSlice(wxCommandEvent &) {
     canvas_->SetInteractiveSlice(!canvas_->InteractiveSlice());
 }
 void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
+    if (optimizationRunning_)
+        return;
     struct ModelSnapshot {
         std::shared_ptr<const stl_slicer::SceneModel> model;
         stl_slicer::Mat4 transform;
@@ -497,4 +541,161 @@ void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
     if (payload->modelRevision != modelRevision_)
         return;
     canvas_->SetUnsupportedVisualization(std::move(payload->visualization));
+}
+
+void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
+    if (optimizationRunning_ || unsupportedAnalysisRunning_)
+        return;
+
+    struct ModelSnapshot {
+        std::shared_ptr<stl_slicer::SceneModel> model;
+        stl_slicer::TriangleMesh worldMesh;
+        stl_slicer::Mat4 baseTransform;
+    };
+    std::vector<ModelSnapshot> snapshots;
+    for (const auto &model : models_) {
+        if (model->selected)
+            snapshots.push_back(
+                {model, stl_slicer::transformedMesh(*model), model->transform});
+    }
+    if (snapshots.empty()) {
+        wxMessageBox("Select at least one model to optimize.",
+                     "Orientation optimization",
+                     wxOK | wxICON_INFORMATION,
+                     this);
+        return;
+    }
+    if (optimizationWorker_.joinable())
+        optimizationWorker_.join();
+
+    const AppSettings settings =
+        static_cast<MainFrame *>(GetMDIParent())->Settings();
+    stl_slicer::OrientationOptimizerOptions options;
+    options.attempts = static_cast<std::size_t>(settings.optimizationAttempts);
+    options.workerCount = static_cast<std::size_t>(settings.optimizationWorkers);
+    options.convergenceTolerance = settings.optimizationTolerance;
+    options.layerThickness = 0.1;
+    options.segmentationTolerance = settings.segmentationTolerance;
+    options.healingThreshold = settings.contourHealingThreshold;
+    options.unsupportedArea =
+        {settings.criticalAngleDegrees, settings.overhangCoefficient};
+
+    canvas_->ClearUnsupportedVisualization();
+    optimizationCancel_.store(false, std::memory_order_relaxed);
+    optimizationRunning_ = true;
+    optimizationCompleted_ = 0;
+    optimizationTotal_ = options.attempts;
+    optimizationBestScores_.clear();
+    const std::uint64_t revision = modelRevision_;
+    UpdateCommandState();
+    UpdateStatus();
+
+    optimizationWorker_ = std::thread(
+        [this, snapshots = std::move(snapshots), options, revision]() mutable {
+            const auto post = [this](std::shared_ptr<OrientationOptimizationPayload> payload) {
+                if (closing_.load(std::memory_order_relaxed))
+                    return;
+                auto *event = new wxThreadEvent(wxEVT_THREAD, IdOptimizeOrientation);
+                event->SetPayload(std::move(payload));
+                wxQueueEvent(this, event);
+            };
+
+            try {
+                for (auto &snapshot : snapshots) {
+                    if (optimizationCancel_.load(std::memory_order_relaxed))
+                        break;
+
+                    auto progress = std::make_shared<OrientationOptimizationPayload>();
+                    progress->type = OrientationEventType::Progress;
+                    progress->total = options.attempts;
+                    progress->modelRevision = revision;
+                    post(std::move(progress));
+
+                    stl_slicer::optimizeOrientation(
+                        snapshot.worldMesh,
+                        options,
+                        &optimizationCancel_,
+                        [&, model = snapshot.model, base = snapshot.baseTransform](
+                            const stl_slicer::OrientationCandidate &candidate) {
+                            auto improvement =
+                                std::make_shared<OrientationOptimizationPayload>();
+                            improvement->type = OrientationEventType::Improvement;
+                            improvement->model = model;
+                            improvement->transform = candidate.transform * base;
+                            improvement->score = candidate.unsupportedArea;
+                            improvement->modelRevision = revision;
+                            post(std::move(improvement));
+                        },
+                        [&, total = options.attempts](std::size_t completed,
+                                                     std::size_t) {
+                            auto progress =
+                                std::make_shared<OrientationOptimizationPayload>();
+                            progress->type = OrientationEventType::Progress;
+                            progress->completed = completed;
+                            progress->total = total;
+                            progress->modelRevision = revision;
+                            post(std::move(progress));
+                        });
+                }
+
+                auto finished = std::make_shared<OrientationOptimizationPayload>();
+                finished->type = OrientationEventType::Finished;
+                finished->modelRevision = revision;
+                post(std::move(finished));
+            } catch (const std::exception &error) {
+                auto failed = std::make_shared<OrientationOptimizationPayload>();
+                failed->type = OrientationEventType::Error;
+                failed->modelRevision = revision;
+                failed->error = error.what();
+                post(std::move(failed));
+            }
+        });
+}
+
+void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
+    const auto payload =
+        event.GetPayload<std::shared_ptr<OrientationOptimizationPayload>>();
+    if (payload->type == OrientationEventType::Improvement) {
+        if (payload->modelRevision != modelRevision_) {
+            optimizationCancel_.store(true, std::memory_order_relaxed);
+            return;
+        }
+        const auto previous = optimizationBestScores_.find(payload->model.get());
+        if (previous != optimizationBestScores_.end() && previous->second <= payload->score)
+            return;
+        optimizationBestScores_[payload->model.get()] = payload->score;
+        payload->model->transform = payload->transform;
+        canvas_->ModelTransformsChanged();
+        UpdateStatus();
+        return;
+    }
+    if (payload->type == OrientationEventType::Progress) {
+        if (payload->modelRevision == modelRevision_) {
+            optimizationCompleted_ = payload->completed == 0
+                                         ? 0
+                                         : std::max(optimizationCompleted_, payload->completed);
+            optimizationTotal_ = payload->total;
+            UpdateStatus();
+        }
+        return;
+    }
+
+    if (optimizationWorker_.joinable())
+        optimizationWorker_.join();
+    optimizationRunning_ = false;
+    optimizationCompleted_ = 0;
+    optimizationTotal_ = 0;
+    optimizationBestScores_.clear();
+    UpdateCommandState();
+    UpdateStatus();
+
+    if (payload->type == OrientationEventType::Error) {
+        wxMessageBox(payload->error,
+                     "Orientation optimization failed",
+                     wxOK | wxICON_ERROR,
+                     this);
+        return;
+    }
+    if (payload->modelRevision == modelRevision_)
+        InvalidateUnsupportedAnalysis();
 }

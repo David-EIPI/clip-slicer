@@ -52,8 +52,9 @@ interactive slicing is disabled, the field displays \texttt{Z: --}.
 
 The \emph{Supports} toolbar button or \emph{Slice > Highlight unsupported
 areas} command analyzes the selected models in their transformed positions.
-The analysis uses 0.1 model-unit layers and a 30-degree critical support angle.
-It runs in the background so that document viewing remains responsive.
+The analysis uses 0.1 model-unit layers and the configured critical support
+angle and overhang coefficient. It runs in the background so that document
+viewing remains responsive.
 
 When analysis finishes, unsupported portions of layer surfaces are overlaid in
 bright red-orange. The first layer is treated as fully supported. On each
@@ -64,6 +65,22 @@ later be added beneath the lowest unsupported surface. The analysis marks both
 disconnected new contours and overhanging edges. Transforming a model clears
 the overlay because the previous result no longer represents its current
 position.
+
+\subsection{Orientation Optimization}
+
+The \emph{Optimize} toolbar button or \emph{Slice > Optimize orientation}
+command searches for orientations which reduce the total unsupported area of
+the selected models. Selected models are optimized independently and in list
+order. Improved orientations are applied to the document as they are found;
+the source vertex coordinates remain unchanged.
+
+Each model search starts from its current orientation and from a configured
+number of random orientations. Small rigid rotations continue while they
+reduce unsupported area. Failed directions are replaced with random
+directions, and the angular step is progressively reduced around a local
+minimum. Several attempts run concurrently. The third status-bar field reports
+completed attempts in the form \texttt{Run 1 of 10}. Model transformations or
+analysis-setting changes cancel stale optimization work.
 
 \section{Settings}
 
@@ -88,6 +105,12 @@ the support search radius is
 \(\alpha\) is the critical angle. Increasing the coefficient permits more
 horizontal displacement between successive layers before an area is marked
 unsupported.
+
+The optimization-attempt setting controls the number of local searches per
+model and defaults to 10. The worker-thread setting controls the maximum
+number of those attempts evaluated concurrently and defaults to 4.
+Convergence tolerance is the minimum unsupported-area reduction accepted as
+an improving step and defaults to 0.1 square model units.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

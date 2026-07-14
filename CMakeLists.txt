@@ -14,6 +14,7 @@ add_library(stl_slicer_lib
     src/slice.cpp
     src/slicer.cpp
     src/unsupported_area.cpp
+    src/orientation_optimizer.cpp
     src/cli_writer.cpp
     src/scene_model.cpp)
 target_include_directories(stl_slicer_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

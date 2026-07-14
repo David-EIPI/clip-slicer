@@ -21,18 +21,20 @@ MainFrame::MainFrame()
     auto *bar = new wxMenuBar;
     bar->Append(file, "&File");
     SetMenuBar(bar);
-    wxStatusBar *statusBar = CreateStatusBar(2);
+    wxStatusBar *statusBar = CreateStatusBar(3);
     int buildWidth = 210;
     int sliceWidth = 90;
+    int optimizationWidth = 100;
     if (statusBar) {
         statusBar->GetTextExtent("0000.00 x 0000.00 x 0000.00", &buildWidth, nullptr);
         statusBar->GetTextExtent("Z: -000000000.000", &sliceWidth, nullptr);
+        statusBar->GetTextExtent("Run 000000 of 000000", &optimizationWidth, nullptr);
     }
-    const int statusWidths[] = {buildWidth + 12, sliceWidth + 16};
-    const int statusStyles[] = {wxSB_SUNKEN, wxSB_SUNKEN};
-    SetStatusWidths(2, statusWidths);
+    const int statusWidths[] = {buildWidth + 12, sliceWidth + 16, optimizationWidth + 16};
+    const int statusStyles[] = {wxSB_SUNKEN, wxSB_SUNKEN, wxSB_SUNKEN};
+    SetStatusWidths(3, statusWidths);
     if (statusBar)
-        statusBar->SetStatusStyles(2, statusStyles);
+        statusBar->SetStatusStyles(3, statusStyles);
     ClearDocumentStatus();
     Bind(wxEVT_MENU, &MainFrame::OnOpen, this, IdOpen);
     Bind(wxEVT_MENU, &MainFrame::OnSettings, this, IdSettings);
@@ -51,6 +53,9 @@ void MainFrame::ShowSettingsDialog() {
     updated.segmentationTolerance = dialog.SegmentationTolerance();
     updated.criticalAngleDegrees = dialog.CriticalAngleDegrees();
     updated.overhangCoefficient = dialog.OverhangCoefficient();
+    updated.optimizationAttempts = dialog.OptimizationAttempts();
+    updated.optimizationWorkers = dialog.OptimizationWorkers();
+    updated.optimizationTolerance = dialog.OptimizationTolerance();
     if (!updated.Save()) {
         wxMessageBox("Unable to save settings to:\n" + AppSettings::FilePath(),
                      "Settings",
@@ -80,12 +85,15 @@ void MainFrame::OpenFile(const wxString &path) {
     child->Show();
     child->OpenPath(path);
 }
-void MainFrame::SetDocumentStatus(const wxString &buildVolume, const wxString &slicePosition) {
+void MainFrame::SetDocumentStatus(const wxString &buildVolume,
+                                  const wxString &slicePosition,
+                                  const wxString &optimizationProgress) {
     SetStatusText(buildVolume, 0);
     SetStatusText(slicePosition, 1);
+    SetStatusText(optimizationProgress, 2);
 }
 void MainFrame::ClearDocumentStatus() {
-    SetDocumentStatus({}, {});
+    SetDocumentStatus({}, {}, {});
 }
 void MainFrame::OnExit(wxCommandEvent &) {
     Close();

@@ -11,7 +11,9 @@ class MainFrame final : public wxMDIParentFrame {
     const AppSettings &Settings() const {
         return settings_;
     }
-    void SetDocumentStatus(const wxString &buildVolume, const wxString &slicePosition);
+    void SetDocumentStatus(const wxString &buildVolume,
+                           const wxString &slicePosition,
+                           const wxString &optimizationProgress);
 
   private:
     void ClearDocumentStatus();

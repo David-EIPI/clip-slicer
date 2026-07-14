@@ -22,6 +22,9 @@ bool AppSettings::Load() {
     segmentationTolerance = defaultSegmentationTolerance;
     criticalAngleDegrees = defaultCriticalAngleDegrees;
     overhangCoefficient = defaultOverhangCoefficient;
+    optimizationAttempts = defaultOptimizationAttempts;
+    optimizationWorkers = defaultOptimizationWorkers;
+    optimizationTolerance = defaultOptimizationTolerance;
     if (!wxFileExists(FilePath()))
         return true;
 
@@ -43,6 +46,18 @@ bool AppSettings::Load() {
     config.Read("/analysis/overhangCoefficient", &value, defaultOverhangCoefficient);
     if (std::isfinite(value) && value >= 0.0)
         overhangCoefficient = value;
+    long integerValue = defaultOptimizationAttempts;
+    config.Read("/analysis/optimizationAttempts", &integerValue, defaultOptimizationAttempts);
+    if (integerValue > 0 && integerValue <= 100000)
+        optimizationAttempts = static_cast<int>(integerValue);
+    integerValue = defaultOptimizationWorkers;
+    config.Read("/analysis/optimizationWorkers", &integerValue, defaultOptimizationWorkers);
+    if (integerValue > 0 && integerValue <= 256)
+        optimizationWorkers = static_cast<int>(integerValue);
+    value = defaultOptimizationTolerance;
+    config.Read("/analysis/optimizationTolerance", &value, defaultOptimizationTolerance);
+    if (std::isfinite(value) && value > 0.0)
+        optimizationTolerance = value;
     return true;
 }
 
@@ -58,5 +73,8 @@ bool AppSettings::Save() const {
     config.Write("/slicing/segmentationTolerance", segmentationTolerance);
     config.Write("/analysis/criticalAngleDegrees", criticalAngleDegrees);
     config.Write("/analysis/overhangCoefficient", overhangCoefficient);
+    config.Write("/analysis/optimizationAttempts", optimizationAttempts);
+    config.Write("/analysis/optimizationWorkers", optimizationWorkers);
+    config.Write("/analysis/optimizationTolerance", optimizationTolerance);
     return config.Flush();
 }

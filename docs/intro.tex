@@ -28,6 +28,11 @@ placed in a new document. When sliced models are exported, the selected models
 can be combined in one CLI file. Their layers are ordered by height, including
 layers from different models that occupy the same height.
 
+Unsupported-area analysis identifies surfaces which require additional print
+support. Orientation optimization uses this analysis to rotate each selected
+model toward an orientation with less unsupported area while retaining all
+transformations separately from the source geometry.
+
 The current export format is CLI. Support for additional three-dimensional and
 layer formats, along with manual contour editing, is planned for later
 development.

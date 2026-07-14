@@ -76,6 +76,47 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                                                 0.1);
     overhangCoefficient_->SetDigits(2);
     analysisSizer->Add(overhangCoefficient_, 1, wxEXPAND);
+    analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Optimization attempts:"),
+                       0,
+                       wxALIGN_CENTER_VERTICAL);
+    optimizationAttempts_ = new wxSpinCtrl(analysis,
+                                           wxID_ANY,
+                                           wxEmptyString,
+                                           wxDefaultPosition,
+                                           wxDefaultSize,
+                                           wxSP_ARROW_KEYS,
+                                           1,
+                                           100000,
+                                           settings.optimizationAttempts);
+    analysisSizer->Add(optimizationAttempts_, 1, wxEXPAND);
+    analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Worker threads:"),
+                       0,
+                       wxALIGN_CENTER_VERTICAL);
+    optimizationWorkers_ = new wxSpinCtrl(analysis,
+                                          wxID_ANY,
+                                          wxEmptyString,
+                                          wxDefaultPosition,
+                                          wxDefaultSize,
+                                          wxSP_ARROW_KEYS,
+                                          1,
+                                          256,
+                                          settings.optimizationWorkers);
+    analysisSizer->Add(optimizationWorkers_, 1, wxEXPAND);
+    analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Convergence tolerance:"),
+                       0,
+                       wxALIGN_CENTER_VERTICAL);
+    optimizationTolerance_ = new wxSpinCtrlDouble(analysis,
+                                                  wxID_ANY,
+                                                  wxEmptyString,
+                                                  wxDefaultPosition,
+                                                  wxDefaultSize,
+                                                  wxSP_ARROW_KEYS,
+                                                  0.000001,
+                                                  1000000.0,
+                                                  settings.optimizationTolerance,
+                                                  0.1);
+    optimizationTolerance_->SetDigits(3);
+    analysisSizer->Add(optimizationTolerance_, 1, wxEXPAND);
     analysisSizer->AddGrowableCol(1);
     analysis->SetSizer(analysisSizer);
     notebook->AddPage(analysis, "Analysis");
@@ -84,7 +125,7 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     root->Add(
         CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
     SetSizerAndFit(root);
-    SetMinSize({420, 180});
+    SetMinSize({420, 290});
 }
 
 double SettingsDialog::ContourHealingThreshold() const {
@@ -101,4 +142,16 @@ double SettingsDialog::CriticalAngleDegrees() const {
 
 double SettingsDialog::OverhangCoefficient() const {
     return overhangCoefficient_->GetValue();
+}
+
+int SettingsDialog::OptimizationAttempts() const {
+    return optimizationAttempts_->GetValue();
+}
+
+int SettingsDialog::OptimizationWorkers() const {
+    return optimizationWorkers_->GetValue();
+}
+
+double SettingsDialog::OptimizationTolerance() const {
+    return optimizationTolerance_->GetValue();
 }

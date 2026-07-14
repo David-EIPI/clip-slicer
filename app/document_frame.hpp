@@ -1,9 +1,11 @@
 #pragma once
 
 #include "stl_slicer/scene_model.hpp"
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 #include <wx/checklst.h>
 #include <wx/mdi.h>
@@ -48,6 +50,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnInteractiveSlice(wxCommandEvent &);
     void OnAnalyzeUnsupported(wxCommandEvent &);
     void OnUnsupportedAnalysisFinished(wxThreadEvent &event);
+    void OnOptimizeOrientation(wxCommandEvent &);
+    void OnOrientationOptimizationEvent(wxThreadEvent &event);
     void OnShow(wxCommandEvent &);
     void OnHide(wxCommandEvent &);
     void OnListSelection(wxCommandEvent &);
@@ -61,7 +65,15 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxToolBar *toolbar_ = nullptr;
     wxMenuItem *exportItem_ = nullptr;
     wxMenuItem *unsupportedItem_ = nullptr;
+    wxMenuItem *optimizationItem_ = nullptr;
     std::thread unsupportedWorker_;
+    std::thread optimizationWorker_;
+    std::atomic<bool> optimizationCancel_{false};
+    std::atomic<bool> closing_{false};
     std::uint64_t modelRevision_ = 0;
     bool unsupportedAnalysisRunning_ = false;
+    bool optimizationRunning_ = false;
+    std::size_t optimizationCompleted_ = 0;
+    std::size_t optimizationTotal_ = 0;
+    std::unordered_map<const stl_slicer::SceneModel *, double> optimizationBestScores_;
 };

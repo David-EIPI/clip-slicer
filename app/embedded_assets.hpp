@@ -10,5 +10,7 @@ extern const unsigned char planeSliceIconPng[];
 extern const std::size_t planeSliceIconPngSize;
 extern const unsigned char unsupportedAreaIconPng[];
 extern const std::size_t unsupportedAreaIconPngSize;
+extern const unsigned char orientationOptimizerIconPng[];
+extern const std::size_t orientationOptimizerIconPngSize;
 
 } // namespace clip_slicer::assets

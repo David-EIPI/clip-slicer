@@ -183,6 +183,12 @@ void ModelCanvas::ModelsChanged() {
     UpdateInteractiveSlice();
     Refresh();
 }
+void ModelCanvas::ModelTransformsChanged() {
+    ClearUnsupportedVisualization();
+    sliceMeshes_.clear();
+    UpdateInteractiveSlice();
+    Refresh();
+}
 void ModelCanvas::SelectionChanged() {
     UpdateInteractiveSlice();
     Refresh();
