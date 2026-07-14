@@ -110,6 +110,8 @@ UnsupportedAreaAnalyzer::UnsupportedAreaAnalyzer(UnsupportedAreaOptions options)
     if (!std::isfinite(options_.criticalAngleDegrees) || options_.criticalAngleDegrees <= 0.0 ||
         options_.criticalAngleDegrees >= 90.0)
         throw std::invalid_argument("Critical support angle must be between 0 and 90 degrees");
+    if (!std::isfinite(options_.overhangCoefficient) || options_.overhangCoefficient < 0.0)
+        throw std::invalid_argument("Overhang coefficient must be a nonnegative finite value");
 }
 
 UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices) const {
@@ -136,7 +138,8 @@ UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices) 
             if (layer.z < slices.layers[layerIndex - 1].z)
                 throw std::invalid_argument("Slice layers must be ordered by increasing height");
             const double dz = std::max(0.0, layer.z - slices.layers[layerIndex - 1].z);
-            const double radius = dz * (1.0 + 1.0 / tangent) * coordinateScale;
+            const double radius =
+                dz * (options_.overhangCoefficient + 1.0 / tangent) * coordinateScale;
             supported = supportedLayer(complete, previousLayer, radius);
             unsupported = Clipper2Lib::Difference(complete, supported, FillRule::NonZero);
         }

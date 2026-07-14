@@ -6,6 +6,7 @@ namespace stl_slicer {
 
 struct UnsupportedAreaOptions {
     double criticalAngleDegrees = 30.0;
+    double overhangCoefficient = 1.0;
 };
 
 struct UnsupportedAreaResult {

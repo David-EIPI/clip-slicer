@@ -80,6 +80,15 @@ The segmentation tolerance controls endpoint matching during initial slice
 segment connection. Its default is 0.01 model units. It is shared by the
 same three slicing workflows.
 
+The \emph{Analysis} tab controls unsupported-area detection. The critical
+angle defaults to 30 degrees. The overhang coefficient defaults to 1 and
+scales the direct layer-to-layer allowance. For a layer separation \(dZ\),
+the support search radius is
+\(dZ (c + 1 / \tan(\alpha))\), where \(c\) is the overhang coefficient and
+\(\alpha\) is the critical angle. Increasing the coefficient permits more
+horizontal displacement between successive layers before an area is marked
+unsupported.
+
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.
 

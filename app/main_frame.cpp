@@ -49,6 +49,8 @@ void MainFrame::ShowSettingsDialog() {
     AppSettings updated = settings_;
     updated.contourHealingThreshold = dialog.ContourHealingThreshold();
     updated.segmentationTolerance = dialog.SegmentationTolerance();
+    updated.criticalAngleDegrees = dialog.CriticalAngleDegrees();
+    updated.overhangCoefficient = dialog.OverhangCoefficient();
     if (!updated.Save()) {
         wxMessageBox("Unable to save settings to:\n" + AppSettings::FilePath(),
                      "Settings",

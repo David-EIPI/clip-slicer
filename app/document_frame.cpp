@@ -205,6 +205,12 @@ double DocumentFrame::ContourHealingThreshold() const {
 double DocumentFrame::SegmentationTolerance() const {
     return static_cast<MainFrame *>(GetMDIParent())->Settings().segmentationTolerance;
 }
+double DocumentFrame::CriticalAngleDegrees() const {
+    return static_cast<MainFrame *>(GetMDIParent())->Settings().criticalAngleDegrees;
+}
+double DocumentFrame::OverhangCoefficient() const {
+    return static_cast<MainFrame *>(GetMDIParent())->Settings().overhangCoefficient;
+}
 void DocumentFrame::OpenPath(const wxString &path) {
     try {
         const auto extension = wxFileName(path).GetExt().Lower();
@@ -435,11 +441,15 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
     const std::uint64_t revision = modelRevision_;
     const double healingThreshold = ContourHealingThreshold();
     const double segmentationTolerance = SegmentationTolerance();
+    const double criticalAngleDegrees = CriticalAngleDegrees();
+    const double overhangCoefficient = OverhangCoefficient();
     unsupportedWorker_ = std::thread([this,
                                       snapshots = std::move(snapshots),
                                       revision,
                                       healingThreshold,
-                                      segmentationTolerance]() mutable {
+                                      segmentationTolerance,
+                                      criticalAngleDegrees,
+                                      overhangCoefficient]() mutable {
         auto payload = std::make_shared<UnsupportedAnalysisPayload>();
         payload->modelRevision = revision;
         try {
@@ -461,7 +471,8 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
                 stl_slicer::Slicer{{0.1, segmentationTolerance, healingThreshold, 0.05}}.slice(
                     combined);
             stl_slicer::UnsupportedAreaResult unsupported =
-                stl_slicer::UnsupportedAreaAnalyzer{{30.0}}.analyze(slices);
+                stl_slicer::UnsupportedAreaAnalyzer{{criticalAngleDegrees, overhangCoefficient}}
+                    .analyze(slices);
             payload->totalArea = unsupported.totalArea;
             payload->visualization = BuildSliceSurfaces(unsupported.unsupported);
         } catch (const std::exception &error) {

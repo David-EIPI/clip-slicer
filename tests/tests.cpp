@@ -305,6 +305,16 @@ void testUnsupportedAreas() {
             "middle-layer overhang was not detected");
     require(propagated.unsupported.layers[2].paths.empty(),
             "unsupported layer area did not support the layer above it");
+
+    SliceData coefficientStack;
+    coefficientStack.layers = {
+        {0.05, {square(0, 0, 1, 1)}}, {0.15, {square(0.5, 0, 1.5, 1)}}};
+    const auto defaultOverhang = UnsupportedAreaAnalyzer{{45.0, 1.0}}.analyze(coefficientStack);
+    const auto extendedOverhang = UnsupportedAreaAnalyzer{{45.0, 5.0}}.analyze(coefficientStack);
+    require(defaultOverhang.totalArea > 0.29 && defaultOverhang.totalArea < 0.31,
+            "default overhang coefficient changed");
+    require(extendedOverhang.totalArea < 1e-9,
+            "overhang coefficient did not extend the supported radius");
 }
 
 } // namespace

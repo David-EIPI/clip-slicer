@@ -10,8 +10,12 @@ class SettingsDialog final : public wxDialog {
     SettingsDialog(wxWindow *parent, const AppSettings &settings);
     double ContourHealingThreshold() const;
     double SegmentationTolerance() const;
+    double CriticalAngleDegrees() const;
+    double OverhangCoefficient() const;
 
   private:
     wxSpinCtrlDouble *contourHealingThreshold_ = nullptr;
     wxSpinCtrlDouble *segmentationTolerance_ = nullptr;
+    wxSpinCtrlDouble *criticalAngleDegrees_ = nullptr;
+    wxSpinCtrlDouble *overhangCoefficient_ = nullptr;
 };

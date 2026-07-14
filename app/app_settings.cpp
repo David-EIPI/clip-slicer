@@ -20,6 +20,8 @@ wxString AppSettings::FilePath() {
 bool AppSettings::Load() {
     contourHealingThreshold = defaultContourHealingThreshold;
     segmentationTolerance = defaultSegmentationTolerance;
+    criticalAngleDegrees = defaultCriticalAngleDegrees;
+    overhangCoefficient = defaultOverhangCoefficient;
     if (!wxFileExists(FilePath()))
         return true;
 
@@ -33,6 +35,14 @@ bool AppSettings::Load() {
     config.Read("/slicing/segmentationTolerance", &value, defaultSegmentationTolerance);
     if (std::isfinite(value) && value > 0.0)
         segmentationTolerance = value;
+    value = defaultCriticalAngleDegrees;
+    config.Read("/analysis/criticalAngleDegrees", &value, defaultCriticalAngleDegrees);
+    if (std::isfinite(value) && value > 0.0 && value < 90.0)
+        criticalAngleDegrees = value;
+    value = defaultOverhangCoefficient;
+    config.Read("/analysis/overhangCoefficient", &value, defaultOverhangCoefficient);
+    if (std::isfinite(value) && value >= 0.0)
+        overhangCoefficient = value;
     return true;
 }
 
@@ -46,5 +56,7 @@ bool AppSettings::Save() const {
         wxEmptyString, wxEmptyString, FilePath(), wxEmptyString, wxCONFIG_USE_LOCAL_FILE);
     config.Write("/slicing/contourHealingThreshold", contourHealingThreshold);
     config.Write("/slicing/segmentationTolerance", segmentationTolerance);
+    config.Write("/analysis/criticalAngleDegrees", criticalAngleDegrees);
+    config.Write("/analysis/overhangCoefficient", overhangCoefficient);
     return config.Flush();
 }

@@ -35,6 +35,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     void SettingsChanged();
     double ContourHealingThreshold() const;
     double SegmentationTolerance() const;
+    double CriticalAngleDegrees() const;
+    double OverhangCoefficient() const;
 
   private:
     void BuildMenus();
