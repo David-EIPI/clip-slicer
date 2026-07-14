@@ -1,11 +1,11 @@
 #pragma once
 
 #include "slice_visualization.hpp"
+#include "gl_api.hpp"
 #include "stl_slicer/scene_model.hpp"
 #include "stl_slicer/slice.hpp"
 #include <atomic>
 #include <cstdint>
-#include <epoxy/gl.h>
 #include <memory>
 #include <thread>
 #include <unordered_map>

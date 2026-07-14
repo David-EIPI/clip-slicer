@@ -1,4 +1,13 @@
 #include "slice_visualization.hpp"
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 #include <GL/glu.h>
 #include <algorithm>
 #include <array>
@@ -12,6 +21,14 @@
 
 namespace {
 using stl_slicer::RenderVertex;
+
+#if defined(_WIN32)
+#define TESS_CALLBACK CALLBACK
+using GluTessCallback = void(CALLBACK *)();
+#else
+#define TESS_CALLBACK GLAPIENTRY
+using GluTessCallback = _GLUfuncptr;
+#endif
 
 RenderVertex renderVertex(const GLdouble *point, float z, float normalZ) {
     return {float(point[0]), float(point[1]), z, 0.0f, 0.0f, normalZ};
@@ -127,24 +144,24 @@ class Tessellation {
     std::string error_;
 };
 
-void GLAPIENTRY tessBegin(GLenum mode, void *data) {
+void TESS_CALLBACK tessBegin(GLenum mode, void *data) {
     static_cast<Tessellation *>(data)->begin(mode);
 }
 
-void GLAPIENTRY tessVertex(void *vertex, void *data) {
+void TESS_CALLBACK tessVertex(void *vertex, void *data) {
     static_cast<Tessellation *>(data)->vertex(static_cast<const GLdouble *>(vertex));
 }
 
-void GLAPIENTRY tessEnd(void *data) {
+void TESS_CALLBACK tessEnd(void *data) {
     static_cast<Tessellation *>(data)->end();
 }
 
-void GLAPIENTRY
+void TESS_CALLBACK
 tessCombine(GLdouble coordinates[3], void *[4], GLfloat[4], void **output, void *data) {
     static_cast<Tessellation *>(data)->combine(coordinates, output);
 }
 
-void GLAPIENTRY tessError(GLenum code, void *data) {
+void TESS_CALLBACK tessError(GLenum code, void *data) {
     static_cast<Tessellation *>(data)->error(code);
 }
 
@@ -199,11 +216,16 @@ VisualizationMesh buildSliceFaces(const stl_slicer::SliceData &slices, bool incl
         if (!tessellator)
             throw std::runtime_error("Unable to create GLU tessellator");
 
-        gluTessCallback(tessellator, GLU_TESS_BEGIN_DATA, (_GLUfuncptr)tessBegin);
-        gluTessCallback(tessellator, GLU_TESS_VERTEX_DATA, (_GLUfuncptr)tessVertex);
-        gluTessCallback(tessellator, GLU_TESS_END_DATA, (_GLUfuncptr)tessEnd);
-        gluTessCallback(tessellator, GLU_TESS_COMBINE_DATA, (_GLUfuncptr)tessCombine);
-        gluTessCallback(tessellator, GLU_TESS_ERROR_DATA, (_GLUfuncptr)tessError);
+        gluTessCallback(
+            tessellator, GLU_TESS_BEGIN_DATA, reinterpret_cast<GluTessCallback>(tessBegin));
+        gluTessCallback(
+            tessellator, GLU_TESS_VERTEX_DATA, reinterpret_cast<GluTessCallback>(tessVertex));
+        gluTessCallback(
+            tessellator, GLU_TESS_END_DATA, reinterpret_cast<GluTessCallback>(tessEnd));
+        gluTessCallback(
+            tessellator, GLU_TESS_COMBINE_DATA, reinterpret_cast<GluTessCallback>(tessCombine));
+        gluTessCallback(
+            tessellator, GLU_TESS_ERROR_DATA, reinterpret_cast<GluTessCallback>(tessError));
         gluTessProperty(tessellator, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO);
         gluTessNormal(tessellator, 0.0, 0.0, 1.0);
 

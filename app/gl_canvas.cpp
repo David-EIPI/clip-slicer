@@ -157,6 +157,8 @@ void ModelCanvas::InitializeGl() {
     if (initialized_)
         return;
     SetCurrent(*context_);
+    if (!InitializeOpenGlFunctions())
+        throw std::runtime_error("Unable to load required OpenGL functions");
     GLuint vs = shader(GL_VERTEX_SHADER, vertexShader),
            fs = shader(GL_FRAGMENT_SHADER, fragmentShader);
     program_ = glCreateProgram();
