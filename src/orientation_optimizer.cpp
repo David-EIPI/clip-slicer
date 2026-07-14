@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <limits>
 #include <mutex>
 #include <random>
 #include <stdexcept>
@@ -41,14 +42,19 @@ TriangleMesh transformed(const TriangleMesh &mesh, const Mat4 &transform) {
 
 double score(const TriangleMesh &mesh,
              const Mat4 &transform,
-             const OrientationOptimizerOptions &options) {
+             const OrientationOptimizerOptions &options,
+             const std::atomic<bool> *cancel) {
+    if (cancel && cancel->load(std::memory_order_relaxed))
+        return std::numeric_limits<double>::infinity();
     const TriangleMesh candidate = transformed(mesh, transform);
     const SliceData slices =
         Slicer{{options.layerThickness,
                 options.segmentationTolerance,
                 options.healingThreshold,
                 options.layerThickness * 0.5}}
-            .slice(candidate);
+            .slice(candidate, cancel);
+    if (cancel && cancel->load(std::memory_order_relaxed))
+        return std::numeric_limits<double>::infinity();
     return UnsupportedAreaAnalyzer{options.unsupportedArea}.analyze(slices).totalArea;
 }
 
@@ -112,15 +118,18 @@ OrientationOptimizationResult optimizeOrientation(
                       (bounds.min.y + bounds.max.y) * 0.5,
                       (bounds.min.z + bounds.max.z) * 0.5};
     OrientationOptimizationResult result;
-    const double baselineScore = score(mesh, {}, options);
-    result.best = {{}, baselineScore};
-    if (improvementCallback)
-        improvementCallback(result.best);
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         result.cancelled = true;
         return result;
     }
-
+    const double baselineScore = score(mesh, {}, options, cancel);
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
+        result.cancelled = true;
+        return result;
+    }
+    result.best = {{}, baselineScore};
+    if (improvementCallback)
+        improvementCallback(result.best);
     std::atomic<std::size_t> remaining{options.attempts};
     std::atomic<std::size_t> completed{0};
     std::atomic<bool> failed{false};
@@ -157,7 +166,7 @@ OrientationOptimizationResult optimizeOrientation(
                     current = {{}, baselineScore};
                 } else {
                     current.transform = centeredRotation(randomRotation(random), center);
-                    current.unsupportedArea = score(mesh, current.transform, options);
+                    current.unsupportedArea = score(mesh, current.transform, options, cancel);
                     publish(current);
                 }
 
@@ -171,7 +180,7 @@ OrientationOptimizationResult optimizeOrientation(
                     candidate.transform =
                         centeredRotation(Mat4::rotation(radians, direction), center) *
                         current.transform;
-                    candidate.unsupportedArea = score(mesh, candidate.transform, options);
+                    candidate.unsupportedArea = score(mesh, candidate.transform, options, cancel);
                     if (current.unsupportedArea - candidate.unsupportedArea >
                         options.convergenceTolerance) {
                         current = candidate;

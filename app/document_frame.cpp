@@ -8,6 +8,7 @@
 #include "stl_slicer/orientation_optimizer.hpp"
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
+#include "stl_slicer/stl_writer.hpp"
 #include "stl_slicer/unsupported_area.hpp"
 #include <algorithm>
 #include <iomanip>
@@ -30,10 +31,12 @@ enum {
     IdOpen = wxID_HIGHEST + 20,
     IdOpenIntoDocument,
     IdExport,
+    IdExportStl,
     IdSlice,
     IdInteractive,
     IdAnalyzeUnsupported,
     IdOptimizeOrientation,
+    IdStopOptimization,
     IdShow,
     IdHide,
     IdSettings
@@ -136,6 +139,10 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        wxART_GO_UP,
                                        toolSize),
                       "Optimize model orientation");
+    toolbar_->AddTool(IdStopOptimization,
+                      "Stop",
+                      wxArtProvider::GetBitmap(wxART_STOP, wxART_TOOLBAR, toolSize),
+                      "Stop orientation optimization");
     toolbar_->AddTool(
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->AddTool(
@@ -158,11 +165,13 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
         IdOpen);
     Bind(wxEVT_MENU, &DocumentFrame::OnOpen, this, IdOpenIntoDocument);
     Bind(wxEVT_MENU, &DocumentFrame::OnExport, this, IdExport);
+    Bind(wxEVT_MENU, &DocumentFrame::OnExportStl, this, IdExportStl);
     Bind(wxEVT_MENU, &DocumentFrame::OnSlice, this, IdSlice);
     Bind(wxEVT_MENU, &DocumentFrame::OnInteractiveSlice, this, IdInteractive);
     Bind(wxEVT_MENU, &DocumentFrame::OnAnalyzeUnsupported, this, IdAnalyzeUnsupported);
     Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdAnalyzeUnsupported);
     Bind(wxEVT_MENU, &DocumentFrame::OnOptimizeOrientation, this, IdOptimizeOrientation);
+    Bind(wxEVT_MENU, &DocumentFrame::OnStopOptimization, this, IdStopOptimization);
     Bind(wxEVT_THREAD,
          &DocumentFrame::OnOrientationOptimizationEvent,
          this,
@@ -187,12 +196,14 @@ DocumentFrame::~DocumentFrame() {
         unsupportedWorker_.join();
     if (optimizationWorker_.joinable())
         optimizationWorker_.join();
+    DeletePendingEvents();
 }
 void DocumentFrame::BuildMenus() {
     auto *file = new wxMenu;
     file->Append(IdOpen, "&Open...\tCtrl+O");
     file->Append(IdOpenIntoDocument, "Open into &document...");
     exportItem_ = file->Append(IdExport, "&Export Slices...");
+    exportStlItem_ = file->Append(IdExportStl, "Export &STL...");
     file->Append(IdSettings, "&Settings...");
     file->Append(wxID_CLOSE, "&Close");
     file->AppendSeparator();
@@ -232,6 +243,9 @@ void DocumentFrame::InvalidateUnsupportedAnalysis() {
 void DocumentFrame::SettingsChanged() {
     InvalidateUnsupportedAnalysis();
     canvas_->SettingsChanged();
+}
+void DocumentFrame::InteractiveSliceStateChanged() {
+    UpdateCommandState();
 }
 double DocumentFrame::ContourHealingThreshold() const {
     return static_cast<MainFrame *>(GetMDIParent())->Settings().contourHealingThreshold;
@@ -283,9 +297,17 @@ void DocumentFrame::RefreshModelList() {
 }
 void DocumentFrame::UpdateCommandState() {
     const bool sliced =
-        std::any_of(models_.begin(), models_.end(), [](const auto &m) { return m->isSliced(); });
+        std::any_of(models_.begin(), models_.end(), [](const auto &model) {
+            return model->selected && model->isSliced();
+        });
+    const bool meshSelected =
+        std::any_of(models_.begin(), models_.end(), [](const auto &model) {
+            return model->selected && !model->isSliced();
+        });
     if (exportItem_)
         exportItem_->Enable(sliced);
+    if (exportStlItem_)
+        exportStlItem_->Enable(meshSelected);
     if (toolbar_)
         toolbar_->EnableTool(IdExport, sliced);
     const bool canAnalyze = !unsupportedAnalysisRunning_ && !optimizationRunning_ &&
@@ -300,6 +322,10 @@ void DocumentFrame::UpdateCommandState() {
         optimizationItem_->Enable(canAnalyze);
     if (toolbar_)
         toolbar_->EnableTool(IdOptimizeOrientation, canAnalyze);
+    if (toolbar_)
+        toolbar_->EnableTool(
+            IdStopOptimization,
+            optimizationRunning_ || (canvas_ && canvas_->InteractiveSliceRunning()));
 }
 void DocumentFrame::OnListSelection(wxCommandEvent &) {
     for (std::size_t i = 0; i < models_.size(); ++i)
@@ -457,6 +483,41 @@ void DocumentFrame::OnExport(wxCommandEvent &) {
         } catch (const std::exception &e) {
             wxMessageBox(e.what(), "Export failed", wxOK | wxICON_ERROR, this);
         }
+}
+void DocumentFrame::OnExportStl(wxCommandEvent &) {
+    std::size_t triangleCount = 0;
+    for (const auto &model : models_)
+        if (model->selected && !model->isSliced())
+            triangleCount += model->renderVertices().size() / 3;
+    if (triangleCount == 0) {
+        wxMessageBox("Select at least one non-sliced 3D model.");
+        return;
+    }
+
+    stl_slicer::TriangleMesh combined;
+    combined.reserve(triangleCount);
+    for (const auto &model : models_) {
+        if (!model->selected || model->isSliced())
+            continue;
+        const stl_slicer::TriangleMesh mesh = stl_slicer::transformedMesh(*model);
+        for (const auto &triangle : mesh.triangles())
+            combined.addTriangle(triangle);
+    }
+
+    wxFileDialog dialog(this,
+                        "Export STL",
+                        {},
+                        "model.stl",
+                        "STL files (*.stl)|*.stl",
+                        wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    if (dialog.ShowModal() == wxID_OK) {
+        try {
+            stl_slicer::BinaryStlWriter{}.write(combined,
+                                                dialog.GetPath().ToStdString());
+        } catch (const std::exception &error) {
+            wxMessageBox(error.what(), "Export failed", wxOK | wxICON_ERROR, this);
+        }
+    }
 }
 void DocumentFrame::OnInteractiveSlice(wxCommandEvent &) {
     canvas_->SetInteractiveSlice(!canvas_->InteractiveSlice());
@@ -657,6 +718,13 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
         });
 }
 
+void DocumentFrame::OnStopOptimization(wxCommandEvent &) {
+    if (optimizationRunning_)
+        optimizationCancel_.store(true, std::memory_order_relaxed);
+    if (canvas_)
+        canvas_->CancelInteractiveSlice();
+}
+
 void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
     const auto payload =
         event.GetPayload<std::shared_ptr<OrientationOptimizationPayload>>();
@@ -694,6 +762,7 @@ void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
     if (optimizationWorker_.joinable())
         optimizationWorker_.join();
     optimizationRunning_ = false;
+    optimizationCancel_.store(false, std::memory_order_relaxed);
     optimizationCompleted_ = 0;
     optimizationTotal_ = 0;
     optimizationHasScore_ = false;

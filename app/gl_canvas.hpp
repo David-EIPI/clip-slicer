@@ -3,12 +3,16 @@
 #include "slice_visualization.hpp"
 #include "stl_slicer/scene_model.hpp"
 #include "stl_slicer/slice.hpp"
+#include <atomic>
+#include <cstdint>
 #include <epoxy/gl.h>
 #include <memory>
+#include <thread>
 #include <unordered_map>
 #include <wx/glcanvas.h>
 
 class DocumentFrame;
+class wxThreadEvent;
 
 class ModelCanvas final : public wxGLCanvas {
   public:
@@ -28,6 +32,10 @@ class ModelCanvas final : public wxGLCanvas {
     double SliceArea() const {
         return sliceArea_;
     }
+    bool InteractiveSliceRunning() const {
+        return interactiveSliceRunning_;
+    }
+    void CancelInteractiveSlice();
     void SetUnsupportedVisualization(VisualizationMesh visualization);
     void ClearUnsupportedVisualization();
 
@@ -42,6 +50,7 @@ class ModelCanvas final : public wxGLCanvas {
     void OnPaint(wxPaintEvent &event);
     void OnSize(wxSizeEvent &event);
     void OnMouse(wxMouseEvent &event);
+    void OnInteractiveSliceFinished(wxThreadEvent &event);
     void InitializeGl();
     void DrawWorldAxes();
     void DrawModels(const float *viewProjection);
@@ -49,6 +58,7 @@ class ModelCanvas final : public wxGLCanvas {
     void DrawOverlays(const float *viewProjection);
     void DrawOrientationVane();
     void UpdateInteractiveSlice();
+    void BeginInteractiveSlice();
     void TransformSelected(const stl_slicer::Mat4 &transform);
 
     DocumentFrame &document_;
@@ -58,11 +68,19 @@ class ModelCanvas final : public wxGLCanvas {
     GLsizei unsupportedIndexCount_ = 0;
     GLint matrixUniform_ = -1, modelUniform_ = -1, colorUniform_ = -1, litUniform_ = -1;
     std::unordered_map<const stl_slicer::SceneModel *, Buffer> buffers_;
-    std::unordered_map<const stl_slicer::SceneModel *, stl_slicer::TriangleMesh> sliceMeshes_;
+    std::unordered_map<const stl_slicer::SceneModel *,
+                       std::shared_ptr<const stl_slicer::TriangleMesh>>
+        sliceMeshes_;
     std::vector<stl_slicer::SliceLayer> interactiveLayers_;
     VisualizationMesh unsupportedVisualization_;
     bool unsupportedVisualizationDirty_ = false;
     bool initialized_ = false, interactiveSlice_ = false;
+    std::thread interactiveSliceWorker_;
+    std::atomic<bool> interactiveSliceCancel_{false};
+    std::atomic<bool> closing_{false};
+    std::uint64_t interactiveSliceGeneration_ = 0;
+    bool interactiveSliceRunning_ = false;
+    bool interactiveSlicePending_ = false;
     double slicePosition_ = 0.0, sliceArea_ = 0.0;
     double yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
     double fieldOfView_ = 0.75;

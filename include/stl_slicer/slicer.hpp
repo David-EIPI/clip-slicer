@@ -2,6 +2,7 @@
 
 #include "stl_slicer/model.hpp"
 #include "stl_slicer/slice.hpp"
+#include <atomic>
 
 namespace stl_slicer {
 
@@ -15,8 +16,10 @@ struct SlicerOptions {
 class Slicer {
   public:
     explicit Slicer(SlicerOptions options = {});
-    SliceData slice(const TriangleMesh &mesh) const;
-    SliceLayer sliceAt(const TriangleMesh &mesh, double z) const;
+    SliceData slice(const TriangleMesh &mesh, const std::atomic<bool> *cancel = nullptr) const;
+    SliceLayer sliceAt(const TriangleMesh &mesh,
+                       double z,
+                       const std::atomic<bool> *cancel = nullptr) const;
 
   private:
     SlicerOptions options_;

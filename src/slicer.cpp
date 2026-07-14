@@ -373,13 +373,17 @@ Slicer::Slicer(SlicerOptions options) : options_(options) {
         throw std::invalid_argument("First-layer offset must be finite");
 }
 
-SliceLayer Slicer::sliceAt(const TriangleMesh &mesh, double z) const {
+SliceLayer Slicer::sliceAt(const TriangleMesh &mesh,
+                           double z,
+                           const std::atomic<bool> *cancel) const {
     if (!mesh.bounds().valid())
         throw std::invalid_argument("Cannot slice an empty mesh");
     SliceLayer layer;
     layer.z = z;
     std::vector<Segment> segments;
     for (std::size_t i = 0; i < mesh.triangles().size(); ++i) {
+        if (cancel && (i & 255U) == 0 && cancel->load(std::memory_order_relaxed))
+            return layer;
         const auto &triangle = mesh.triangles()[i];
         if (triangle.minZ >= z || triangle.maxZ < z)
             continue;
@@ -393,7 +397,7 @@ SliceLayer Slicer::sliceAt(const TriangleMesh &mesh, double z) const {
     return layer;
 }
 
-SliceData Slicer::slice(const TriangleMesh &mesh) const {
+SliceData Slicer::slice(const TriangleMesh &mesh, const std::atomic<bool> *cancel) const {
     if (!mesh.bounds().valid())
         throw std::invalid_argument("Cannot slice an empty mesh");
     SliceData result;
@@ -433,6 +437,8 @@ SliceData Slicer::slice(const TriangleMesh &mesh) const {
         options_.firstLayerOffset >= 0.0 ? options_.firstLayerOffset : options_.layerThickness;
     // Calculate z from an integer layer index to avoid accumulated floating-point drift.
     for (std::size_t index = 0;; ++index) {
+        if (cancel && cancel->load(std::memory_order_relaxed))
+            break;
         const double z = mesh.bounds().min.z + firstOffset +
                          static_cast<double>(index) * options_.layerThickness;
         if (z > mesh.bounds().max.z + options_.joinTolerance)

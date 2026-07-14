@@ -1,9 +1,12 @@
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
 #include "stl_slicer/orientation_optimizer.hpp"
+#include "stl_slicer/scene_model.hpp"
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
+#include "stl_slicer/stl_writer.hpp"
 #include "stl_slicer/unsupported_area.hpp"
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -83,6 +86,40 @@ void testBinaryStlReader() {
     require(rejected, "truncated STL rejected");
 }
 
+void testBinaryStlWriter() {
+    TriangleMesh source;
+    Triangle triangle;
+    triangle.normal = {0, 0, 1};
+    triangle.vertices = {{{1.25, -2.5, 3.75}, {4, 5, 6}, {7, 8, 9}}};
+    triangle.attribute = 42;
+    source.addTriangle(triangle);
+
+    std::ostringstream output(std::ios::binary);
+    BinaryStlWriter{{"Writer test"}}.write(source, output);
+    const std::string bytes = output.str();
+    require(bytes.size() == 134, "binary STL writer size");
+
+    std::istringstream input(bytes, std::ios::binary);
+    const TriangleMesh roundTrip = BinaryStlReader{}.read(input);
+    require(roundTrip.triangles().size() == 1, "binary STL writer triangle count");
+    const Triangle &written = roundTrip.triangles().front();
+    require(written.attribute == 42, "binary STL writer attribute");
+    require(written.normal.z == 1 && written.vertices[0].x == 1.25 &&
+                written.vertices[0].y == -2.5 && written.vertices[2].z == 9,
+            "binary STL writer geometry");
+
+    MeshSceneModel model("translated", source);
+    model.transform = Mat4::translation(10, 20, 30);
+    std::ostringstream transformedOutput(std::ios::binary);
+    BinaryStlWriter{}.write(transformedMesh(model), transformedOutput);
+    std::istringstream transformedInput(transformedOutput.str(), std::ios::binary);
+    const TriangleMesh transformedMeshData = BinaryStlReader{}.read(transformedInput);
+    const Triangle &transformed = transformedMeshData.triangles().front();
+    require(transformed.vertices[0].x == 11.25 && transformed.vertices[0].y == 17.5 &&
+                transformed.vertices[0].z == 33.75,
+            "binary STL transformed geometry");
+}
+
 void testCubeSlices() {
     TriangleMesh cube;
     addBox(cube, 0, 0, 0, 10, 10, 1);
@@ -96,6 +133,16 @@ void testCubeSlices() {
                 "cube closed path");
         require(area(layer.paths[0]) > 99.999, "cube CCW area");
     }
+}
+
+void testSliceCancellation() {
+    TriangleMesh cube;
+    addBox(cube, 0, 0, 0, 10, 10, 1);
+    std::atomic<bool> cancel{true};
+    require(Slicer{{0.25, 1e-7}}.slice(cube, &cancel).layers.empty(),
+            "cancelled full slice produced layers");
+    require(Slicer{{0.25, 1e-7}}.sliceAt(cube, 0.5, &cancel).paths.empty(),
+            "cancelled interactive slice produced paths");
 }
 
 void testNestedContours() {
@@ -342,6 +389,11 @@ void testOrientationOptimizer() {
     require(result.completedAttempts == 1 && completed == 1, "optimizer attempt progress");
     require(result.best.unsupportedArea < 1e-9, "supported cube optimization score");
     require(publishedScore < 1e-9, "optimizer did not publish its baseline score");
+
+    std::atomic<bool> cancel{true};
+    const auto cancelled = optimizeOrientation(cube, options, &cancel);
+    require(cancelled.cancelled && cancelled.completedAttempts == 0,
+            "optimizer ignored cancellation before startup");
 }
 
 } // namespace
@@ -349,7 +401,9 @@ void testOrientationOptimizer() {
 int main() {
     try {
         testBinaryStlReader();
+        testBinaryStlWriter();
         testCubeSlices();
+        testSliceCancellation();
         testNestedContours();
         testToleranceIndexedConnection();
         testTolerancePreservesShortEdges();

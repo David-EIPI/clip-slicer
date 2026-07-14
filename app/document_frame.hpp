@@ -35,6 +35,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OpenPath(const wxString &path);
     void InvalidateUnsupportedAnalysis();
     void SettingsChanged();
+    void InteractiveSliceStateChanged();
     double ContourHealingThreshold() const;
     double SegmentationTolerance() const;
     double CriticalAngleDegrees() const;
@@ -46,11 +47,13 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnActivate(wxActivateEvent &);
     void OnClose(wxCloseEvent &);
     void OnExport(wxCommandEvent &);
+    void OnExportStl(wxCommandEvent &);
     void OnSlice(wxCommandEvent &);
     void OnInteractiveSlice(wxCommandEvent &);
     void OnAnalyzeUnsupported(wxCommandEvent &);
     void OnUnsupportedAnalysisFinished(wxThreadEvent &event);
     void OnOptimizeOrientation(wxCommandEvent &);
+    void OnStopOptimization(wxCommandEvent &);
     void OnOrientationOptimizationEvent(wxThreadEvent &event);
     void OnShow(wxCommandEvent &);
     void OnHide(wxCommandEvent &);
@@ -64,6 +67,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     ModelCanvas *canvas_ = nullptr;
     wxToolBar *toolbar_ = nullptr;
     wxMenuItem *exportItem_ = nullptr;
+    wxMenuItem *exportStlItem_ = nullptr;
     wxMenuItem *unsupportedItem_ = nullptr;
     wxMenuItem *optimizationItem_ = nullptr;
     std::thread unsupportedWorker_;

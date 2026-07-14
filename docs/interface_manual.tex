@@ -82,6 +82,18 @@ minimum. Several attempts run concurrently. The third status-bar field reports
 completed attempts and the best unsupported-area score for the current model
 in the form \texttt{Run 1 of 10 (S=12.34)}. Model transformations or
 analysis-setting changes cancel stale optimization work.
+The \emph{Stop} toolbar button requests cooperative cancellation. Optimization
+workers stop between slicing layers, and the controls return to their idle
+state after all workers have exited. The same button cancels an interactive
+slice calculation currently running in the background.
+
+\subsection{STL Export}
+
+The \emph{File > Export STL} command writes all selected surface models into
+one binary STL file. Stored model transformations are applied to every vertex
+and normal. Sliced models are omitted because their visualization mesh is not
+treated as source STL geometry. Intersecting input meshes are written without
+performing a geometric union.
 
 \section{Settings}
 
