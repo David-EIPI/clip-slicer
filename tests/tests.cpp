@@ -140,6 +140,21 @@ void testToleranceIndexedConnection() {
     require(data.layers[0].paths[0].type == PathType::External, "tolerance path closed");
 }
 
+void testTolerancePreservesShortEdges() {
+    TriangleMesh mesh;
+    addBox(mesh, 0, 0, 0, 0.05, 1, 1);
+
+    const auto data = Slicer{{0.5, 0.1, 0.1}}.slice(mesh);
+    require(data.layers.size() == 2, "short-edge layer count");
+    for (const auto &layer : data.layers) {
+        require(layer.paths.size() == 1, "short valid segments were discarded");
+        require(layer.paths[0].type == PathType::External,
+                "nearby path ends closed before exact segments were connected");
+        require(std::abs(area(layer.paths[0]) - 0.05) < 1e-9,
+                "short-edge contour area changed");
+    }
+}
+
 void testSmallGapHealing() {
     TriangleMesh mesh;
     const double gap = 4e-5;
@@ -300,6 +315,7 @@ int main() {
         testCubeSlices();
         testNestedContours();
         testToleranceIndexedConnection();
+        testTolerancePreservesShortEdges();
         testSmallGapHealing();
         testReversedSharedEdgeInterpolation();
         testCliWriters();

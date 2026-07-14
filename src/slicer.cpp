@@ -41,8 +41,16 @@ bool near(const Vec2 &a, const Vec2 &b, double tolerance) {
 
 class EndpointIndex {
   public:
+    struct Match {
+        std::size_t segmentIndex;
+        bool pathAtFront;
+        bool segmentAtA;
+        double distanceSquared;
+    };
+
     EndpointIndex(const std::vector<Segment> &segments, double tolerance)
-        : segments_(segments), tolerance_(tolerance), seen_(segments.size(), 0) {
+        : segments_(segments), tolerance_(tolerance), toleranceSquared_(tolerance * tolerance),
+          seen_(segments.size(), 0) {
         buckets_.reserve(segments.size() * 2);
         for (std::size_t i = 0; i < segments.size(); ++i) {
             buckets_[cell(segments[i].a)].push_back(i);
@@ -50,18 +58,23 @@ class EndpointIndex {
         }
     }
 
-    std::size_t find(const Vec2 &front, const Vec2 &back, const std::vector<bool> &alive) {
-        if (++generation_ == 0) {
-            std::fill(seen_.begin(), seen_.end(), 0);
-            ++generation_;
-        }
-        std::size_t best = segments_.size();
-        visitNeighbors(front, front, back, alive, best);
-        visitNeighbors(back, front, back, alive, best);
+    Match find(const Vec2 &front, const Vec2 &back, const std::vector<bool> &alive) {
+        Match best{segments_.size(), false, false, std::numeric_limits<double>::infinity()};
+        advanceGeneration();
+        visitNeighbors(front, true, alive, best);
+        advanceGeneration();
+        visitNeighbors(back, false, alive, best);
         return best;
     }
 
   private:
+    void advanceGeneration() {
+        if (++generation_ == 0) {
+            std::fill(seen_.begin(), seen_.end(), 0);
+            ++generation_;
+        }
+    }
+
     EndpointCell cell(const Vec2 &point) const {
         const long double x = std::floor(static_cast<long double>(point.x) / tolerance_);
         const long double y = std::floor(static_cast<long double>(point.y) / tolerance_);
@@ -75,10 +88,9 @@ class EndpointIndex {
     }
 
     void visitNeighbors(const Vec2 &point,
-                        const Vec2 &front,
-                        const Vec2 &back,
+                        bool pathAtFront,
                         const std::vector<bool> &alive,
-                        std::size_t &best) {
+                        Match &best) {
         const EndpointCell center = cell(point);
         for (std::int64_t dx = -1; dx <= 1; ++dx) {
             for (std::int64_t dy = -1; dy <= 1; ++dy) {
@@ -90,11 +102,15 @@ class EndpointIndex {
                         continue;
                     seen_[index] = generation_;
                     const Segment &segment = segments_[index];
-                    if ((near(back, segment.a, tolerance_) || near(back, segment.b, tolerance_) ||
-                         near(front, segment.b, tolerance_) ||
-                         near(front, segment.a, tolerance_)) &&
-                        index < best)
-                        best = index;
+                    const double distanceToA = squaredDistance(point, segment.a);
+                    const double distanceToB = squaredDistance(point, segment.b);
+                    const bool segmentAtA = distanceToA <= distanceToB;
+                    const double distance = segmentAtA ? distanceToA : distanceToB;
+                    const bool closer = distance < best.distanceSquared;
+                    const bool stableTie =
+                        distance == best.distanceSquared && index < best.segmentIndex;
+                    if (distance <= toleranceSquared_ && (closer || stableTie))
+                        best = {index, pathAtFront, segmentAtA, distance};
                 }
             }
         }
@@ -102,6 +118,7 @@ class EndpointIndex {
 
     const std::vector<Segment> &segments_;
     double tolerance_;
+    double toleranceSquared_;
     std::unordered_map<EndpointCell, std::vector<std::size_t>, EndpointCellHash> buckets_;
     std::vector<std::uint64_t> seen_;
     std::uint64_t generation_ = 0;
@@ -119,7 +136,7 @@ Vec2 interpolate(const Vec3 &a, const Vec3 &b, double z) {
     return {low->x + t * (high->x - low->x), low->y + t * (high->y - low->y)};
 }
 
-bool triangleSegment(const Triangle &triangle, double z, double tolerance, Segment &result) {
+bool triangleSegment(const Triangle &triangle, double z, Segment &result) {
     Vec2 points[2];
     std::size_t pointCount = 0;
     for (std::size_t i = 0; i < 3; ++i) {
@@ -132,7 +149,7 @@ bool triangleSegment(const Triangle &triangle, double z, double tolerance, Segme
         if (aBelow != bBelow)
             points[pointCount++] = interpolate(a, b, z);
     }
-    if (pointCount != 2 || near(points[0], points[1], tolerance))
+    if (pointCount != 2 || squaredDistance(points[0], points[1]) == 0.0)
         return false;
     result = {points[0], points[1]};
     return true;
@@ -181,21 +198,24 @@ std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tol
         const auto front = [&]() -> const Vec2 & {
             return prepended.empty() ? appended.front() : prepended.back();
         };
-        while (!near(front(), appended.back(), tolerance)) {
-            const std::size_t index = endpointIndex.find(front(), appended.back(), alive);
-            if (index == segments.size())
+        const double toleranceSquared = tolerance * tolerance;
+        for (;;) {
+            const EndpointIndex::Match match =
+                endpointIndex.find(front(), appended.back(), alive);
+            const double closingDistance = squaredDistance(front(), appended.back());
+            if (closingDistance <= toleranceSquared &&
+                closingDistance <= match.distanceSquared)
                 break;
-            const Segment &segment = segments[index];
-            if (near(appended.back(), segment.a, tolerance)) {
-                appended.push_back(segment.b);
-            } else if (near(appended.back(), segment.b, tolerance)) {
-                appended.push_back(segment.a);
-            } else if (near(front(), segment.b, tolerance)) {
-                prepended.push_back(segment.a);
+            if (match.segmentIndex == segments.size())
+                break;
+            const Segment &segment = segments[match.segmentIndex];
+            const Vec2 &other = match.segmentAtA ? segment.b : segment.a;
+            if (match.pathAtFront) {
+                prepended.push_back(other);
             } else {
-                prepended.push_back(segment.b);
+                appended.push_back(other);
             }
-            alive[index] = false;
+            alive[match.segmentIndex] = false;
             --remaining;
         }
 
@@ -364,7 +384,7 @@ SliceLayer Slicer::sliceAt(const TriangleMesh &mesh, double z) const {
         if (triangle.minZ >= z || triangle.maxZ < z)
             continue;
         Segment segment;
-        if (triangleSegment(triangle, z, options_.joinTolerance, segment))
+        if (triangleSegment(triangle, z, segment))
             segments.push_back(segment);
     }
     layer.paths = connectSegments(std::move(segments), options_.joinTolerance);
@@ -439,7 +459,7 @@ SliceData Slicer::slice(const TriangleMesh &mesh) const {
         std::sort(orderedActive.begin(), orderedActive.end());
         for (const std::size_t triangleIndex : orderedActive) {
             Segment segment;
-            if (triangleSegment(triangles[triangleIndex], layer.z, options_.joinTolerance, segment))
+            if (triangleSegment(triangles[triangleIndex], layer.z, segment))
                 segments.push_back(segment);
         }
         layer.paths = connectSegments(std::move(segments), options_.joinTolerance);
