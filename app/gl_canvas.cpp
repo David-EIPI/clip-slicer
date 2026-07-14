@@ -187,6 +187,10 @@ void ModelCanvas::SelectionChanged() {
     UpdateInteractiveSlice();
     Refresh();
 }
+void ModelCanvas::SettingsChanged() {
+    UpdateInteractiveSlice();
+    Refresh();
+}
 void ModelCanvas::OnPaint(wxPaintEvent &) {
     wxPaintDC dc(this);
     if (!IsShownOnScreen())
@@ -686,8 +690,9 @@ void ModelCanvas::UpdateInteractiveSlice() {
                 if (mesh == sliceMeshes_.end()) {
                     mesh = sliceMeshes_.emplace(m.get(), stl_slicer::transformedMesh(*m)).first;
                 }
-                interactiveLayers_.push_back(
-                    stl_slicer::Slicer{}.sliceAt(mesh->second, slicePosition_));
+                interactiveLayers_.push_back(stl_slicer::Slicer{
+                    {0.1, document_.SegmentationTolerance(), document_.ContourHealingThreshold()}}
+                                                 .sliceAt(mesh->second, slicePosition_));
                 for (const auto &path : interactiveLayers_.back().paths)
                     for (std::size_t i = 0; i + 1 < path.points.size(); ++i)
                         area += (path.points[i].x * path.points[i + 1].y -

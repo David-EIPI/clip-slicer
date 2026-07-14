@@ -347,9 +347,8 @@ Slicer::Slicer(SlicerOptions options) : options_(options) {
         throw std::invalid_argument("Layer thickness must be a positive finite value");
     if (!std::isfinite(options_.joinTolerance) || options_.joinTolerance <= 0.0)
         throw std::invalid_argument("Join tolerance must be a positive finite value");
-    if (!std::isfinite(options_.gapClosingToleranceMultiplier) ||
-        options_.gapClosingToleranceMultiplier < 1.0)
-        throw std::invalid_argument("Gap-closing tolerance multiplier must be at least one");
+    if (!std::isfinite(options_.gapClosingTolerance) || options_.gapClosingTolerance <= 0.0)
+        throw std::invalid_argument("Gap-closing tolerance must be a positive finite value");
     if (!std::isfinite(options_.firstLayerOffset))
         throw std::invalid_argument("First-layer offset must be finite");
 }
@@ -369,7 +368,7 @@ SliceLayer Slicer::sliceAt(const TriangleMesh &mesh, double z) const {
             segments.push_back(segment);
     }
     layer.paths = connectSegments(std::move(segments), options_.joinTolerance);
-    healOpenPaths(layer.paths, options_.joinTolerance * options_.gapClosingToleranceMultiplier);
+    healOpenPaths(layer.paths, options_.gapClosingTolerance);
     classifyClosedPaths(layer.paths);
     return layer;
 }
@@ -444,7 +443,7 @@ SliceData Slicer::slice(const TriangleMesh &mesh) const {
                 segments.push_back(segment);
         }
         layer.paths = connectSegments(std::move(segments), options_.joinTolerance);
-        healOpenPaths(layer.paths, options_.joinTolerance * options_.gapClosingToleranceMultiplier);
+        healOpenPaths(layer.paths, options_.gapClosingTolerance);
         classifyClosedPaths(layer.paths);
         result.layers.push_back(std::move(layer));
     }

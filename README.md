@@ -57,7 +57,7 @@ c++ -std=c++17 -O3 -march=native -fopt-info-vec-all=vectorization.txt \
 ```sh
 ./build/stl-slicer model.stl layers.cli 0.1
 ./build/stl-slicer --ascii --tolerance 0.00001 model.stl layers.cli 0.1
-./build/stl-slicer --gap-multiplier 2 model.stl layers.cli 0.1
+./build/stl-slicer --healing-threshold 0.01 model.stl layers.cli 0.1
 ```
 
 The layer thickness defaults to 0.1 mm. Binary CLI output using PolyLine Long commands is the
@@ -69,10 +69,11 @@ its bounding-box origin at `(0, 0, 0)`, while the reusable slice objects retain 
 model-space coordinates. CLI `DIMENSION` metadata describes this translated geometry and the full
 layer-stack height.
 
-After exact segment connection, the slicer conservatively heals endpoints of paths that remain
-open when their gap is no more than `join tolerance * gap multiplier`. The multiplier defaults to
-2.0. Use `--gap-multiplier 1` to prevent the secondary pass from accepting wider gaps, or reduce
-`--tolerance` when a model intentionally contains features separated by only a few micrometers.
+After exact segment connection, the slicer heals endpoints of paths that remain open when their
+gap is no more than the contour healing threshold. The threshold defaults to 0.01 model units.
+Use `--healing-threshold` to adjust the maximum crack width accepted when a model intentionally
+contains closely separated features. The `--tolerance` option independently controls endpoint
+matching during initial segment connection and also defaults to 0.01 model units.
 
 The writer includes the custom header directive `$$USERDATA/CLIPSlicer,0,`. This compatibility
 instruction tells the target third-party reader to join open contours automatically and determine

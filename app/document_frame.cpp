@@ -145,10 +145,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(
         wxEVT_MENU,
         [this](wxCommandEvent &) {
-            wxMessageBox("Settings will be added in a later version.",
-                         "Settings",
-                         wxOK | wxICON_INFORMATION,
-                         this);
+            static_cast<MainFrame *>(GetMDIParent())->ShowSettingsDialog();
         },
         IdSettings);
     modelList_->Bind(wxEVT_LISTBOX, &DocumentFrame::OnListSelection, this);
@@ -165,6 +162,7 @@ void DocumentFrame::BuildMenus() {
     file->Append(IdOpen, "&Open...\tCtrl+O");
     file->Append(IdOpenIntoDocument, "Open into &document...");
     exportItem_ = file->Append(IdExport, "&Export Slices...");
+    file->Append(IdSettings, "&Settings...");
     file->Append(wxID_CLOSE, "&Close");
     file->AppendSeparator();
     file->Append(wxID_EXIT, "E&xit");
@@ -175,7 +173,6 @@ void DocumentFrame::BuildMenus() {
     slice->Append(IdSlice, "&Slice selected...");
     slice->AppendCheckItem(IdInteractive, "&Interactive slicing");
     unsupportedItem_ = slice->Append(IdAnalyzeUnsupported, "Highlight &unsupported areas");
-    slice->Append(IdSettings, "Settings...");
     auto *bar = new wxMenuBar;
     bar->Append(file, "&File");
     bar->Append(view, "&View");
@@ -197,6 +194,16 @@ void DocumentFrame::InvalidateUnsupportedAnalysis() {
     ++modelRevision_;
     if (canvas_)
         canvas_->ClearUnsupportedVisualization();
+}
+void DocumentFrame::SettingsChanged() {
+    InvalidateUnsupportedAnalysis();
+    canvas_->SettingsChanged();
+}
+double DocumentFrame::ContourHealingThreshold() const {
+    return static_cast<MainFrame *>(GetMDIParent())->Settings().contourHealingThreshold;
+}
+double DocumentFrame::SegmentationTolerance() const {
+    return static_cast<MainFrame *>(GetMDIParent())->Settings().segmentationTolerance;
 }
 void DocumentFrame::OpenPath(const wxString &path) {
     try {
@@ -354,8 +361,11 @@ void DocumentFrame::OnSlice(wxCommandEvent &) {
     for (const auto &m : models_)
         if (m->selected) {
             try {
-                auto data = stl_slicer::Slicer{{dz, 1e-5, 5.0, start}}.slice(
-                    stl_slicer::transformedMesh(*m));
+                auto data = stl_slicer::Slicer{
+                    {dz,
+                     SegmentationTolerance(),
+                     ContourHealingThreshold(),
+                     start}}.slice(stl_slicer::transformedMesh(*m));
                 made.push_back(std::make_shared<stl_slicer::SliceSceneModel>(m->name + " slices",
                                                                              std::move(data)));
             } catch (const std::exception &e) {
@@ -423,7 +433,13 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
     unsupportedAnalysisRunning_ = true;
     UpdateCommandState();
     const std::uint64_t revision = modelRevision_;
-    unsupportedWorker_ = std::thread([this, snapshots = std::move(snapshots), revision]() mutable {
+    const double healingThreshold = ContourHealingThreshold();
+    const double segmentationTolerance = SegmentationTolerance();
+    unsupportedWorker_ = std::thread([this,
+                                      snapshots = std::move(snapshots),
+                                      revision,
+                                      healingThreshold,
+                                      segmentationTolerance]() mutable {
         auto payload = std::make_shared<UnsupportedAnalysisPayload>();
         payload->modelRevision = revision;
         try {
@@ -442,7 +458,8 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
                 }
             }
             const stl_slicer::SliceData slices =
-                stl_slicer::Slicer{{0.1, 1e-5, 5.0, 0.05}}.slice(combined);
+                stl_slicer::Slicer{{0.1, segmentationTolerance, healingThreshold, 0.05}}.slice(
+                    combined);
             stl_slicer::UnsupportedAreaResult unsupported =
                 stl_slicer::UnsupportedAreaAnalyzer{{30.0}}.analyze(slices);
             payload->totalArea = unsupported.totalArea;

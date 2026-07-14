@@ -48,6 +48,8 @@ if(STL_SLICER_BUILD_GUI)
         app/main.cpp
         app/main_frame.cpp
         app/document_frame.cpp
+        app/app_settings.cpp
+        app/settings_dialog.cpp
         app/embedded_assets.cpp
         app/gl_canvas.cpp
         app/slice_visualization.cpp)

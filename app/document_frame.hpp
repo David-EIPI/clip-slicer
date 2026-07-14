@@ -32,6 +32,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     void UpdateStatus();
     void OpenPath(const wxString &path);
     void InvalidateUnsupportedAnalysis();
+    void SettingsChanged();
+    double ContourHealingThreshold() const;
+    double SegmentationTolerance() const;
 
   private:
     void BuildMenus();

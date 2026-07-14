@@ -1,17 +1,21 @@
 #include "main_frame.hpp"
 #include "document_frame.hpp"
+#include "settings_dialog.hpp"
 #include <wx/filedlg.h>
 #include <wx/filename.h>
+#include <wx/msgdlg.h>
 #include <wx/statusbr.h>
 
 namespace {
-enum { IdOpen = wxID_HIGHEST + 1 };
+enum { IdOpen = wxID_HIGHEST + 1, IdSettings };
 }
 
 MainFrame::MainFrame()
     : wxMDIParentFrame(nullptr, wxID_ANY, "CLIP Slicer", wxDefaultPosition, {1200, 800}) {
+    settings_.Load();
     auto *file = new wxMenu;
     file->Append(IdOpen, "&Open...\tCtrl+O");
+    file->Append(IdSettings, "&Settings...");
     file->AppendSeparator();
     file->Append(wxID_EXIT, "E&xit");
     auto *bar = new wxMenuBar;
@@ -31,7 +35,30 @@ MainFrame::MainFrame()
         statusBar->SetStatusStyles(2, statusStyles);
     ClearDocumentStatus();
     Bind(wxEVT_MENU, &MainFrame::OnOpen, this, IdOpen);
+    Bind(wxEVT_MENU, &MainFrame::OnSettings, this, IdSettings);
     Bind(wxEVT_MENU, &MainFrame::OnExit, this, wxID_EXIT);
+}
+void MainFrame::OnSettings(wxCommandEvent &) {
+    ShowSettingsDialog();
+}
+void MainFrame::ShowSettingsDialog() {
+    SettingsDialog dialog(this, settings_);
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+
+    AppSettings updated = settings_;
+    updated.contourHealingThreshold = dialog.ContourHealingThreshold();
+    updated.segmentationTolerance = dialog.SegmentationTolerance();
+    if (!updated.Save()) {
+        wxMessageBox("Unable to save settings to:\n" + AppSettings::FilePath(),
+                     "Settings",
+                     wxOK | wxICON_ERROR,
+                     this);
+        return;
+    }
+    settings_ = updated;
+    if (auto *document = dynamic_cast<DocumentFrame *>(GetActiveChild()))
+        document->SettingsChanged();
 }
 void MainFrame::OnOpen(wxCommandEvent &) {
     OpenDialog();

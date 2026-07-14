@@ -156,9 +156,9 @@ void testSmallGapHealing() {
     require(data.layers[0].paths.size() == 1, "small STL gaps healed");
     require(data.layers[0].paths[0].type == PathType::External, "healed path closed");
 
-    const auto strict = Slicer{{0.5, 1e-5, 2.0}}.slice(mesh);
+    const auto strict = Slicer{{0.5, 1e-5, 2e-5}}.slice(mesh);
     require(strict.layers[0].paths[0].type == PathType::Open,
-            "explicit gap-healing multiplier was ignored");
+            "explicit gap-healing threshold was ignored");
 }
 
 void testReversedSharedEdgeInterpolation() {
@@ -170,7 +170,7 @@ void testReversedSharedEdgeInterpolation() {
     mesh.addTriangle(
         {{}, {high, low, {42.5410041809082, 30.404010772705078, -12.948999404907227}}, 0});
 
-    const auto data = Slicer{{0.350999450683594, 1e-12, 1.0}}.slice(mesh);
+    const auto data = Slicer{{0.350999450683594, 1e-12, 1e-12}}.slice(mesh);
     require(data.layers.size() == 1, "shared-edge interpolation layer");
     require(data.layers[0].paths.size() == 1, "reversed shared-edge points identical");
     require(data.layers[0].paths[0].points.size() == 3,
@@ -222,7 +222,7 @@ void testSingleAndOffsetSlices() {
     const auto layer = Slicer{}.sliceAt(cube, 0.5);
     require(layer.paths.size() == 1 && layer.paths[0].type == PathType::External,
             "single-plane slice");
-    const auto offset = Slicer{{0.25, 1e-7, 2.0, 0.125}}.slice(cube);
+    const auto offset = Slicer{{0.25, 1e-7, 0.01, 0.125}}.slice(cube);
     require(offset.layers.size() == 4 && std::abs(offset.layers.front().z - 0.125) < 1e-12,
             "custom first-layer offset");
 }

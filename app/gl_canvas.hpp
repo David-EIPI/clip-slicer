@@ -16,6 +16,7 @@ class ModelCanvas final : public wxGLCanvas {
     ~ModelCanvas() override;
     void ModelsChanged();
     void SelectionChanged();
+    void SettingsChanged();
     void SetInteractiveSlice(bool enabled);
     bool InteractiveSlice() const {
         return interactiveSlice_;
