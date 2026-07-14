@@ -9,24 +9,52 @@ viewing, transforming, slicing, and exporting STL and CLI models.
 
 ## Build and test
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
+### Linux
 
-The GUI build requires wxWidgets 3.2, OpenGL, GLU, and libepoxy. It is built by default when those
-development packages are available:
+The command-line target depends only on a C++17 compiler and CMake. The GUI target additionally
+requires development packages for wxWidgets 3.2, OpenGL, GLU, and libepoxy.
+
+Build the command-line slicer only:
 
 ```sh
-./build/clip-slicer
-./build/clip-slicer model.stl
+cmake -S . -B build-cli \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSTL_SLICER_BUILD_GUI=OFF
+cmake --build build-cli
 ```
 
-Set `-DSTL_SLICER_BUILD_GUI=OFF` for a command-line-only build.
+Build the GUI and command-line targets together:
+
+```sh
+cmake -S . -B build-gui \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSTL_SLICER_BUILD_GUI=ON
+cmake --build build-gui
+```
+
+Run the test suite:
+
+```sh
+ctest --test-dir build-cli --output-on-failure
+ctest --test-dir build-gui --output-on-failure
+```
+
+Run the binaries:
+
+```sh
+./build-cli/stl-slicer
+./build-gui/stl-slicer
+./build-gui/clip-slicer
+./build-gui/clip-slicer model.stl
+```
+
+If wxWidgets, OpenGL, GLU, or libepoxy development packages are not installed, keep
+`-DSTL_SLICER_BUILD_GUI=OFF`.
 
 If the host uses `ccache` with an unavailable cache directory, prefix these commands with
 `CCACHE_DISABLE=1`.
+
+### Windows cross-build
 
 For a Windows cross-build using the MSVC-targeted Clang environment described by
 `msvc_test.sh`, use:
