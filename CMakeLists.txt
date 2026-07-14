@@ -1,7 +1,31 @@
 cmake_minimum_required(VERSION 3.12)
 project(stl_slicer VERSION 0.1.0 LANGUAGES CXX)
 
-find_package(Clipper2 CONFIG REQUIRED)
+find_package(Clipper2 CONFIG QUIET)
+if(NOT TARGET Clipper2::Clipper2)
+    find_file(CLIPPER2_HEADER clipper2/clipper.h)
+    if(NOT CLIPPER2_HEADER)
+        message(FATAL_ERROR
+            "Clipper2 was not found. Install the package config or make "
+            "clipper2/clipper.h available in the compiler include path.")
+    endif()
+
+    get_filename_component(CLIPPER2_HEADER_DIR "${CLIPPER2_HEADER}" DIRECTORY)
+    file(GLOB CLIPPER2_HEADERS "${CLIPPER2_HEADER_DIR}/*.h")
+
+    set(CLIPPER2_WRAPPER_DIR "${CMAKE_CURRENT_BINARY_DIR}/clipper2_wrapper")
+    file(MAKE_DIRECTORY "${CLIPPER2_WRAPPER_DIR}/clipper2")
+
+    foreach(clipper_header IN LISTS CLIPPER2_HEADERS)
+        get_filename_component(clipper_name "${clipper_header}" NAME)
+        file(WRITE "${CLIPPER2_WRAPPER_DIR}/clipper2/${clipper_name}"
+            "#pragma once\n#include \"${clipper_header}\"\n")
+    endforeach()
+
+    add_library(Clipper2::Clipper2 INTERFACE IMPORTED)
+    set_target_properties(Clipper2::Clipper2 PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${CLIPPER2_WRAPPER_DIR}")
+endif()
 
 option(STL_SLICER_BUILD_TESTS "Build slicer tests" ON)
 option(STL_SLICER_BUILD_GUI "Build the CLIP Slicer wxWidgets application" ON)

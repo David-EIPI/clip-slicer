@@ -28,6 +28,23 @@ Set `-DSTL_SLICER_BUILD_GUI=OFF` for a command-line-only build.
 If the host uses `ccache` with an unavailable cache directory, prefix these commands with
 `CCACHE_DISABLE=1`.
 
+For a Windows cross-build using the MSVC-targeted Clang environment described by
+`msvc_test.sh`, use:
+
+```sh
+./build_windows.sh
+```
+
+This builds the command-line slicer into `build-windows/` with the Windows toolchain from
+`cmake/toolchains/windows-clang-msvc.cmake`. The wrapper defaults to
+`STL_SLICER_BUILD_GUI=OFF` and `STL_SLICER_BUILD_TESTS=OFF`, which avoids depending on
+Windows-targeted wxWidgets during initial cross-compilation. After Windows wxWidgets is
+installed, enable the GUI build with:
+
+```sh
+STL_SLICER_BUILD_GUI=ON ./build_windows.sh
+```
+
 The CLIP Slicer user manual is written in LaTeX and can be built with:
 
 ```sh
