@@ -379,8 +379,12 @@ void DocumentFrame::PublishStatus() {
     else
         slicePosition << "--";
     std::ostringstream optimizationProgress;
-    if (optimizationRunning_)
+    if (optimizationRunning_) {
         optimizationProgress << "Run " << optimizationCompleted_ << " of " << optimizationTotal_;
+        if (optimizationHasScore_)
+            optimizationProgress << " (S=" << std::fixed
+                                 << std::setprecision(2) << optimizationBestScore_ << ')';
+    }
     parent->SetDocumentStatus(
         buildVolume.str(), slicePosition.str(), optimizationProgress.str());
 }
@@ -585,6 +589,7 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
     optimizationRunning_ = true;
     optimizationCompleted_ = 0;
     optimizationTotal_ = options.attempts;
+    optimizationHasScore_ = false;
     optimizationBestScores_.clear();
     const std::uint64_t revision = modelRevision_;
     UpdateCommandState();
@@ -664,6 +669,8 @@ void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
         if (previous != optimizationBestScores_.end() && previous->second <= payload->score)
             return;
         optimizationBestScores_[payload->model.get()] = payload->score;
+        optimizationBestScore_ = payload->score;
+        optimizationHasScore_ = true;
         payload->model->transform = payload->transform;
         canvas_->ModelTransformsChanged();
         UpdateStatus();
@@ -671,9 +678,13 @@ void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
     }
     if (payload->type == OrientationEventType::Progress) {
         if (payload->modelRevision == modelRevision_) {
-            optimizationCompleted_ = payload->completed == 0
-                                         ? 0
-                                         : std::max(optimizationCompleted_, payload->completed);
+            if (payload->completed == 0) {
+                optimizationCompleted_ = 0;
+                optimizationHasScore_ = false;
+            } else {
+                optimizationCompleted_ =
+                    std::max(optimizationCompleted_, payload->completed);
+            }
             optimizationTotal_ = payload->total;
             UpdateStatus();
         }
@@ -685,6 +696,7 @@ void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
     optimizationRunning_ = false;
     optimizationCompleted_ = 0;
     optimizationTotal_ = 0;
+    optimizationHasScore_ = false;
     optimizationBestScores_.clear();
     UpdateCommandState();
     UpdateStatus();

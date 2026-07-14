@@ -114,6 +114,8 @@ OrientationOptimizationResult optimizeOrientation(
     OrientationOptimizationResult result;
     const double baselineScore = score(mesh, {}, options);
     result.best = {{}, baselineScore};
+    if (improvementCallback)
+        improvementCallback(result.best);
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         result.cancelled = true;
         return result;

@@ -75,5 +75,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     bool optimizationRunning_ = false;
     std::size_t optimizationCompleted_ = 0;
     std::size_t optimizationTotal_ = 0;
+    double optimizationBestScore_ = 0.0;
+    bool optimizationHasScore_ = false;
     std::unordered_map<const stl_slicer::SceneModel *, double> optimizationBestScores_;
 };

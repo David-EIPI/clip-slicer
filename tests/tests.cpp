@@ -326,11 +326,14 @@ void testOrientationOptimizer() {
     options.workerCount = 1;
     options.layerThickness = 0.5;
     std::size_t completed = 0;
+    double publishedScore = -1.0;
     const auto result = optimizeOrientation(
         cube,
         options,
         nullptr,
-        {},
+        [&](const OrientationCandidate &candidate) {
+            publishedScore = candidate.unsupportedArea;
+        },
         [&](std::size_t current, std::size_t total) {
             completed = current;
             require(total == 1, "optimizer progress total");
@@ -338,6 +341,7 @@ void testOrientationOptimizer() {
     require(!result.cancelled, "optimizer unexpectedly cancelled");
     require(result.completedAttempts == 1 && completed == 1, "optimizer attempt progress");
     require(result.best.unsupportedArea < 1e-9, "supported cube optimization score");
+    require(publishedScore < 1e-9, "optimizer did not publish its baseline score");
 }
 
 } // namespace
