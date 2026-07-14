@@ -103,7 +103,8 @@ OrientationOptimizationResult optimizeOrientation(
     const OrientationOptimizerOptions &options,
     const std::atomic<bool> *cancel,
     OrientationImprovementCallback improvementCallback,
-    OrientationProgressCallback progressCallback) {
+    OrientationProgressCallback progressCallback,
+    OrientationInitialScoreCallback initialScoreCallback) {
     if (!mesh.bounds().valid())
         throw std::invalid_argument("Cannot optimize an empty mesh");
     if (options.attempts == 0)
@@ -128,8 +129,8 @@ OrientationOptimizationResult optimizeOrientation(
         return result;
     }
     result.best = {{}, baselineScore};
-    if (improvementCallback)
-        improvementCallback(result.best);
+    if (initialScoreCallback)
+        initialScoreCallback(baselineScore);
     std::atomic<std::size_t> remaining{options.attempts};
     std::atomic<std::size_t> completed{0};
     std::atomic<bool> failed{false};

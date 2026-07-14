@@ -32,12 +32,14 @@ struct OrientationOptimizationResult {
 
 using OrientationImprovementCallback = std::function<void(const OrientationCandidate &)>;
 using OrientationProgressCallback = std::function<void(std::size_t completed, std::size_t total)>;
+using OrientationInitialScoreCallback = std::function<void(double unsupportedArea)>;
 
 OrientationOptimizationResult optimizeOrientation(
     const TriangleMesh &mesh,
     const OrientationOptimizerOptions &options = {},
     const std::atomic<bool> *cancel = nullptr,
     OrientationImprovementCallback improvementCallback = {},
-    OrientationProgressCallback progressCallback = {});
+    OrientationProgressCallback progressCallback = {},
+    OrientationInitialScoreCallback initialScoreCallback = {});
 
 } // namespace stl_slicer

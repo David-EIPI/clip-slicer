@@ -384,7 +384,8 @@ void testOrientationOptimizer() {
         [&](std::size_t current, std::size_t total) {
             completed = current;
             require(total == 1, "optimizer progress total");
-        });
+        },
+        [&](double score) { publishedScore = score; });
     require(!result.cancelled, "optimizer unexpectedly cancelled");
     require(result.completedAttempts == 1 && completed == 1, "optimizer attempt progress");
     require(result.best.unsupportedArea < 1e-9, "supported cube optimization score");

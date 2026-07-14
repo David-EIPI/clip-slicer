@@ -49,7 +49,7 @@ struct UnsupportedAnalysisPayload {
     std::string error;
 };
 
-enum class OrientationEventType { Improvement, Progress, Finished, Error };
+enum class OrientationEventType { InitialScore, Improvement, Progress, Finished, Error };
 
 struct OrientationOptimizationPayload {
     OrientationEventType type = OrientationEventType::Progress;
@@ -701,6 +701,15 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
                             progress->total = total;
                             progress->modelRevision = revision;
                             post(std::move(progress));
+                        },
+                        [&, model = snapshot.model](double score) {
+                            auto initial =
+                                std::make_shared<OrientationOptimizationPayload>();
+                            initial->type = OrientationEventType::InitialScore;
+                            initial->model = model;
+                            initial->score = score;
+                            initial->modelRevision = revision;
+                            post(std::move(initial));
                         });
                 }
 
@@ -728,6 +737,17 @@ void DocumentFrame::OnStopOptimization(wxCommandEvent &) {
 void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
     const auto payload =
         event.GetPayload<std::shared_ptr<OrientationOptimizationPayload>>();
+    if (payload->type == OrientationEventType::InitialScore) {
+        if (payload->modelRevision != modelRevision_) {
+            optimizationCancel_.store(true, std::memory_order_relaxed);
+            return;
+        }
+        optimizationBestScores_[payload->model.get()] = payload->score;
+        optimizationBestScore_ = payload->score;
+        optimizationHasScore_ = true;
+        UpdateStatus();
+        return;
+    }
     if (payload->type == OrientationEventType::Improvement) {
         if (payload->modelRevision != modelRevision_) {
             optimizationCancel_.store(true, std::memory_order_relaxed);
