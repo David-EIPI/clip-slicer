@@ -5,6 +5,24 @@ The model list controls selection and visibility. Transformations made in the
 view affect only selected models when the Shift modifier is held; otherwise,
 the same basic gestures manipulate the camera.
 
+Open and export file dialogs retain the directory of the last accepted file
+for use by subsequent dialogs. The model viewport requires OpenGL 3.2 and GLSL
+1.50. If renderer initialization fails, the application reports the detected
+OpenGL environment and a sample of missing entry points to assist driver
+diagnosis.
+
+The \emph{Models} menu contains commands that act on every selected model.
+\emph{Reset transformations} restores each selected model's original position,
+orientation, and scale. \emph{Transform} combines exact rotation, translation,
+and uniform scaling in one dialog. Rotation uses a chosen global X, Y, or Z
+axis; rotation and scaling act on the selected models as a group around their
+common geometric center, followed by signed translation along the three global
+axes. These operations update transformation matrices without changing source
+model coordinates. \emph{Move to Origin} preserves the relative placement of
+all selected models while translating their combined bounding box so that its
+minimum X, Y, and Z coordinates are all zero. The selected group therefore
+fits tightly in the positive octant and rests on the build plane.
+
 \section{Viewport Guides}
 
 \subsection{Build Platform}
@@ -57,7 +75,10 @@ angle and overhang coefficient. It runs in the background so that document
 viewing remains responsive.
 
 When analysis finishes, unsupported portions of layer surfaces are overlaid in
-bright red-orange. The first layer is treated as fully supported. On each
+bright red-orange. For clearer visibility against the source mesh, each
+unsupported area is drawn at the Z position of the preceding layer rather
+than the slicing plane on which it was detected. The first layer is treated
+as fully supported. On each
 subsequent layer, support propagates from all model material in the previous
 layer, including areas which were themselves unsupported, within the distance
 allowed by the critical angle. This reflects the support material that will
@@ -178,7 +199,7 @@ operating system's user configuration directory.
         \midrule
         Ctrl+O & Open a model in a new document. \\
         Alt+F  & Open the File menu. \\
-        Alt+V  & Open the View menu for model visibility commands. \\
+        Alt+M  & Open the Models menu for visibility and transformation commands. \\
         Alt+S  & Open the Slice menu. \\
         \bottomrule
     \end{tabularx}

@@ -57,6 +57,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnOrientationOptimizationEvent(wxThreadEvent &event);
     void OnShow(wxCommandEvent &);
     void OnHide(wxCommandEvent &);
+    void OnResetTransform(wxCommandEvent &);
+    void OnTransformModels(wxCommandEvent &);
+    void OnMoveToOrigin(wxCommandEvent &);
     void OnListSelection(wxCommandEvent &);
     void OnListCheck(wxCommandEvent &);
     void PublishStatus();
@@ -70,6 +73,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *exportStlItem_ = nullptr;
     wxMenuItem *unsupportedItem_ = nullptr;
     wxMenuItem *optimizationItem_ = nullptr;
+    wxMenuItem *resetTransformItem_ = nullptr;
+    wxMenuItem *transformModelsItem_ = nullptr;
+    wxMenuItem *moveToOriginItem_ = nullptr;
     std::thread unsupportedWorker_;
     std::thread optimizationWorker_;
     std::atomic<bool> optimizationCancel_{false};

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "slice_visualization.hpp"
 #include "gl_api.hpp"
+#include "slice_visualization.hpp"
 #include "stl_slicer/scene_model.hpp"
 #include "stl_slicer/slice.hpp"
 #include <atomic>
@@ -20,6 +20,7 @@ class ModelCanvas final : public wxGLCanvas {
     ~ModelCanvas() override;
     void ModelsChanged();
     void ModelTransformsChanged();
+    void TranslateViewCenter(const stl_slicer::Vec3 &translation);
     void SelectionChanged();
     void SettingsChanged();
     void SetInteractiveSlice(bool enabled);
@@ -75,6 +76,7 @@ class ModelCanvas final : public wxGLCanvas {
     VisualizationMesh unsupportedVisualization_;
     bool unsupportedVisualizationDirty_ = false;
     bool initialized_ = false, interactiveSlice_ = false;
+    bool openGlErrorReported_ = false;
     std::thread interactiveSliceWorker_;
     std::atomic<bool> interactiveSliceCancel_{false};
     std::atomic<bool> closing_{false};

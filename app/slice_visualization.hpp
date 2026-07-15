@@ -11,4 +11,5 @@ struct VisualizationMesh {
 
 VisualizationMesh BuildSliceCaps(const stl_slicer::SliceData &slices);
 VisualizationMesh BuildSliceSurfaces(const stl_slicer::SliceData &slices);
+VisualizationMesh BuildUnsupportedSurfaces(const stl_slicer::SliceData &slices);
 void SmoothRenderNormals(std::vector<stl_slicer::RenderVertex> &vertices);

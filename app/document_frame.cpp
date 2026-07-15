@@ -2,6 +2,7 @@
 #include "embedded_assets.hpp"
 #include "gl_canvas.hpp"
 #include "main_frame.hpp"
+#include "model_transform_dialog.hpp"
 #include "slice_visualization.hpp"
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
@@ -39,6 +40,9 @@ enum {
     IdStopOptimization,
     IdShow,
     IdHide,
+    IdResetTransform,
+    IdTransformModels,
+    IdMoveToOrigin,
     IdSettings
 };
 
@@ -147,6 +151,28 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->AddTool(
         IdShow, "Show", wxArtProvider::GetBitmap(wxART_TICK_MARK, wxART_TOOLBAR, toolSize));
+    toolbar_->AddSeparator();
+    toolbar_->AddTool(IdResetTransform,
+                      "Reset",
+                      LoadEmbeddedIcon(clip_slicer::assets::resetTransformIconPng,
+                                       clip_slicer::assets::resetTransformIconPngSize,
+                                       wxART_UNDO,
+                                       toolSize),
+                      "Reset selected model transformations");
+    toolbar_->AddTool(IdTransformModels,
+                      "Transform",
+                      LoadEmbeddedIcon(clip_slicer::assets::transformModelsIconPng,
+                                       clip_slicer::assets::transformModelsIconPngSize,
+                                       wxART_REDO,
+                                       toolSize),
+                      "Transform selected models by exact values");
+    toolbar_->AddTool(IdMoveToOrigin,
+                      "Origin",
+                      LoadEmbeddedIcon(clip_slicer::assets::moveToOriginIconPng,
+                                       clip_slicer::assets::moveToOriginIconPngSize,
+                                       wxART_GO_HOME,
+                                       toolSize),
+                      "Move selected models into the positive octant");
     toolbar_->Realize();
     root->Add(toolbar_, 0, wxEXPAND);
     auto *split = new wxSplitterWindow(this);
@@ -172,12 +198,12 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdAnalyzeUnsupported);
     Bind(wxEVT_MENU, &DocumentFrame::OnOptimizeOrientation, this, IdOptimizeOrientation);
     Bind(wxEVT_MENU, &DocumentFrame::OnStopOptimization, this, IdStopOptimization);
-    Bind(wxEVT_THREAD,
-         &DocumentFrame::OnOrientationOptimizationEvent,
-         this,
-         IdOptimizeOrientation);
+    Bind(wxEVT_THREAD, &DocumentFrame::OnOrientationOptimizationEvent, this, IdOptimizeOrientation);
     Bind(wxEVT_MENU, &DocumentFrame::OnShow, this, IdShow);
     Bind(wxEVT_MENU, &DocumentFrame::OnHide, this, IdHide);
+    Bind(wxEVT_MENU, &DocumentFrame::OnResetTransform, this, IdResetTransform);
+    Bind(wxEVT_MENU, &DocumentFrame::OnTransformModels, this, IdTransformModels);
+    Bind(wxEVT_MENU, &DocumentFrame::OnMoveToOrigin, this, IdMoveToOrigin);
     Bind(
         wxEVT_MENU,
         [this](wxCommandEvent &) {
@@ -208,9 +234,13 @@ void DocumentFrame::BuildMenus() {
     file->Append(wxID_CLOSE, "&Close");
     file->AppendSeparator();
     file->Append(wxID_EXIT, "E&xit");
-    auto *view = new wxMenu;
-    view->Append(IdShow, "&Show selected");
-    view->Append(IdHide, "&Hide selected");
+    auto *models = new wxMenu;
+    models->Append(IdShow, "&Show selected");
+    models->Append(IdHide, "&Hide selected");
+    models->AppendSeparator();
+    resetTransformItem_ = models->Append(IdResetTransform, "&Reset transformations");
+    transformModelsItem_ = models->Append(IdTransformModels, "&Transform...");
+    moveToOriginItem_ = models->Append(IdMoveToOrigin, "Move to &Origin");
     auto *slice = new wxMenu;
     slice->Append(IdSlice, "&Slice selected...");
     slice->AppendCheckItem(IdInteractive, "&Interactive slicing");
@@ -218,7 +248,7 @@ void DocumentFrame::BuildMenus() {
     optimizationItem_ = slice->Append(IdOptimizeOrientation, "&Optimize orientation");
     auto *bar = new wxMenuBar;
     bar->Append(file, "&File");
-    bar->Append(view, "&View");
+    bar->Append(models, "&Models");
     bar->Append(slice, "&Slice");
     SetMenuBar(bar);
     Bind(
@@ -282,7 +312,7 @@ void DocumentFrame::OnOpen(wxCommandEvent &) {
                    {},
                    {},
                    "3D model files (*.stl;*.cli)|*.stl;*.cli",
-                   wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+                   wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR);
     if (d.ShowModal() == wxID_OK)
         OpenPath(d.GetPath());
 }
@@ -296,20 +326,31 @@ void DocumentFrame::RefreshModelList() {
     UpdateCommandState();
 }
 void DocumentFrame::UpdateCommandState() {
-    const bool sliced =
-        std::any_of(models_.begin(), models_.end(), [](const auto &model) {
-            return model->selected && model->isSliced();
-        });
-    const bool meshSelected =
-        std::any_of(models_.begin(), models_.end(), [](const auto &model) {
-            return model->selected && !model->isSliced();
-        });
+    const bool modelSelected = std::any_of(
+        models_.begin(), models_.end(), [](const auto &model) { return model->selected; });
+    const bool sliced = std::any_of(models_.begin(), models_.end(), [](const auto &model) {
+        return model->selected && model->isSliced();
+    });
+    const bool meshSelected = std::any_of(models_.begin(), models_.end(), [](const auto &model) {
+        return model->selected && !model->isSliced();
+    });
     if (exportItem_)
         exportItem_->Enable(sliced);
     if (exportStlItem_)
         exportStlItem_->Enable(meshSelected);
     if (toolbar_)
         toolbar_->EnableTool(IdExport, sliced);
+    if (resetTransformItem_)
+        resetTransformItem_->Enable(modelSelected);
+    if (transformModelsItem_)
+        transformModelsItem_->Enable(modelSelected);
+    if (moveToOriginItem_)
+        moveToOriginItem_->Enable(modelSelected);
+    if (toolbar_) {
+        toolbar_->EnableTool(IdResetTransform, modelSelected);
+        toolbar_->EnableTool(IdTransformModels, modelSelected);
+        toolbar_->EnableTool(IdMoveToOrigin, modelSelected);
+    }
     const bool canAnalyze = !unsupportedAnalysisRunning_ && !optimizationRunning_ &&
                             std::any_of(models_.begin(), models_.end(), [](const auto &model) {
                                 return model->selected;
@@ -323,9 +364,9 @@ void DocumentFrame::UpdateCommandState() {
     if (toolbar_)
         toolbar_->EnableTool(IdOptimizeOrientation, canAnalyze);
     if (toolbar_)
-        toolbar_->EnableTool(
-            IdStopOptimization,
-            optimizationRunning_ || (canvas_ && canvas_->InteractiveSliceRunning()));
+        toolbar_->EnableTool(IdStopOptimization,
+                             optimizationRunning_ ||
+                                 (canvas_ && canvas_->InteractiveSliceRunning()));
 }
 void DocumentFrame::OnListSelection(wxCommandEvent &) {
     for (std::size_t i = 0; i < models_.size(); ++i)
@@ -352,6 +393,67 @@ void DocumentFrame::OnHide(wxCommandEvent &) {
             m->visible = false;
     RefreshModelList();
     canvas_->Refresh();
+    UpdateStatus();
+}
+void DocumentFrame::OnResetTransform(wxCommandEvent &) {
+    bool changed = false;
+    for (auto &model : models_) {
+        if (!model->selected)
+            continue;
+        model->transform = stl_slicer::Mat4{};
+        changed = true;
+    }
+    if (!changed)
+        return;
+
+    InvalidateUnsupportedAnalysis();
+    canvas_->ModelTransformsChanged();
+    UpdateStatus();
+}
+void DocumentFrame::OnTransformModels(wxCommandEvent &) {
+    TransformDialog dialog(this);
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+
+    constexpr double pi = 3.14159265358979323846;
+    const stl_slicer::Vec3 center = SelectedCenter();
+    const stl_slicer::Vec3 translation = dialog.Translation();
+    const stl_slicer::Mat4 rotation =
+        stl_slicer::Mat4::rotation(dialog.AngleDegrees() * pi / 180.0, dialog.Axis());
+    const stl_slicer::Mat4 transform =
+        stl_slicer::Mat4::translation(translation.x, translation.y, translation.z) *
+        stl_slicer::Mat4::translation(center.x, center.y, center.z) * rotation *
+        stl_slicer::Mat4::scale(dialog.UniformScale()) *
+        stl_slicer::Mat4::translation(-center.x, -center.y, -center.z);
+    for (auto &model : models_) {
+        if (model->selected)
+            model->transform = transform * model->transform;
+    }
+    InvalidateUnsupportedAnalysis();
+    canvas_->ModelTransformsChanged();
+    UpdateStatus();
+}
+void DocumentFrame::OnMoveToOrigin(wxCommandEvent &) {
+    stl_slicer::Bounds3 bounds;
+    for (const auto &model : models_) {
+        if (!model->selected)
+            continue;
+        for (const stl_slicer::RenderVertex &vertex : model->renderVertices())
+            bounds.include(model->transform.transformPoint({vertex.x, vertex.y, vertex.z}));
+    }
+    if (!bounds.valid())
+        return;
+
+    const stl_slicer::Vec3 translation{-bounds.min.x, -bounds.min.y, -bounds.min.z};
+    const stl_slicer::Mat4 transform =
+        stl_slicer::Mat4::translation(translation.x, translation.y, translation.z);
+    for (auto &model : models_) {
+        if (model->selected)
+            model->transform = transform * model->transform;
+    }
+    InvalidateUnsupportedAnalysis();
+    canvas_->TranslateViewCenter(translation);
+    canvas_->ModelTransformsChanged();
     UpdateStatus();
 }
 stl_slicer::Bounds3 DocumentFrame::VisibleBounds() const {
@@ -408,11 +510,10 @@ void DocumentFrame::PublishStatus() {
     if (optimizationRunning_) {
         optimizationProgress << "Run " << optimizationCompleted_ << " of " << optimizationTotal_;
         if (optimizationHasScore_)
-            optimizationProgress << " (S=" << std::fixed
-                                 << std::setprecision(2) << optimizationBestScore_ << ')';
+            optimizationProgress << " (S=" << std::fixed << std::setprecision(2)
+                                 << optimizationBestScore_ << ')';
     }
-    parent->SetDocumentStatus(
-        buildVolume.str(), slicePosition.str(), optimizationProgress.str());
+    parent->SetDocumentStatus(buildVolume.str(), slicePosition.str(), optimizationProgress.str());
 }
 void DocumentFrame::OnActivate(wxActivateEvent &event) {
     if (event.GetActive())
@@ -476,7 +577,7 @@ void DocumentFrame::OnExport(wxCommandEvent &) {
                    {},
                    "model.cli",
                    "CLI files (*.cli)|*.cli",
-                   wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+                   wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxFD_CHANGE_DIR);
     if (d.ShowModal() == wxID_OK)
         try {
             stl_slicer::CliWriter{}.write(combined, d.GetPath().ToStdString());
@@ -509,11 +610,10 @@ void DocumentFrame::OnExportStl(wxCommandEvent &) {
                         {},
                         "model.stl",
                         "STL files (*.stl)|*.stl",
-                        wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+                        wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxFD_CHANGE_DIR);
     if (dialog.ShowModal() == wxID_OK) {
         try {
-            stl_slicer::BinaryStlWriter{}.write(combined,
-                                                dialog.GetPath().ToStdString());
+            stl_slicer::BinaryStlWriter{}.write(combined, dialog.GetPath().ToStdString());
         } catch (const std::exception &error) {
             wxMessageBox(error.what(), "Export failed", wxOK | wxICON_ERROR, this);
         }
@@ -579,11 +679,10 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
             const stl_slicer::SliceData slices =
                 stl_slicer::Slicer{{0.1, segmentationTolerance, healingThreshold, 0.05}}.slice(
                     combined);
-            stl_slicer::UnsupportedAreaResult unsupported =
-                stl_slicer::UnsupportedAreaAnalyzer{{criticalAngleDegrees, overhangCoefficient}}
-                    .analyze(slices);
+            stl_slicer::UnsupportedAreaResult unsupported = stl_slicer::UnsupportedAreaAnalyzer{
+                {criticalAngleDegrees, overhangCoefficient}}.analyze(slices);
             payload->totalArea = unsupported.totalArea;
-            payload->visualization = BuildSliceSurfaces(unsupported.unsupported);
+            payload->visualization = BuildUnsupportedSurfaces(unsupported.unsupported);
         } catch (const std::exception &error) {
             payload->error = error.what();
         }
@@ -620,8 +719,7 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
     std::vector<ModelSnapshot> snapshots;
     for (const auto &model : models_) {
         if (model->selected)
-            snapshots.push_back(
-                {model, stl_slicer::transformedMesh(*model), model->transform});
+            snapshots.push_back({model, stl_slicer::transformedMesh(*model), model->transform});
     }
     if (snapshots.empty()) {
         wxMessageBox("Select at least one model to optimize.",
@@ -633,8 +731,7 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
     if (optimizationWorker_.joinable())
         optimizationWorker_.join();
 
-    const AppSettings settings =
-        static_cast<MainFrame *>(GetMDIParent())->Settings();
+    const AppSettings settings = static_cast<MainFrame *>(GetMDIParent())->Settings();
     stl_slicer::OrientationOptimizerOptions options;
     options.attempts = static_cast<std::size_t>(settings.optimizationAttempts);
     options.workerCount = static_cast<std::size_t>(settings.optimizationWorkers);
@@ -642,8 +739,7 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
     options.layerThickness = 0.1;
     options.segmentationTolerance = settings.segmentationTolerance;
     options.healingThreshold = settings.contourHealingThreshold;
-    options.unsupportedArea =
-        {settings.criticalAngleDegrees, settings.overhangCoefficient};
+    options.unsupportedArea = {settings.criticalAngleDegrees, settings.overhangCoefficient};
 
     canvas_->ClearUnsupportedVisualization();
     optimizationCancel_.store(false, std::memory_order_relaxed);
@@ -656,8 +752,8 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
     UpdateCommandState();
     UpdateStatus();
 
-    optimizationWorker_ = std::thread(
-        [this, snapshots = std::move(snapshots), options, revision]() mutable {
+    optimizationWorker_ =
+        std::thread([this, snapshots = std::move(snapshots), options, revision]() mutable {
             const auto post = [this](std::shared_ptr<OrientationOptimizationPayload> payload) {
                 if (closing_.load(std::memory_order_relaxed))
                     return;
@@ -683,8 +779,7 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
                         &optimizationCancel_,
                         [&, model = snapshot.model, base = snapshot.baseTransform](
                             const stl_slicer::OrientationCandidate &candidate) {
-                            auto improvement =
-                                std::make_shared<OrientationOptimizationPayload>();
+                            auto improvement = std::make_shared<OrientationOptimizationPayload>();
                             improvement->type = OrientationEventType::Improvement;
                             improvement->model = model;
                             improvement->transform = candidate.transform * base;
@@ -692,10 +787,8 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
                             improvement->modelRevision = revision;
                             post(std::move(improvement));
                         },
-                        [&, total = options.attempts](std::size_t completed,
-                                                     std::size_t) {
-                            auto progress =
-                                std::make_shared<OrientationOptimizationPayload>();
+                        [&, total = options.attempts](std::size_t completed, std::size_t) {
+                            auto progress = std::make_shared<OrientationOptimizationPayload>();
                             progress->type = OrientationEventType::Progress;
                             progress->completed = completed;
                             progress->total = total;
@@ -703,8 +796,7 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
                             post(std::move(progress));
                         },
                         [&, model = snapshot.model](double score) {
-                            auto initial =
-                                std::make_shared<OrientationOptimizationPayload>();
+                            auto initial = std::make_shared<OrientationOptimizationPayload>();
                             initial->type = OrientationEventType::InitialScore;
                             initial->model = model;
                             initial->score = score;
@@ -735,8 +827,7 @@ void DocumentFrame::OnStopOptimization(wxCommandEvent &) {
 }
 
 void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
-    const auto payload =
-        event.GetPayload<std::shared_ptr<OrientationOptimizationPayload>>();
+    const auto payload = event.GetPayload<std::shared_ptr<OrientationOptimizationPayload>>();
     if (payload->type == OrientationEventType::InitialScore) {
         if (payload->modelRevision != modelRevision_) {
             optimizationCancel_.store(true, std::memory_order_relaxed);
@@ -770,8 +861,7 @@ void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
                 optimizationCompleted_ = 0;
                 optimizationHasScore_ = false;
             } else {
-                optimizationCompleted_ =
-                    std::max(optimizationCompleted_, payload->completed);
+                optimizationCompleted_ = std::max(optimizationCompleted_, payload->completed);
             }
             optimizationTotal_ = payload->total;
             UpdateStatus();
@@ -791,10 +881,7 @@ void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {
     UpdateStatus();
 
     if (payload->type == OrientationEventType::Error) {
-        wxMessageBox(payload->error,
-                     "Orientation optimization failed",
-                     wxOK | wxICON_ERROR,
-                     this);
+        wxMessageBox(payload->error, "Orientation optimization failed", wxOK | wxICON_ERROR, this);
         return;
     }
     if (payload->modelRevision == modelRevision_)

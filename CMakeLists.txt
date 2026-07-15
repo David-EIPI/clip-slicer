@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.12)
+
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+
 project(stl_slicer VERSION 0.1.0 LANGUAGES CXX)
 
 set(STL_SLICER_CLIPPER2_SOURCE_DIR
@@ -80,6 +85,9 @@ add_executable(stl-slicer src/main.cpp)
 target_link_libraries(stl-slicer PRIVATE stl_slicer_lib)
 
 if(STL_SLICER_BUILD_GUI)
+    set(STL_SLICER_WINDOWS_WX_SOURCE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/wxWidgets-3.2.11"
+        CACHE PATH "Local wxWidgets source tree for Windows builds")
     set(STL_SLICER_WINDOWS_WX_ROOT
         "/home/ucodex/my_msvc/wxWidgets"
         CACHE PATH "Windows wxWidgets root directory")
@@ -88,30 +96,57 @@ if(STL_SLICER_BUILD_GUI)
         CACHE PATH "Windows wxWidgets library directory")
 
     if(WIN32)
-        if(NOT EXISTS "${STL_SLICER_WINDOWS_WX_ROOT}/include/wx/wx.h")
-            message(FATAL_ERROR
-                "Windows wxWidgets headers were not found under "
-                "${STL_SLICER_WINDOWS_WX_ROOT}")
-        endif()
-        if(NOT EXISTS "${STL_SLICER_WINDOWS_WX_LIB_DIR}")
-            message(FATAL_ERROR
-                "Windows wxWidgets libraries were not found under "
-                "${STL_SLICER_WINDOWS_WX_LIB_DIR}")
-        endif()
+        if(EXISTS "${STL_SLICER_WINDOWS_WX_SOURCE_DIR}/CMakeLists.txt")
+            set(wxBUILD_SHARED OFF CACHE BOOL "" FORCE)
+            set(wxBUILD_MONOLITHIC OFF CACHE BOOL "" FORCE)
+            set(wxBUILD_USE_STATIC_RUNTIME ON CACHE BOOL "" FORCE)
+            set(wxBUILD_PRECOMP OFF CACHE BOOL "" FORCE)
+            set(wxBUILD_SAMPLES OFF CACHE STRING "" FORCE)
+            set(wxBUILD_DEMOS OFF CACHE BOOL "" FORCE)
+            set(wxBUILD_TESTS OFF CACHE STRING "" FORCE)
+            set(HAVE_GETTIMEOFDAY OFF CACHE INTERNAL "" FORCE)
+            set(wxUSE_OPENGL ON CACHE BOOL "" FORCE)
+            set(wxUSE_HELP OFF CACHE BOOL "" FORCE)
+            set(wxUSE_MS_HTML_HELP OFF CACHE BOOL "" FORCE)
+            set(wxUSE_WXHTML_HELP OFF CACHE BOOL "" FORCE)
+            set(wxUSE_WEBVIEW OFF CACHE BOOL "" FORCE)
+            set(wxUSE_MEDIACTRL OFF CACHE BOOL "" FORCE)
+            set(wxUSE_AUI OFF CACHE BOOL "" FORCE)
+            set(wxUSE_RIBBON OFF CACHE BOOL "" FORCE)
+            set(wxUSE_PROPGRID OFF CACHE BOOL "" FORCE)
+            set(wxUSE_RICHTEXT OFF CACHE BOOL "" FORCE)
+            set(wxUSE_STC OFF CACHE BOOL "" FORCE)
+            set(wxUSE_XRC OFF CACHE BOOL "" FORCE)
+            set(wxUSE_XML OFF CACHE BOOL "" FORCE)
+            set(wxUSE_HTML OFF CACHE BOOL "" FORCE)
+            add_subdirectory("${STL_SLICER_WINDOWS_WX_SOURCE_DIR}" wxwidgets EXCLUDE_FROM_ALL)
+            set(STL_SLICER_USE_LOCAL_WX_SOURCE ON)
+        else()
+            if(NOT EXISTS "${STL_SLICER_WINDOWS_WX_ROOT}/include/wx/wx.h")
+                message(FATAL_ERROR
+                    "Windows wxWidgets headers were not found under "
+                    "${STL_SLICER_WINDOWS_WX_ROOT}")
+            endif()
+            if(NOT EXISTS "${STL_SLICER_WINDOWS_WX_LIB_DIR}")
+                message(FATAL_ERROR
+                    "Windows wxWidgets libraries were not found under "
+                    "${STL_SLICER_WINDOWS_WX_LIB_DIR}")
+            endif()
 
-        set(STL_SLICER_WINDOWS_WX_SUFFIX "u")
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            set(STL_SLICER_WINDOWS_WX_SUFFIX "ud")
-        endif()
+            set(STL_SLICER_WINDOWS_WX_SUFFIX "u")
+            if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+                set(STL_SLICER_WINDOWS_WX_SUFFIX "ud")
+            endif()
 
-        add_library(wxWidgets::wxWidgets INTERFACE IMPORTED)
-        set_target_properties(wxWidgets::wxWidgets PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES
-                "${STL_SLICER_WINDOWS_WX_ROOT}/include;${STL_SLICER_WINDOWS_WX_ROOT}/include/msvc"
-            INTERFACE_COMPILE_DEFINITIONS
-                "WXUSINGDLL;__WXMSW__;UNICODE;_UNICODE;wxMSVC_VERSION_ABI_COMPAT"
-            INTERFACE_LINK_LIBRARIES
-                "${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_gl.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_core.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxbase32${STL_SLICER_WINDOWS_WX_SUFFIX}.lib")
+            add_library(wxWidgets::wxWidgets INTERFACE IMPORTED)
+            set_target_properties(wxWidgets::wxWidgets PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES
+                    "${STL_SLICER_WINDOWS_WX_ROOT}/include;${STL_SLICER_WINDOWS_WX_ROOT}/include/msvc"
+                INTERFACE_COMPILE_DEFINITIONS
+                    "WXUSINGDLL;__WXMSW__;UNICODE;_UNICODE;wxMSVC_VERSION_ABI_COMPAT"
+                INTERFACE_LINK_LIBRARIES
+                    "${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_gl.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_core.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxbase32${STL_SLICER_WINDOWS_WX_SUFFIX}.lib")
+        endif()
     else()
         find_package(wxWidgets 3.2 REQUIRED COMPONENTS core base gl)
         include(${wxWidgets_USE_FILE})
@@ -126,6 +161,7 @@ if(STL_SLICER_BUILD_GUI)
         app/document_frame.cpp
         app/app_settings.cpp
         app/settings_dialog.cpp
+        app/model_transform_dialog.cpp
         app/embedded_assets.cpp
         app/gl_api.cpp
         app/gl_canvas.cpp
@@ -133,12 +169,20 @@ if(STL_SLICER_BUILD_GUI)
     target_include_directories(clip-slicer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app)
 
     if(WIN32)
-        target_link_directories(clip-slicer PRIVATE "${STL_SLICER_WINDOWS_WX_LIB_DIR}")
-        target_link_libraries(clip-slicer PRIVATE
-            stl_slicer_lib
-            wxWidgets::wxWidgets
-            opengl32
-            glu32)
+        if(STL_SLICER_USE_LOCAL_WX_SOURCE)
+            target_link_libraries(clip-slicer PRIVATE
+                stl_slicer_lib
+                wx::gl
+                wx::core
+                wx::base)
+        else()
+            target_link_directories(clip-slicer PRIVATE "${STL_SLICER_WINDOWS_WX_LIB_DIR}")
+            target_link_libraries(clip-slicer PRIVATE
+                stl_slicer_lib
+                wxWidgets::wxWidgets
+                opengl32
+                glu32)
+        endif()
     else()
         target_link_libraries(clip-slicer PRIVATE
             stl_slicer_lib

@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 #include <wx/dcclient.h>
+#include <wx/msgdlg.h>
 #include <wx/thread.h>
 
 namespace {
@@ -105,6 +107,36 @@ const int *glAttributes() {
         WX_GL_RGBA, WX_GL_DOUBLEBUFFER, WX_GL_DEPTH_SIZE, 24, WX_GL_STENCIL_SIZE, 8, 0};
     return attributes;
 }
+
+std::string openGlString(GLenum name) {
+    const GLubyte *value = glGetString(name);
+    return value ? reinterpret_cast<const char *>(value) : "Unavailable";
+}
+
+std::string openGlInitializationError() {
+    constexpr GLenum shadingLanguageVersion = 0x8B8C;
+    std::ostringstream message;
+    message << "Unable to initialize the OpenGL renderer.\n\n"
+            << "Required minimum: OpenGL 3.2 with GLSL 1.50\n"
+            << "Detected OpenGL: " << openGlString(GL_VERSION) << '\n'
+            << "Detected GLSL: " << openGlString(shadingLanguageVersion) << '\n'
+            << "Vendor: " << openGlString(GL_VENDOR) << '\n'
+            << "Renderer: " << openGlString(GL_RENDERER);
+
+    const auto &missing = MissingOpenGlFunctions();
+    if (!missing.empty()) {
+        constexpr std::size_t displayLimit = 5;
+        message << "\n\nMissing required functions:";
+        const std::size_t displayed = std::min(displayLimit, missing.size());
+        for (std::size_t index = 0; index < displayed; ++index)
+            message << "\n  " << missing[index];
+        if (missing.size() > displayed)
+            message << "\n  ... and " << (missing.size() - displayed) << " more";
+    }
+    message
+        << "\n\nInstalling the current graphics driver may provide the required OpenGL support.";
+    return message.str();
+}
 } // namespace
 
 ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
@@ -113,10 +145,7 @@ ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     Bind(wxEVT_PAINT, &ModelCanvas::OnPaint, this);
     Bind(wxEVT_SIZE, &ModelCanvas::OnSize, this);
-    Bind(wxEVT_THREAD,
-         &ModelCanvas::OnInteractiveSliceFinished,
-         this,
-         interactiveSliceEventId);
+    Bind(wxEVT_THREAD, &ModelCanvas::OnInteractiveSliceFinished, this, interactiveSliceEventId);
     for (const auto event : {wxEVT_MOTION,
                              wxEVT_LEFT_DOWN,
                              wxEVT_LEFT_UP,
@@ -158,7 +187,7 @@ void ModelCanvas::InitializeGl() {
         return;
     SetCurrent(*context_);
     if (!InitializeOpenGlFunctions())
-        throw std::runtime_error("Unable to load required OpenGL functions");
+        throw std::runtime_error(openGlInitializationError());
     GLuint vs = shader(GL_VERTEX_SHADER, vertexShader),
            fs = shader(GL_FRAGMENT_SHADER, fragmentShader);
     program_ = glCreateProgram();
@@ -212,6 +241,12 @@ void ModelCanvas::ModelTransformsChanged() {
     UpdateInteractiveSlice();
     Refresh();
 }
+void ModelCanvas::TranslateViewCenter(const stl_slicer::Vec3 &translation) {
+    viewCenter_.x += translation.x;
+    viewCenter_.y += translation.y;
+    viewCenter_.z += translation.z;
+    Refresh();
+}
 void ModelCanvas::SelectionChanged() {
     UpdateInteractiveSlice();
     Refresh();
@@ -252,7 +287,13 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
         glUseProgram(0);
         SwapBuffers();
     } catch (const std::exception &e) {
-        wxLogError("OpenGL: %s", e.what());
+        if (!openGlErrorReported_) {
+            openGlErrorReported_ = true;
+            wxMessageBox(wxString::FromUTF8(e.what()),
+                         "OpenGL initialization failed",
+                         wxOK | wxICON_ERROR,
+                         this);
+        }
     }
 }
 void ModelCanvas::SetUnsupportedVisualization(VisualizationMesh visualization) {
@@ -750,38 +791,32 @@ void ModelCanvas::BeginInteractiveSlice() {
     interactiveSliceCancel_.store(false, std::memory_order_relaxed);
     interactiveSliceRunning_ = true;
     document_.InteractiveSliceStateChanged();
-    interactiveSliceWorker_ = std::thread([this,
-                                           meshes = std::move(meshes),
-                                           options,
-                                           position,
-                                           generation]() {
-        auto payload = std::make_shared<InteractiveSlicePayload>();
-        payload->generation = generation;
-        try {
-            for (const auto &mesh : meshes) {
-                if (interactiveSliceCancel_.load(std::memory_order_relaxed))
-                    break;
-                payload->layers.push_back(
-                    stl_slicer::Slicer{options}.sliceAt(
+    interactiveSliceWorker_ =
+        std::thread([this, meshes = std::move(meshes), options, position, generation]() {
+            auto payload = std::make_shared<InteractiveSlicePayload>();
+            payload->generation = generation;
+            try {
+                for (const auto &mesh : meshes) {
+                    if (interactiveSliceCancel_.load(std::memory_order_relaxed))
+                        break;
+                    payload->layers.push_back(stl_slicer::Slicer{options}.sliceAt(
                         *mesh, position, &interactiveSliceCancel_));
-                for (const auto &path : payload->layers.back().paths)
-                    for (std::size_t index = 0; index + 1 < path.points.size(); ++index)
-                        payload->area +=
-                            (path.points[index].x * path.points[index + 1].y -
-                             path.points[index + 1].x * path.points[index].y) /
-                            2.0;
+                    for (const auto &path : payload->layers.back().paths)
+                        for (std::size_t index = 0; index + 1 < path.points.size(); ++index)
+                            payload->area += (path.points[index].x * path.points[index + 1].y -
+                                              path.points[index + 1].x * path.points[index].y) /
+                                             2.0;
+                }
+            } catch (const std::exception &error) {
+                payload->error = error.what();
             }
-        } catch (const std::exception &error) {
-            payload->error = error.what();
-        }
-        payload->cancelled =
-            interactiveSliceCancel_.load(std::memory_order_relaxed);
-        if (closing_.load(std::memory_order_relaxed))
-            return;
-        auto *event = new wxThreadEvent(wxEVT_THREAD, interactiveSliceEventId);
-        event->SetPayload(std::move(payload));
-        wxQueueEvent(this, event);
-    });
+            payload->cancelled = interactiveSliceCancel_.load(std::memory_order_relaxed);
+            if (closing_.load(std::memory_order_relaxed))
+                return;
+            auto *event = new wxThreadEvent(wxEVT_THREAD, interactiveSliceEventId);
+            event->SetPayload(std::move(payload));
+            wxQueueEvent(this, event);
+        });
 }
 void ModelCanvas::CancelInteractiveSlice() {
     if (!interactiveSliceRunning_)
@@ -791,8 +826,7 @@ void ModelCanvas::CancelInteractiveSlice() {
     interactiveSliceCancel_.store(true, std::memory_order_relaxed);
 }
 void ModelCanvas::OnInteractiveSliceFinished(wxThreadEvent &event) {
-    const auto payload =
-        event.GetPayload<std::shared_ptr<InteractiveSlicePayload>>();
+    const auto payload = event.GetPayload<std::shared_ptr<InteractiveSlicePayload>>();
     if (interactiveSliceWorker_.joinable())
         interactiveSliceWorker_.join();
     interactiveSliceRunning_ = false;

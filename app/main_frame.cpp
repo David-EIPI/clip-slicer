@@ -77,7 +77,7 @@ void MainFrame::OpenDialog() {
                         {},
                         {},
                         "3D model files (*.stl;*.cli)|*.stl;*.cli|STL files|*.stl|CLI files|*.cli",
-                        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+                        wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR);
     if (dialog.ShowModal() == wxID_OK)
         OpenFile(dialog.GetPath());
 }

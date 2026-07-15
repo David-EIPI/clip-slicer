@@ -265,4 +265,6 @@ alignas(4) const unsigned char orientationOptimizerIconPng[] = {
 };
 const std::size_t orientationOptimizerIconPngSize = sizeof(orientationOptimizerIconPng);
 
+#include "embedded_model_transform_assets.inc"
+
 } // namespace clip_slicer::assets

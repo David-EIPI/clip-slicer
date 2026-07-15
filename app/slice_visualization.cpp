@@ -199,7 +199,9 @@ float normalLength(const RenderVertex &vertex) {
 
 namespace {
 
-VisualizationMesh buildSliceFaces(const stl_slicer::SliceData &slices, bool includeBottomFaces) {
+VisualizationMesh buildSliceFaces(const stl_slicer::SliceData &slices,
+                                  bool includeBottomFaces,
+                                  bool placeAtPreviousLayer) {
     VisualizationMesh result;
     if (slices.layers.empty())
         return result;
@@ -208,10 +210,12 @@ VisualizationMesh buildSliceFaces(const stl_slicer::SliceData &slices, bool incl
         slices.layers.size() > 1 ? slices.layers[1].z - slices.layers[0].z : 1.0;
     for (std::size_t layerIndex = 0; layerIndex < slices.layers.size(); ++layerIndex) {
         const auto &layer = slices.layers[layerIndex];
+        const double surfaceZ =
+            placeAtPreviousLayer && layerIndex > 0 ? slices.layers[layerIndex - 1].z : layer.z;
         const double bottom =
             includeBottomFaces ? (layerIndex ? slices.layers[layerIndex - 1].z : layer.z - fallback)
-                               : layer.z;
-        Tessellation tessellation(float(layer.z), float(bottom), result);
+                               : surfaceZ;
+        Tessellation tessellation(float(surfaceZ), float(bottom), result);
         GLUtesselator *tessellator = gluNewTess();
         if (!tessellator)
             throw std::runtime_error("Unable to create GLU tessellator");
@@ -220,8 +224,7 @@ VisualizationMesh buildSliceFaces(const stl_slicer::SliceData &slices, bool incl
             tessellator, GLU_TESS_BEGIN_DATA, reinterpret_cast<GluTessCallback>(tessBegin));
         gluTessCallback(
             tessellator, GLU_TESS_VERTEX_DATA, reinterpret_cast<GluTessCallback>(tessVertex));
-        gluTessCallback(
-            tessellator, GLU_TESS_END_DATA, reinterpret_cast<GluTessCallback>(tessEnd));
+        gluTessCallback(tessellator, GLU_TESS_END_DATA, reinterpret_cast<GluTessCallback>(tessEnd));
         gluTessCallback(
             tessellator, GLU_TESS_COMBINE_DATA, reinterpret_cast<GluTessCallback>(tessCombine));
         gluTessCallback(
@@ -241,7 +244,7 @@ VisualizationMesh buildSliceFaces(const stl_slicer::SliceData &slices, bool incl
             gluTessBeginContour(tessellator);
             for (std::size_t pointIndex = 0; pointIndex + 1 < path.points.size(); ++pointIndex) {
                 const auto &point = path.points[pointIndex];
-                points.push_back({point.x, point.y, layer.z});
+                points.push_back({point.x, point.y, surfaceZ});
                 gluTessVertex(tessellator, points.back().data(), points.back().data());
             }
             gluTessEndContour(tessellator);
@@ -257,11 +260,15 @@ VisualizationMesh buildSliceFaces(const stl_slicer::SliceData &slices, bool incl
 } // namespace
 
 VisualizationMesh BuildSliceCaps(const stl_slicer::SliceData &slices) {
-    return buildSliceFaces(slices, true);
+    return buildSliceFaces(slices, true, false);
 }
 
 VisualizationMesh BuildSliceSurfaces(const stl_slicer::SliceData &slices) {
-    return buildSliceFaces(slices, false);
+    return buildSliceFaces(slices, false, false);
+}
+
+VisualizationMesh BuildUnsupportedSurfaces(const stl_slicer::SliceData &slices) {
+    return buildSliceFaces(slices, false, true);
 }
 
 void SmoothRenderNormals(std::vector<RenderVertex> &vertices) {

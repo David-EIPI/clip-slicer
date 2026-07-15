@@ -35,55 +35,71 @@ PFNGLSTENCILOPSEPARATEPROC glStencilOpSeparate = nullptr;
 
 namespace {
 
-template <typename Proc>
-bool loadProc(Proc &proc, HMODULE module, const char *name) {
-    proc = reinterpret_cast<Proc>(wglGetProcAddress(name));
-    if (proc)
+bool loadAttempted = false;
+bool loadSucceeded = false;
+std::vector<std::string> missingFunctions;
+
+template <typename Proc> bool loadProc(Proc &proc, HMODULE module, const char *name) {
+    PROC address = wglGetProcAddress(name);
+    if (address && address != reinterpret_cast<PROC>(1) && address != reinterpret_cast<PROC>(2) &&
+        address != reinterpret_cast<PROC>(3) && address != reinterpret_cast<PROC>(-1)) {
+        proc = reinterpret_cast<Proc>(address);
         return true;
+    }
 
     proc = reinterpret_cast<Proc>(GetProcAddress(module, name));
     return proc != nullptr;
 }
 
+template <typename Proc> void loadRequired(Proc &proc, HMODULE module, const char *name) {
+    if (!loadProc(proc, module, name))
+        missingFunctions.emplace_back(name);
+}
+
 } // namespace
 
 bool InitializeOpenGlFunctions() {
-    static bool initialized = false;
-    if (initialized)
-        return true;
+    if (loadAttempted)
+        return loadSucceeded;
+    loadAttempted = true;
 
     const HMODULE module = LoadLibraryA("opengl32.dll");
-    if (!module)
+    if (!module) {
+        missingFunctions.emplace_back("opengl32.dll (library could not be loaded)");
         return false;
+    }
 
-    const bool ok =
-        loadProc(glCreateShader, module, "glCreateShader") &&
-        loadProc(glShaderSource, module, "glShaderSource") &&
-        loadProc(glCompileShader, module, "glCompileShader") &&
-        loadProc(glGetShaderiv, module, "glGetShaderiv") &&
-        loadProc(glGetShaderInfoLog, module, "glGetShaderInfoLog") &&
-        loadProc(glDeleteShader, module, "glDeleteShader") &&
-        loadProc(glCreateProgram, module, "glCreateProgram") &&
-        loadProc(glAttachShader, module, "glAttachShader") &&
-        loadProc(glBindAttribLocation, module, "glBindAttribLocation") &&
-        loadProc(glLinkProgram, module, "glLinkProgram") &&
-        loadProc(glGetProgramiv, module, "glGetProgramiv") &&
-        loadProc(glDeleteProgram, module, "glDeleteProgram") &&
-        loadProc(glGetUniformLocation, module, "glGetUniformLocation") &&
-        loadProc(glUseProgram, module, "glUseProgram") &&
-        loadProc(glUniformMatrix4fv, module, "glUniformMatrix4fv") &&
-        loadProc(glUniform4fv, module, "glUniform4fv") &&
-        loadProc(glUniform1i, module, "glUniform1i") &&
-        loadProc(glGenBuffers, module, "glGenBuffers") &&
-        loadProc(glDeleteBuffers, module, "glDeleteBuffers") &&
-        loadProc(glBindBuffer, module, "glBindBuffer") &&
-        loadProc(glBufferData, module, "glBufferData") &&
-        loadProc(glEnableVertexAttribArray, module, "glEnableVertexAttribArray") &&
-        loadProc(glVertexAttribPointer, module, "glVertexAttribPointer") &&
-        loadProc(glStencilOpSeparate, module, "glStencilOpSeparate");
+    loadRequired(glCreateShader, module, "glCreateShader");
+    loadRequired(glShaderSource, module, "glShaderSource");
+    loadRequired(glCompileShader, module, "glCompileShader");
+    loadRequired(glGetShaderiv, module, "glGetShaderiv");
+    loadRequired(glGetShaderInfoLog, module, "glGetShaderInfoLog");
+    loadRequired(glDeleteShader, module, "glDeleteShader");
+    loadRequired(glCreateProgram, module, "glCreateProgram");
+    loadRequired(glAttachShader, module, "glAttachShader");
+    loadRequired(glBindAttribLocation, module, "glBindAttribLocation");
+    loadRequired(glLinkProgram, module, "glLinkProgram");
+    loadRequired(glGetProgramiv, module, "glGetProgramiv");
+    loadRequired(glDeleteProgram, module, "glDeleteProgram");
+    loadRequired(glGetUniformLocation, module, "glGetUniformLocation");
+    loadRequired(glUseProgram, module, "glUseProgram");
+    loadRequired(glUniformMatrix4fv, module, "glUniformMatrix4fv");
+    loadRequired(glUniform4fv, module, "glUniform4fv");
+    loadRequired(glUniform1i, module, "glUniform1i");
+    loadRequired(glGenBuffers, module, "glGenBuffers");
+    loadRequired(glDeleteBuffers, module, "glDeleteBuffers");
+    loadRequired(glBindBuffer, module, "glBindBuffer");
+    loadRequired(glBufferData, module, "glBufferData");
+    loadRequired(glEnableVertexAttribArray, module, "glEnableVertexAttribArray");
+    loadRequired(glVertexAttribPointer, module, "glVertexAttribPointer");
+    loadRequired(glStencilOpSeparate, module, "glStencilOpSeparate");
 
-    initialized = ok;
-    return ok;
+    loadSucceeded = missingFunctions.empty();
+    return loadSucceeded;
+}
+
+const std::vector<std::string> &MissingOpenGlFunctions() {
+    return missingFunctions;
 }
 
 #endif

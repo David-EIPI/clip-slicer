@@ -3,5 +3,7 @@
 /perf.data*
 /callgrind.out*
 /.wx-*
+/Clipper2-Clipper2_2.0.1_DLLs/
+/wxWidgets-3.2.11/
 *.cli
 *.stl

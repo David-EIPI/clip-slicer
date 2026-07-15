@@ -60,6 +60,17 @@ void testSliceSurfacesAreNotExtruded() {
         require(vertex.z == 3.0f, "Unsupported surface was extruded between layers");
 }
 
+void testUnsupportedSurfacesUsePreviousLayerHeight() {
+    SliceData slices;
+    slices.layers.push_back({2.75, {}});
+    slices.layers.push_back({3.0, {{PathType::External, {{0, 0}, {1, 0}, {1, 1}, {0, 0}}}}});
+
+    const VisualizationMesh surfaces = BuildUnsupportedSurfaces(slices);
+    require(!surfaces.indices.empty(), "Unsupported surface tessellation produced no triangles");
+    for (const auto &vertex : surfaces.vertices)
+        require(vertex.z == 2.75f, "Unsupported surface did not use the previous layer height");
+}
+
 void testNormalSmoothingPreservesCreases() {
     std::vector<RenderVertex> vertices = {
         {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0.8660254f, 0.5f, 0}, {0, 0, 0, 0, 0, 1}};
@@ -75,6 +86,7 @@ int main() {
         testCapsWithHole();
         testGeometricallyClosedOpenPath();
         testSliceSurfacesAreNotExtruded();
+        testUnsupportedSurfacesUsePreviousLayerHeight();
         testNormalSmoothingPreservesCreases();
         std::cout << "All visualization tests passed\n";
         return 0;
