@@ -42,6 +42,7 @@ enum {
     IdStopOptimization,
     IdShow,
     IdHide,
+    IdDeleteModels,
     IdResetTransform,
     IdTransformModels,
     IdMoveToOrigin,
@@ -163,21 +164,15 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        toolSize),
                       "Interactive slicing",
                       wxITEM_CHECK);
-    toolbar_->AddTool(IdOptimizeOrientation,
-                      "Optimize",
-                      LoadEmbeddedIcon(clip_slicer::assets::orientationOptimizerIconPng,
-                                       clip_slicer::assets::orientationOptimizerIconPngSize,
-                                       wxART_GO_UP,
-                                       toolSize),
-                      "Optimize model orientation");
-    toolbar_->AddTool(IdStopOptimization,
-                      "Stop",
-                      wxArtProvider::GetBitmap(wxART_STOP, wxART_TOOLBAR, toolSize),
-                      "Stop orientation optimization");
     toolbar_->AddTool(
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->AddTool(
         IdShow, "Show", wxArtProvider::GetBitmap(wxART_TICK_MARK, wxART_TOOLBAR, toolSize));
+    toolbar_->AddTool(
+        IdDeleteModels,
+        "Delete",
+        wxArtProvider::GetBitmap(wxART_DELETE, wxART_TOOLBAR, toolSize),
+        "Delete selected models");
     toolbar_->AddSeparator();
     toolbar_->AddTool(IdDetectUnsupported,
                       "Detect",
@@ -186,6 +181,13 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        wxART_FIND,
                                        toolSize),
                       "Detect unsupported areas");
+    toolbar_->AddTool(IdOptimizeOrientation,
+                      "Optimize",
+                      LoadEmbeddedIcon(clip_slicer::assets::orientationOptimizerIconPng,
+                                       clip_slicer::assets::orientationOptimizerIconPngSize,
+                                       wxART_GO_UP,
+                                       toolSize),
+                      "Optimize model orientation");
     toolbar_->AddTool(IdGenerateSupports,
                       "Generate",
                       LoadEmbeddedIcon(clip_slicer::assets::supportGenerateIconPng,
@@ -193,6 +195,10 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        wxART_PLUS,
                                        toolSize),
                       "Generate support structures");
+    toolbar_->AddTool(IdStopOptimization,
+                      "Stop",
+                      wxArtProvider::GetBitmap(wxART_STOP, wxART_TOOLBAR, toolSize),
+                      "Stop background operation");
     toolbar_->AddSeparator();
     toolbar_->AddTool(IdResetTransform,
                       "Reset",
@@ -245,6 +251,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_THREAD, &DocumentFrame::OnOrientationOptimizationEvent, this, IdOptimizeOrientation);
     Bind(wxEVT_MENU, &DocumentFrame::OnShow, this, IdShow);
     Bind(wxEVT_MENU, &DocumentFrame::OnHide, this, IdHide);
+    Bind(wxEVT_MENU, &DocumentFrame::OnDeleteModels, this, IdDeleteModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnResetTransform, this, IdResetTransform);
     Bind(wxEVT_MENU, &DocumentFrame::OnTransformModels, this, IdTransformModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnMoveToOrigin, this, IdMoveToOrigin);
@@ -285,6 +292,7 @@ void DocumentFrame::BuildMenus() {
     auto *models = new wxMenu;
     models->Append(IdShow, "&Show selected");
     models->Append(IdHide, "&Hide selected");
+    deleteModelsItem_ = models->Append(IdDeleteModels, "&Delete selected");
     models->AppendSeparator();
     resetTransformItem_ = models->Append(IdResetTransform, "&Reset transformations");
     transformModelsItem_ = models->Append(IdTransformModels, "&Transform...");
@@ -405,10 +413,13 @@ void DocumentFrame::UpdateCommandState() {
         transformModelsItem_->Enable(modelSelected);
     if (moveToOriginItem_)
         moveToOriginItem_->Enable(modelSelected);
+    if (deleteModelsItem_)
+        deleteModelsItem_->Enable(modelSelected);
     if (toolbar_) {
         toolbar_->EnableTool(IdResetTransform, modelSelected);
         toolbar_->EnableTool(IdTransformModels, modelSelected);
         toolbar_->EnableTool(IdMoveToOrigin, modelSelected);
+        toolbar_->EnableTool(IdDeleteModels, modelSelected);
     }
     const bool canAnalyze = !unsupportedAnalysisRunning_ && !supportGenerationRunning_ &&
                             !optimizationRunning_ &&
@@ -458,6 +469,23 @@ void DocumentFrame::OnHide(wxCommandEvent &) {
             m->visible = false;
     RefreshModelList();
     canvas_->Refresh();
+    UpdateStatus();
+}
+void DocumentFrame::OnDeleteModels(wxCommandEvent &) {
+    const bool hasSelectedModel =
+        std::any_of(models_.begin(), models_.end(), [](const auto &model) {
+            return model->selected;
+        });
+    if (!hasSelectedModel)
+        return;
+
+    InvalidateUnsupportedAnalysis();
+    const auto newEnd = std::remove_if(models_.begin(), models_.end(), [](const auto &model) {
+        return model->selected;
+    });
+    models_.erase(newEnd, models_.end());
+    RefreshModelList();
+    canvas_->ModelsChanged();
     UpdateStatus();
 }
 void DocumentFrame::OnResetTransform(wxCommandEvent &) {

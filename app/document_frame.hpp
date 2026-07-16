@@ -61,6 +61,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnOrientationOptimizationEvent(wxThreadEvent &event);
     void OnShow(wxCommandEvent &);
     void OnHide(wxCommandEvent &);
+    void OnDeleteModels(wxCommandEvent &);
     void OnResetTransform(wxCommandEvent &);
     void OnTransformModels(wxCommandEvent &);
     void OnMoveToOrigin(wxCommandEvent &);
@@ -78,6 +79,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *detectUnsupportedItem_ = nullptr;
     wxMenuItem *generateSupportsItem_ = nullptr;
     wxMenuItem *optimizationItem_ = nullptr;
+    wxMenuItem *deleteModelsItem_ = nullptr;
     wxMenuItem *resetTransformItem_ = nullptr;
     wxMenuItem *transformModelsItem_ = nullptr;
     wxMenuItem *moveToOriginItem_ = nullptr;
