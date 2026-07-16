@@ -3,6 +3,7 @@
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
+#include <wx/statbox.h>
 #include <wx/stattext.h>
 
 SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
@@ -147,8 +148,9 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     notebook->AddPage(analysis, "Analysis");
 
     auto *supports = new wxPanel(notebook);
-    auto *supportsSizer = new wxFlexGridSizer(2, 8, 10);
-    supportsSizer->Add(
+    auto *supportsSizer = new wxBoxSizer(wxVERTICAL);
+    auto *spacingSizer = new wxFlexGridSizer(2, 8, 10);
+    spacingSizer->Add(
         new wxStaticText(supports, wxID_ANY, "Support spacing (mm):"), 0, wxALIGN_CENTER_VERTICAL);
     supportSpacing_ = new wxSpinCtrlDouble(supports,
                                            wxID_ANY,
@@ -161,10 +163,55 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                                            settings.supportSpacing,
                                            0.1);
     supportSpacing_->SetDigits(3);
-    supportsSizer->Add(supportSpacing_, 1, wxEXPAND);
-    supportsSizer->AddGrowableCol(1);
+    spacingSizer->Add(supportSpacing_, 1, wxEXPAND);
+    spacingSizer->Add(new wxStaticText(supports, wxID_ANY, "Circumference points:"),
+                      0,
+                      wxALIGN_CENTER_VERTICAL);
+    supportCircumferencePoints_ = new wxSpinCtrl(supports,
+                                                 wxID_ANY,
+                                                 wxEmptyString,
+                                                 wxDefaultPosition,
+                                                 wxDefaultSize,
+                                                 wxSP_ARROW_KEYS,
+                                                 3,
+                                                 1024,
+                                                 settings.supportCircumferencePoints);
+    spacingSizer->Add(supportCircumferencePoints_, 1, wxEXPAND);
+    spacingSizer->AddGrowableCol(1);
+    supportsSizer->Add(spacingSizer, 0, wxEXPAND | wxBOTTOM, 10);
+
+    auto *tipBox = new wxStaticBoxSizer(wxVERTICAL, supports, "Contact tip");
+    auto *tipSizer = new wxFlexGridSizer(2, 8, 10);
+    const auto addTipDimension = [&](const wxString &label,
+                                     wxSpinCtrlDouble *&control,
+                                     double value) {
+        tipSizer->Add(
+            new wxStaticText(tipBox->GetStaticBox(), wxID_ANY, label),
+            0,
+            wxALIGN_CENTER_VERTICAL);
+        control = new wxSpinCtrlDouble(tipBox->GetStaticBox(),
+                                       wxID_ANY,
+                                       wxEmptyString,
+                                       wxDefaultPosition,
+                                       wxDefaultSize,
+                                       wxSP_ARROW_KEYS,
+                                       0.001,
+                                       1000.0,
+                                       value,
+                                       0.1);
+        control->SetDigits(3);
+        tipSizer->Add(control, 1, wxEXPAND);
+    };
+    addTipDimension("Top radius (mm):", supportTipTopRadius_, settings.supportTipTopRadius);
+    addTipDimension("Bottom radius (mm):",
+                    supportTipBottomRadius_,
+                    settings.supportTipBottomRadius);
+    addTipDimension("Height (mm):", supportTipHeight_, settings.supportTipHeight);
+    tipSizer->AddGrowableCol(1);
+    tipBox->Add(tipSizer, 1, wxEXPAND | wxALL, 8);
+    supportsSizer->Add(tipBox, 0, wxEXPAND);
     supports->SetSizer(supportsSizer);
-    notebook->AddPage(supports, "Supports");
+    notebook->AddPage(supports, "Generator");
 
     root->Add(notebook, 1, wxEXPAND | wxALL, 12);
     root->Add(
@@ -211,4 +258,20 @@ double SettingsDialog::OptimizationTolerance() const {
 
 double SettingsDialog::SupportSpacing() const {
     return supportSpacing_->GetValue();
+}
+
+double SettingsDialog::SupportTipTopRadius() const {
+    return supportTipTopRadius_->GetValue();
+}
+
+double SettingsDialog::SupportTipBottomRadius() const {
+    return supportTipBottomRadius_->GetValue();
+}
+
+double SettingsDialog::SupportTipHeight() const {
+    return supportTipHeight_->GetValue();
+}
+
+int SettingsDialog::SupportCircumferencePoints() const {
+    return supportCircumferencePoints_->GetValue();
 }

@@ -60,6 +60,7 @@ add_library(stl_slicer_lib
     src/slicer.cpp
     src/unsupported_area.cpp
     src/support_generator.cpp
+    src/support_tip.cpp
     src/orientation_optimizer.cpp
     src/cli_writer.cpp
     src/scene_model.cpp)

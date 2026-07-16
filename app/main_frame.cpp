@@ -60,6 +60,10 @@ void MainFrame::ShowSettingsDialog() {
     updated.optimizationWorkers = dialog.OptimizationWorkers();
     updated.optimizationTolerance = dialog.OptimizationTolerance();
     updated.supportSpacing = dialog.SupportSpacing();
+    updated.supportTipTopRadius = dialog.SupportTipTopRadius();
+    updated.supportTipBottomRadius = dialog.SupportTipBottomRadius();
+    updated.supportTipHeight = dialog.SupportTipHeight();
+    updated.supportCircumferencePoints = dialog.SupportCircumferencePoints();
     if (!updated.Save()) {
         wxMessageBox("Unable to save settings to:\n" + AppSettings::FilePath(),
                      "Settings",

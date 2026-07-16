@@ -14,6 +14,10 @@ class AppSettings {
     static constexpr int defaultOptimizationWorkers = 4;
     static constexpr double defaultOptimizationTolerance = 0.1;
     static constexpr double defaultSupportSpacing = 2.0;
+    static constexpr double defaultSupportTipTopRadius = 0.25;
+    static constexpr double defaultSupportTipBottomRadius = 0.75;
+    static constexpr double defaultSupportTipHeight = 2.0;
+    static constexpr int defaultSupportCircumferencePoints = 12;
 
     bool Load();
     bool Save() const;
@@ -29,4 +33,8 @@ class AppSettings {
     int optimizationWorkers = defaultOptimizationWorkers;
     double optimizationTolerance = defaultOptimizationTolerance;
     double supportSpacing = defaultSupportSpacing;
+    double supportTipTopRadius = defaultSupportTipTopRadius;
+    double supportTipBottomRadius = defaultSupportTipBottomRadius;
+    double supportTipHeight = defaultSupportTipHeight;
+    int supportCircumferencePoints = defaultSupportCircumferencePoints;
 };

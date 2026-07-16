@@ -28,6 +28,10 @@ bool AppSettings::Load() {
     optimizationWorkers = defaultOptimizationWorkers;
     optimizationTolerance = defaultOptimizationTolerance;
     supportSpacing = defaultSupportSpacing;
+    supportTipTopRadius = defaultSupportTipTopRadius;
+    supportTipBottomRadius = defaultSupportTipBottomRadius;
+    supportTipHeight = defaultSupportTipHeight;
+    supportCircumferencePoints = defaultSupportCircumferencePoints;
     if (!wxFileExists(FilePath()))
         return true;
 
@@ -73,6 +77,24 @@ bool AppSettings::Load() {
     config.Read("/supports/supportSpacing", &value, defaultSupportSpacing);
     if (std::isfinite(value) && value > 0.0)
         supportSpacing = value;
+    value = defaultSupportTipTopRadius;
+    config.Read("/supports/tipTopRadius", &value, defaultSupportTipTopRadius);
+    if (std::isfinite(value) && value > 0.0)
+        supportTipTopRadius = value;
+    value = defaultSupportTipBottomRadius;
+    config.Read("/supports/tipBottomRadius", &value, defaultSupportTipBottomRadius);
+    if (std::isfinite(value) && value > 0.0)
+        supportTipBottomRadius = value;
+    value = defaultSupportTipHeight;
+    config.Read("/supports/tipHeight", &value, defaultSupportTipHeight);
+    if (std::isfinite(value) && value > 0.0)
+        supportTipHeight = value;
+    integerValue = defaultSupportCircumferencePoints;
+    config.Read("/supports/circumferencePoints",
+                &integerValue,
+                defaultSupportCircumferencePoints);
+    if (integerValue >= 3 && integerValue <= 1024)
+        supportCircumferencePoints = static_cast<int>(integerValue);
     return true;
 }
 
@@ -94,5 +116,9 @@ bool AppSettings::Save() const {
     config.Write("/analysis/optimizationWorkers", optimizationWorkers);
     config.Write("/analysis/optimizationTolerance", optimizationTolerance);
     config.Write("/supports/supportSpacing", supportSpacing);
+    config.Write("/supports/tipTopRadius", supportTipTopRadius);
+    config.Write("/supports/tipBottomRadius", supportTipBottomRadius);
+    config.Write("/supports/tipHeight", supportTipHeight);
+    config.Write("/supports/circumferencePoints", supportCircumferencePoints);
     return config.Flush();
 }

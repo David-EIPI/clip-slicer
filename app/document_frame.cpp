@@ -779,7 +779,12 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
                         stl_slicer::SupportGenerationResult generated =
                             stl_slicer::SupportGenerator{
                                 {static_cast<std::size_t>(settings.optimizationWorkers),
-                                 settings.supportSpacing}}
+                                 settings.supportSpacing,
+                                 {settings.supportTipTopRadius,
+                                  settings.supportTipBottomRadius,
+                                  settings.supportTipHeight,
+                                  static_cast<std::size_t>(settings.supportCircumferencePoints),
+                                  settings.criticalAngleDegrees}}}
                                 .generate({source, slices, unsupported}, &supportGenerationCancel_);
                         payload->supports = std::move(generated.supports);
                         payload->contactPointCount = generated.contactPoints.size();
@@ -820,7 +825,7 @@ void DocumentFrame::OnSupportGenerationFinished(wxThreadEvent &event) {
                 ? "No support contact points were detected."
                 : wxString::Format(
                       "%llu support contact points were detected.\n"
-                      "Contact-tip geometry is not implemented yet.",
+                      "No contact-tip geometry was generated.",
                       static_cast<unsigned long long>(payload->contactPointCount));
         wxMessageBox(message,
                      "Generate supports",

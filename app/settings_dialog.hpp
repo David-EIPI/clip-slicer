@@ -19,6 +19,10 @@ class SettingsDialog final : public wxDialog {
     int OptimizationWorkers() const;
     double OptimizationTolerance() const;
     double SupportSpacing() const;
+    double SupportTipTopRadius() const;
+    double SupportTipBottomRadius() const;
+    double SupportTipHeight() const;
+    int SupportCircumferencePoints() const;
 
   private:
     wxSpinCtrlDouble *layerThickness_ = nullptr;
@@ -31,4 +35,8 @@ class SettingsDialog final : public wxDialog {
     wxSpinCtrl *optimizationWorkers_ = nullptr;
     wxSpinCtrlDouble *optimizationTolerance_ = nullptr;
     wxSpinCtrlDouble *supportSpacing_ = nullptr;
+    wxSpinCtrlDouble *supportTipTopRadius_ = nullptr;
+    wxSpinCtrlDouble *supportTipBottomRadius_ = nullptr;
+    wxSpinCtrlDouble *supportTipHeight_ = nullptr;
+    wxSpinCtrl *supportCircumferencePoints_ = nullptr;
 };

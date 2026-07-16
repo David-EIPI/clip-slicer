@@ -6,6 +6,7 @@
 #include "stl_slicer/stl_reader.hpp"
 #include "stl_slicer/stl_writer.hpp"
 #include "stl_slicer/support_generator.hpp"
+#include "stl_slicer/support_tip.hpp"
 #include "stl_slicer/unsupported_area.hpp"
 #include <algorithm>
 #include <array>
@@ -490,6 +491,9 @@ void testSupportContactPlacement() {
     const SupportGenerationResult fullBoundary =
         SupportGenerator{{1, 2.0}}.generate({source, slices, unsupported});
     require(!fullBoundary.contactPoints.empty(), "contact lattice was empty");
+    require(fullBoundary.supports.triangles().size() ==
+                fullBoundary.contactPoints.size() * 48,
+            "default support generation did not merge every contact tip");
     bool hasInterior = false;
     std::array<bool, 4> hasBoundary{};
     std::vector<double> boundaryPositions;
@@ -574,6 +578,54 @@ void testSupportContactPlacement() {
     require(invalidSpacingRejected, "support generator accepted zero contact spacing");
 }
 
+void testSupportTipGeneration() {
+    auto source = std::make_shared<TriangleMesh>();
+    Triangle surface;
+    surface.normal = {1.0, 0.0, 0.0};
+    surface.vertices = {{{0.0, -10.0, 0.0},
+                         {0.0, 10.0, 0.0},
+                         {0.0, 0.0, 20.0}}};
+    source->addTriangle(surface);
+
+    const SupportTipOptions options{0.25, 0.75, 2.0, 12, 30.0};
+    const TriangleMesh tip = SupportTipBuilder(source, options).build({0.0, 0.0, 10.0});
+    require(tip.triangles().size() == 48,
+            "support tip did not contain two side and two cap triangles per segment");
+
+    const double pi = std::acos(-1.0);
+    const double coneSlope = std::atan2(0.5, 2.0);
+    const double minimumAngle = 30.0 * pi / 180.0 - coneSlope;
+    const Vec3 expectedBottomCenter{
+        2.0 * std::cos(minimumAngle), 0.0, 10.0 - 2.0 * std::sin(minimumAngle)};
+    bool foundBottomCenter = false;
+    for (const Triangle &triangle : tip.triangles())
+        for (const Vec3 &vertex : triangle.vertices)
+            foundBottomCenter =
+                foundBottomCenter ||
+                (std::abs(vertex.x - expectedBottomCenter.x) < 1e-9 &&
+                 std::abs(vertex.y - expectedBottomCenter.y) < 1e-9 &&
+                 std::abs(vertex.z - expectedBottomCenter.z) < 1e-9);
+    require(foundBottomCenter,
+            "support tip axis was not clamped to the critical build angle");
+
+    std::atomic<bool> cancel{true};
+    require(SupportTipBuilder(source, options).build({0.0, 0.0, 10.0}, &cancel)
+                .triangles()
+                .empty(),
+            "support tip generation ignored cancellation");
+
+    bool invalidPointCountRejected = false;
+    try {
+        SupportTipOptions invalid = options;
+        invalid.circumferencePoints = 2;
+        (void)SupportTipBuilder(source, invalid);
+    } catch (const std::invalid_argument &) {
+        invalidPointCountRejected = true;
+    }
+    require(invalidPointCountRejected,
+            "support tip builder accepted fewer than three circumference points");
+}
+
 } // namespace
 
 int main() {
@@ -594,6 +646,7 @@ int main() {
         testOrientationOptimizer();
         testSupportGenerationScheduling();
         testSupportContactPlacement();
+        testSupportTipGeneration();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception &error) {

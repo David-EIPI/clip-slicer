@@ -303,11 +303,6 @@ std::vector<SupportContactPoint> detectContactPoints(const SupportGenerationInpu
     return contacts;
 }
 
-TriangleMesh
-noPillar(const SupportGenerationInput &, const SupportContactPoint &, const std::atomic<bool> *) {
-    return {};
-}
-
 void validateInput(const SupportGenerationInput &input) {
     if (!input.sourceModel || !input.slices || !input.unsupported)
         throw std::invalid_argument(
@@ -335,8 +330,6 @@ SupportGenerator::SupportGenerator(SupportGeneratorOptions options,
                                            const std::atomic<bool> *cancel) {
             return detectContactPoints(input, layerIndex, spacing, cancel);
         };
-    if (!kernels_.buildPillar)
-        kernels_.buildPillar = noPillar;
 }
 
 SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput &input,
@@ -357,7 +350,7 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
         std::size_t processedLayers = 0;
         std::deque<SupportContactPoint> contactQueue;
         std::vector<SupportContactPoint> detectedContacts;
-        std::vector<TriangleMesh> pillarShells;
+        std::vector<TriangleMesh> supportShells;
         bool failed = false;
         std::exception_ptr error;
     } shared;
@@ -371,6 +364,21 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
     }
     if (shared.remainingLayers == 0)
         return result;
+
+    SupportPillarBuilder buildPillar = kernels_.buildPillar;
+    if (!buildPillar) {
+        SupportTipBuilder tipBuilder(input.sourceModel, options_.tip, cancel);
+        if (cancelled(cancel)) {
+            result.cancelled = true;
+            return result;
+        }
+        buildPillar = [tipBuilder = std::move(tipBuilder)](
+                          const SupportGenerationInput &,
+                          const SupportContactPoint &contact,
+                          const std::atomic<bool> *cancel) {
+            return tipBuilder.build(contact.position, cancel);
+        };
+    }
 
     const auto fail = [&](std::exception_ptr error) {
         {
@@ -435,10 +443,10 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
                     }
                     shared.workAvailable.notify_all();
                 } else {
-                    TriangleMesh pillar = kernels_.buildPillar(input, contactPoint, cancel);
-                    if (!pillar.triangles().empty()) {
+                    TriangleMesh shell = buildPillar(input, contactPoint, cancel);
+                    if (!shell.triangles().empty()) {
                         std::lock_guard<std::mutex> lock(shared.mutex);
-                        shared.pillarShells.push_back(std::move(pillar));
+                        shared.supportShells.push_back(std::move(shell));
                     }
                 }
             } catch (...) {
@@ -465,12 +473,12 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
     result.processedLayerCount = shared.processedLayers;
     result.contactPoints = std::move(shared.detectedContacts);
     std::size_t triangleCount = 0;
-    for (const TriangleMesh &pillar : shared.pillarShells)
-        triangleCount += pillar.triangles().size();
+    for (const TriangleMesh &shell : shared.supportShells)
+        triangleCount += shell.triangles().size();
     result.supports.reserve(triangleCount);
     result.supports.setHeader("CLIP Slicer generated supports");
-    for (const TriangleMesh &pillar : shared.pillarShells)
-        for (const Triangle &triangle : pillar.triangles())
+    for (const TriangleMesh &shell : shared.supportShells)
+        for (const Triangle &triangle : shell.triangles())
             result.supports.addTriangle(triangle);
     return result;
 }
