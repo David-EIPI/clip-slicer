@@ -52,6 +52,7 @@ struct UnsupportedAnalysisPayload {
     VisualizationMesh visualization;
     double totalArea = 0.0;
     std::uint64_t modelRevision = 0;
+    bool cancelled = false;
     std::string error;
 };
 
@@ -260,6 +261,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
 }
 DocumentFrame::~DocumentFrame() {
     closing_.store(true, std::memory_order_relaxed);
+    unsupportedAnalysisCancel_.store(true, std::memory_order_relaxed);
     supportGenerationCancel_.store(true, std::memory_order_relaxed);
     optimizationCancel_.store(true, std::memory_order_relaxed);
     if (unsupportedWorker_.joinable())
@@ -312,6 +314,8 @@ void DocumentFrame::AddModel(std::shared_ptr<stl_slicer::SceneModel> model) {
 }
 void DocumentFrame::InvalidateUnsupportedAnalysis() {
     ++modelRevision_;
+    if (unsupportedAnalysisRunning_)
+        unsupportedAnalysisCancel_.store(true, std::memory_order_relaxed);
     if (supportGenerationRunning_)
         supportGenerationCancel_.store(true, std::memory_order_relaxed);
     if (optimizationRunning_)
@@ -425,7 +429,8 @@ void DocumentFrame::UpdateCommandState() {
         toolbar_->EnableTool(IdOptimizeOrientation, canAnalyze);
     if (toolbar_)
         toolbar_->EnableTool(IdStopOptimization,
-                             optimizationRunning_ || supportGenerationRunning_ ||
+                             optimizationRunning_ || unsupportedAnalysisRunning_ ||
+                                 supportGenerationRunning_ ||
                                  (canvas_ && canvas_->InteractiveSliceRunning()));
 }
 void DocumentFrame::OnListSelection(wxCommandEvent &) {
@@ -679,7 +684,7 @@ void DocumentFrame::OnInteractiveSlice(wxCommandEvent &) {
     canvas_->SetInteractiveSlice(!canvas_->InteractiveSlice());
 }
 void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
-    if (optimizationRunning_ || supportGenerationRunning_)
+    if (unsupportedAnalysisRunning_ || optimizationRunning_ || supportGenerationRunning_)
         return;
     std::vector<ModelSnapshot> snapshots = selectedModelSnapshots(models_);
     if (snapshots.empty()) {
@@ -693,6 +698,7 @@ void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
         unsupportedWorker_.join();
 
     canvas_->ClearUnsupportedVisualization();
+    unsupportedAnalysisCancel_.store(false, std::memory_order_relaxed);
     unsupportedAnalysisRunning_ = true;
     UpdateCommandState();
     const std::uint64_t revision = modelRevision_;
@@ -719,14 +725,25 @@ void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
                 {layerThickness,
                  segmentationTolerance,
                  healingThreshold,
-                 firstLayerOffset}}.slice(combined);
-            stl_slicer::UnsupportedAreaResult unsupported = stl_slicer::UnsupportedAreaAnalyzer{
-                {criticalAngleDegrees, overhangCoefficient}}.analyze(slices);
-            payload->totalArea = unsupported.totalArea;
-            payload->visualization = BuildUnsupportedSurfaces(unsupported.unsupported);
+                 firstLayerOffset}}.slice(combined, &unsupportedAnalysisCancel_);
+            if (!unsupportedAnalysisCancel_.load(std::memory_order_relaxed)) {
+                stl_slicer::UnsupportedAreaResult unsupported =
+                    stl_slicer::UnsupportedAreaAnalyzer{
+                        {criticalAngleDegrees, overhangCoefficient}}
+                        .analyze(slices, &unsupportedAnalysisCancel_);
+                if (!unsupportedAnalysisCancel_.load(std::memory_order_relaxed)) {
+                    payload->totalArea = unsupported.totalArea;
+                    payload->visualization =
+                        BuildUnsupportedSurfaces(unsupported.unsupported);
+                }
+            }
+            payload->cancelled =
+                unsupportedAnalysisCancel_.load(std::memory_order_relaxed);
         } catch (const std::exception &error) {
             payload->error = error.what();
         }
+        if (closing_.load(std::memory_order_relaxed))
+            return;
         auto *event = new wxThreadEvent(wxEVT_THREAD, IdDetectUnsupported);
         event->SetPayload(payload);
         wxQueueEvent(this, event);
@@ -840,6 +857,7 @@ void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
     if (unsupportedWorker_.joinable())
         unsupportedWorker_.join();
     unsupportedAnalysisRunning_ = false;
+    unsupportedAnalysisCancel_.store(false, std::memory_order_relaxed);
     UpdateCommandState();
 
     const auto payload = event.GetPayload<std::shared_ptr<UnsupportedAnalysisPayload>>();
@@ -847,7 +865,7 @@ void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
         wxMessageBox(payload->error, "Unsupported-area analysis failed", wxOK | wxICON_ERROR, this);
         return;
     }
-    if (payload->modelRevision != modelRevision_)
+    if (payload->cancelled || payload->modelRevision != modelRevision_)
         return;
     canvas_->SetUnsupportedVisualization(std::move(payload->visualization));
 }
@@ -966,6 +984,8 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
 }
 
 void DocumentFrame::OnStopOptimization(wxCommandEvent &) {
+    if (unsupportedAnalysisRunning_)
+        unsupportedAnalysisCancel_.store(true, std::memory_order_relaxed);
     if (supportGenerationRunning_)
         supportGenerationCancel_.store(true, std::memory_order_relaxed);
     if (optimizationRunning_)

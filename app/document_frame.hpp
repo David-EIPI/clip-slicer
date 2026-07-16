@@ -84,6 +84,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     std::thread unsupportedWorker_;
     std::thread supportGenerationWorker_;
     std::thread optimizationWorker_;
+    std::atomic<bool> unsupportedAnalysisCancel_{false};
     std::atomic<bool> supportGenerationCancel_{false};
     std::atomic<bool> optimizationCancel_{false};
     std::atomic<bool> closing_{false};

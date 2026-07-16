@@ -328,6 +328,20 @@ SlicePath internalSquare(double x0, double y0, double x1, double y1) {
     return {PathType::Internal, {{x0, y0}, {x0, y1}, {x1, y1}, {x1, y0}, {x0, y0}}};
 }
 
+SlicePath circle(double radius, std::size_t pointCount) {
+    SlicePath result;
+    result.type = PathType::External;
+    const double pi = std::acos(-1.0);
+    result.points.reserve(pointCount + 1);
+    for (std::size_t index = 0; index < pointCount; ++index) {
+        const double angle = 2.0 * pi * static_cast<double>(index) /
+                             static_cast<double>(pointCount);
+        result.points.push_back({radius * std::cos(angle), radius * std::sin(angle)});
+    }
+    result.points.push_back(result.points.front());
+    return result;
+}
+
 void testUnsupportedAreas() {
     SliceData slices;
     slices.thickness = 0.1;
@@ -369,6 +383,15 @@ void testUnsupportedAreas() {
             "default overhang coefficient changed");
     require(extendedOverhang.totalArea < 1e-9,
             "overhang coefficient did not extend the supported radius");
+
+    SliceData detailedSupportedStack;
+    detailedSupportedStack.layers = {
+        {0.05, {circle(10.0, 720)}}, {0.15, {circle(10.0, 720)}}};
+    const auto detailedSupported =
+        UnsupportedAreaAnalyzer{{30.0, 10.0}}.analyze(detailedSupportedStack);
+    require(detailedSupported.unsupported.layers[1].paths.empty() &&
+                detailedSupported.totalArea < 1e-12,
+            "polygon simplification manufactured unsupported speckles");
 }
 
 void testOrientationOptimizer() {
@@ -624,6 +647,16 @@ void testSupportTipGeneration() {
     }
     require(invalidPointCountRejected,
             "support tip builder accepted fewer than three circumference points");
+
+    auto closedSource = std::make_shared<TriangleMesh>();
+    addBox(*closedSource, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    const SupportTipBuilder closedBuilder(closedSource, options);
+    require(!closedBuilder.build({0.5, 0.5, 0.0}).triangles().empty(),
+            "support tip was rejected on an exposed underside");
+    require(!closedBuilder.build({0.0, 0.5, 0.5}).triangles().empty(),
+            "support tip was rejected on an outward-facing side");
+    require(closedBuilder.build({0.5, 0.5, 1.0}).triangles().empty(),
+            "support tip was aimed downward into the solid body");
 }
 
 } // namespace

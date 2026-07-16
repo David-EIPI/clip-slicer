@@ -115,11 +115,11 @@ in the form \texttt{Run 1 of 10 (S=12.34)}. The current orientation is analyzed
 first, and its initial score is displayed before rotated search candidates are
 evaluated. Model transformations or analysis-setting changes cancel stale
 optimization work.
-The \emph{Stop} toolbar button requests cooperative cancellation. Optimization
-and support-generation workers stop between slicing or generation operations,
-and the controls return to their idle state after all workers have exited. The
-same button cancels an interactive slice calculation currently running in the
-background.
+The \emph{Stop} toolbar button requests cooperative cancellation. Detection,
+optimization, and support-generation workers stop between slicing, analysis,
+or generation operations, and the controls return to their idle state after
+all workers have exited. The same button cancels an interactive slice
+calculation currently running in the background.
 
 \subsection{STL Export}
 
@@ -184,13 +184,15 @@ source-layer perimeter, nearby lattice contacts are moved onto the edge at the
 configured support spacing. Boundaries introduced only by subtracting the
 supported area are not treated as exposed model edges.
 
-Each contact tip starts at its contact point and follows the downward-oriented
-normal of the nearest model surface. A two-dimensional bounding-volume index
-accelerates surface lookup. The cone slope is calculated once from its radii
-and height. If the surface normal is too shallow, the tip axis is tilted
+Each contact tip starts at its contact point and follows the outward normal of
+the nearest model surface. A two-dimensional bounding-volume index accelerates
+surface lookup, while inside/outside probes determine which side of the
+surface faces away from the solid. The cone slope is calculated once from its
+radii and height. If the surface normal is too shallow, the tip axis is tilted
 downward until its angle from the build plane equals the critical angle minus
-the cone slope angle. The cone sides and both polygonal end surfaces are
-triangulated and combined in the generated support model.
+the cone slope angle. A tip is omitted when this cannot be done while keeping
+the cone outside the model. Accepted cone sides and both polygonal end
+surfaces are triangulated and combined in the generated support model.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

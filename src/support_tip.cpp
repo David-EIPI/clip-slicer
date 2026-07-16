@@ -56,8 +56,6 @@ Vec3 triangleNormal(const Triangle &triangle) {
         result = stored;
     else if (squaredLength(stored) > 1e-15 && dot(result, stored) < 0.0)
         result = multiply(result, -1.0);
-    if (result.z > 0.0)
-        result = multiply(result, -1.0);
     return result;
 }
 
@@ -103,10 +101,10 @@ Vec3 closestPointOnTriangle(const Vec3 &point, const Triangle &triangle) {
     return add(a, add(multiply(ab, vb * denominator), multiply(ac, vc * denominator)));
 }
 
-bool verticalIntersection(const Triangle &triangle,
-                          const Vec3 &contact,
-                          double tolerance,
-                          double &z) {
+bool projectedIntersection(const Triangle &triangle,
+                           const Vec3 &point,
+                           double tolerance,
+                           double &z) {
     const Vec3 &a = triangle.vertices[0];
     const Vec3 ab = subtract(triangle.vertices[1], a);
     const Vec3 ac = subtract(triangle.vertices[2], a);
@@ -114,8 +112,8 @@ bool verticalIntersection(const Triangle &triangle,
     if (std::abs(determinant) <= tolerance * tolerance)
         return false;
 
-    const double px = contact.x - a.x;
-    const double py = contact.y - a.y;
+    const double px = point.x - a.x;
+    const double py = point.y - a.y;
     const double first = (px * ac.y - py * ac.x) / determinant;
     const double second = (ab.x * py - ab.y * px) / determinant;
     const double barycentricTolerance = tolerance / std::max(1.0, std::sqrt(std::abs(determinant)));
@@ -124,7 +122,7 @@ bool verticalIntersection(const Triangle &triangle,
         return false;
 
     z = a.z + first * ab.z + second * ac.z;
-    return z <= contact.z + tolerance;
+    return true;
 }
 
 void addTriangle(TriangleMesh &mesh, const Vec3 &first, const Vec3 &second, const Vec3 &third) {
@@ -137,6 +135,11 @@ void addTriangle(TriangleMesh &mesh, const Vec3 &first, const Vec3 &second, cons
 } // namespace
 
 struct SupportTipBuilder::Impl {
+    struct SurfaceSample {
+        Vec3 point;
+        Vec3 normal;
+    };
+
     struct Node {
         double minX = std::numeric_limits<double>::infinity();
         double minY = std::numeric_limits<double>::infinity();
@@ -245,7 +248,8 @@ struct SupportTipBuilder::Impl {
                                double &bestZ,
                                std::size_t &rayTriangle,
                                double &bestDistance,
-                               std::size_t &closestTriangle) const {
+                               std::size_t &closestTriangle,
+                               Vec3 &closestPoint) const {
         const Node &node = nodes[nodeIndex];
         if (contact.x < node.minX - tolerance || contact.x > node.maxX + tolerance ||
             contact.y < node.minY - tolerance || contact.y > node.maxY + tolerance)
@@ -256,21 +260,23 @@ struct SupportTipBuilder::Impl {
                                   bestZ,
                                   rayTriangle,
                                   bestDistance,
-                                  closestTriangle);
+                                  closestTriangle,
+                                  closestPoint);
             findSurfaceCandidates(node.right,
                                   contact,
                                   bestZ,
                                   rayTriangle,
                                   bestDistance,
-                                  closestTriangle);
+                                  closestTriangle,
+                                  closestPoint);
             return;
         }
         for (std::size_t index = node.begin; index < node.end; ++index) {
             const std::size_t triangleIndex = triangleIndices[index];
             double z = 0.0;
-            if (verticalIntersection(
+            if (projectedIntersection(
                     sourceModel->triangles()[triangleIndex], contact, tolerance, z) &&
-                z > bestZ) {
+                z <= contact.z + tolerance && z > bestZ) {
                 bestZ = z;
                 rayTriangle = triangleIndex;
             }
@@ -280,19 +286,88 @@ struct SupportTipBuilder::Impl {
             if (nearest.z <= contact.z + tolerance && distance < bestDistance) {
                 bestDistance = distance;
                 closestTriangle = triangleIndex;
+                closestPoint = nearest;
             }
         }
     }
 
-    Vec3 surfaceNormal(const Vec3 &contact) const {
+    void collectVerticalIntersections(std::size_t nodeIndex,
+                                      const Vec3 &point,
+                                      std::vector<double> &intersections) const {
+        const Node &node = nodes[nodeIndex];
+        if (point.x < node.minX - tolerance || point.x > node.maxX + tolerance ||
+            point.y < node.minY - tolerance || point.y > node.maxY + tolerance)
+            return;
+        if (!node.leaf) {
+            collectVerticalIntersections(node.left, point, intersections);
+            collectVerticalIntersections(node.right, point, intersections);
+            return;
+        }
+        for (std::size_t index = node.begin; index < node.end; ++index) {
+            double z = 0.0;
+            if (projectedIntersection(sourceModel->triangles()[triangleIndices[index]],
+                                      point,
+                                      tolerance,
+                                      z) &&
+                z > point.z + tolerance)
+                intersections.push_back(z);
+        }
+    }
+
+    bool isInside(const Vec3 &point) const {
+        if (nodes.empty())
+            return false;
+        Vec3 rayPoint = point;
+        rayPoint.x += tolerance * 3.141592653589793;
+        rayPoint.y += tolerance * 1.618033988749895;
+        std::vector<double> intersections;
+        intersections.reserve(16);
+        collectVerticalIntersections(0, rayPoint, intersections);
+        std::sort(intersections.begin(), intersections.end());
+        std::size_t distinctCount = 0;
+        double previous = 0.0;
+        for (double z : intersections) {
+            if (distinctCount == 0 || z - previous > tolerance * 4.0) {
+                ++distinctCount;
+                previous = z;
+            }
+        }
+        return distinctCount % 2 != 0;
+    }
+
+    Vec3 outwardNormal(const Vec3 &surfacePoint, Vec3 normal) const {
+        normal = normalized(normal);
+        const double probeBase =
+            std::max({tolerance * 16.0,
+                      1e-4,
+                      std::min(options.topRadius, options.bottomRadius) * 1e-3});
+        for (double multiplier : {1.0, 10.0, 100.0}) {
+            const double distance = probeBase * multiplier;
+            const bool positiveInside =
+                isInside(add(surfacePoint, multiply(normal, distance)));
+            const bool negativeInside =
+                isInside(add(surfacePoint, multiply(normal, -distance)));
+            if (positiveInside != negativeInside)
+                return positiveInside ? multiply(normal, -1.0) : normal;
+        }
+        return normal;
+    }
+
+    SurfaceSample surfaceSample(const Vec3 &contact) const {
         const std::size_t noTriangle = sourceModel->triangles().size();
         std::size_t rayTriangle = noTriangle;
         std::size_t closestTriangle = noTriangle;
         double bestZ = -std::numeric_limits<double>::infinity();
         double bestDistance = std::numeric_limits<double>::infinity();
+        Vec3 closestPoint;
         if (!nodes.empty())
-            findSurfaceCandidates(
-                0, contact, bestZ, rayTriangle, bestDistance, closestTriangle);
+            findSurfaceCandidates(0,
+                                  contact,
+                                  bestZ,
+                                  rayTriangle,
+                                  bestDistance,
+                                  closestTriangle,
+                                  closestPoint);
 
         std::size_t bestTriangle = closestTriangle != noTriangle ? closestTriangle : rayTriangle;
 
@@ -304,28 +379,64 @@ struct SupportTipBuilder::Impl {
                 if (nearest.z <= contact.z + tolerance && distance < bestDistance) {
                     bestDistance = distance;
                     bestTriangle = index;
+                    closestPoint = nearest;
                 }
             }
         }
         if (bestTriangle == noTriangle)
-            return {0.0, 0.0, -1.0};
+            return {contact, {0.0, 0.0, -1.0}};
+        if (bestTriangle == rayTriangle && closestTriangle == noTriangle)
+            closestPoint = {contact.x, contact.y, bestZ};
         Vec3 result = triangleNormal(sourceModel->triangles()[bestTriangle]);
         if (squaredLength(result) <= 1e-15)
             result = {0.0, 0.0, -1.0};
-        return result;
+        return {closestPoint, outwardNormal(closestPoint, result)};
     }
 
-    Vec3 tipAxis(const Vec3 &contact) const {
-        Vec3 axis = surfaceNormal(contact);
-        const double horizontalLength = std::hypot(axis.x, axis.y);
-        const double buildAngle = std::atan2(std::max(0.0, -axis.z), horizontalLength);
-        if (buildAngle < minimumAxisAngle && horizontalLength > 1e-15) {
+    bool coneIsOutside(const Vec3 &contact, const Vec3 &axis) const {
+        const Vec3 helper = std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0}
+                                                    : Vec3{1.0, 0.0, 0.0};
+        const Vec3 firstRadiusDirection = normalized(cross(helper, axis));
+        const Vec3 secondRadiusDirection = normalized(cross(axis, firstRadiusDirection));
+        const double pi = std::acos(-1.0);
+        for (double fraction : {0.25, 0.5, 0.75, 1.0}) {
+            const Vec3 center =
+                add(contact, multiply(axis, options.height * fraction));
+            if (isInside(center))
+                return false;
+            const double radius =
+                options.topRadius + (options.bottomRadius - options.topRadius) * fraction;
+            for (std::size_t index = 0; index < options.circumferencePoints; ++index) {
+                const double angle = 2.0 * pi * static_cast<double>(index) /
+                                     static_cast<double>(options.circumferencePoints);
+                const Vec3 radial =
+                    add(multiply(firstRadiusDirection, std::cos(angle)),
+                        multiply(secondRadiusDirection, std::sin(angle)));
+                if (isInside(add(center, multiply(radial, radius))))
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    bool tipAxis(const Vec3 &contact, Vec3 &axis) const {
+        const SurfaceSample surface = surfaceSample(contact);
+        const Vec3 outward = normalized(surface.normal);
+        const double horizontalLength = std::hypot(outward.x, outward.y);
+        const double buildAngle = std::atan2(-outward.z, horizontalLength);
+        axis = outward;
+        if (buildAngle < minimumAxisAngle) {
+            if (horizontalLength <= 1e-15)
+                return false;
             const double horizontalScale = std::cos(minimumAxisAngle) / horizontalLength;
-            axis.x *= horizontalScale;
-            axis.y *= horizontalScale;
+            axis.x = outward.x * horizontalScale;
+            axis.y = outward.y * horizontalScale;
             axis.z = -std::sin(minimumAxisAngle);
         }
-        return normalized(axis);
+        axis = normalized(axis);
+        if (axis.z > tolerance || dot(axis, outward) <= 1e-9)
+            return false;
+        return coneIsOutside(contact, axis);
     }
 
     std::shared_ptr<const TriangleMesh> sourceModel;
@@ -349,7 +460,9 @@ TriangleMesh SupportTipBuilder::build(const Vec3 &contactPoint,
     if (cancel && cancel->load(std::memory_order_relaxed))
         return result;
 
-    const Vec3 axis = impl_->tipAxis(contactPoint);
+    Vec3 axis;
+    if (!impl_->tipAxis(contactPoint, axis))
+        return result;
     const Vec3 bottomCenter = add(contactPoint, multiply(axis, impl_->options.height));
     const Vec3 helper = std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0}
                                                 : Vec3{1.0, 0.0, 0.0};

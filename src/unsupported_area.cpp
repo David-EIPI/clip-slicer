@@ -68,7 +68,6 @@ Paths64 supportedLayer(const Paths64 &complete, const Paths64 &previousLayer, do
         Clipper2Lib::ClipType::Union, FillRule::NonZero, complete, {}, components);
     Paths64 supported;
     appendSupportedComponents(components, previousLayer, reachable, supported);
-    supported = Clipper2Lib::SimplifyPaths(supported, propagationTolerance);
     return Clipper2Lib::Union(supported, FillRule::NonZero);
 }
 
