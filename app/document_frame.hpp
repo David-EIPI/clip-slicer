@@ -52,7 +52,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnExportStl(wxCommandEvent &);
     void OnSlice(wxCommandEvent &);
     void OnInteractiveSlice(wxCommandEvent &);
-    void OnAnalyzeUnsupported(wxCommandEvent &);
+    void OnDetectUnsupported(wxCommandEvent &);
+    void OnGenerateSupports(wxCommandEvent &);
     void OnUnsupportedAnalysisFinished(wxThreadEvent &event);
     void OnOptimizeOrientation(wxCommandEvent &);
     void OnStopOptimization(wxCommandEvent &);
@@ -73,7 +74,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxToolBar *toolbar_ = nullptr;
     wxMenuItem *exportItem_ = nullptr;
     wxMenuItem *exportStlItem_ = nullptr;
-    wxMenuItem *unsupportedItem_ = nullptr;
+    wxMenuItem *detectUnsupportedItem_ = nullptr;
+    wxMenuItem *generateSupportsItem_ = nullptr;
     wxMenuItem *optimizationItem_ = nullptr;
     wxMenuItem *resetTransformItem_ = nullptr;
     wxMenuItem *transformModelsItem_ = nullptr;

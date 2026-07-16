@@ -35,7 +35,8 @@ enum {
     IdExportStl,
     IdSlice,
     IdInteractive,
-    IdAnalyzeUnsupported,
+    IdDetectUnsupported,
+    IdGenerateSupports,
     IdOptimizeOrientation,
     IdStopOptimization,
     IdShow,
@@ -118,13 +119,6 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        toolSize),
                       "Interactive slicing",
                       wxITEM_CHECK);
-    toolbar_->AddTool(IdAnalyzeUnsupported,
-                      "Supports",
-                      LoadEmbeddedIcon(clip_slicer::assets::unsupportedAreaIconPng,
-                                       clip_slicer::assets::unsupportedAreaIconPngSize,
-                                       wxART_REPORT_VIEW,
-                                       toolSize),
-                      "Highlight unsupported areas");
     toolbar_->AddTool(IdOptimizeOrientation,
                       "Optimize",
                       LoadEmbeddedIcon(clip_slicer::assets::orientationOptimizerIconPng,
@@ -140,6 +134,21 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->AddTool(
         IdShow, "Show", wxArtProvider::GetBitmap(wxART_TICK_MARK, wxART_TOOLBAR, toolSize));
+    toolbar_->AddSeparator();
+    toolbar_->AddTool(IdDetectUnsupported,
+                      "Detect",
+                      LoadEmbeddedIcon(clip_slicer::assets::supportDetectIconPng,
+                                       clip_slicer::assets::supportDetectIconPngSize,
+                                       wxART_FIND,
+                                       toolSize),
+                      "Detect unsupported areas");
+    toolbar_->AddTool(IdGenerateSupports,
+                      "Generate",
+                      LoadEmbeddedIcon(clip_slicer::assets::supportGenerateIconPng,
+                                       clip_slicer::assets::supportGenerateIconPngSize,
+                                       wxART_PLUS,
+                                       toolSize),
+                      "Generate support structures");
     toolbar_->AddSeparator();
     toolbar_->AddTool(IdResetTransform,
                       "Reset",
@@ -183,8 +192,9 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnExportStl, this, IdExportStl);
     Bind(wxEVT_MENU, &DocumentFrame::OnSlice, this, IdSlice);
     Bind(wxEVT_MENU, &DocumentFrame::OnInteractiveSlice, this, IdInteractive);
-    Bind(wxEVT_MENU, &DocumentFrame::OnAnalyzeUnsupported, this, IdAnalyzeUnsupported);
-    Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdAnalyzeUnsupported);
+    Bind(wxEVT_MENU, &DocumentFrame::OnDetectUnsupported, this, IdDetectUnsupported);
+    Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdDetectUnsupported);
+    Bind(wxEVT_MENU, &DocumentFrame::OnGenerateSupports, this, IdGenerateSupports);
     Bind(wxEVT_MENU, &DocumentFrame::OnOptimizeOrientation, this, IdOptimizeOrientation);
     Bind(wxEVT_MENU, &DocumentFrame::OnStopOptimization, this, IdStopOptimization);
     Bind(wxEVT_THREAD, &DocumentFrame::OnOrientationOptimizationEvent, this, IdOptimizeOrientation);
@@ -233,7 +243,8 @@ void DocumentFrame::BuildMenus() {
     auto *slice = new wxMenu;
     slice->Append(IdSlice, "&Slice selected...");
     slice->AppendCheckItem(IdInteractive, "&Interactive slicing");
-    unsupportedItem_ = slice->Append(IdAnalyzeUnsupported, "Highlight &unsupported areas");
+    detectUnsupportedItem_ = slice->Append(IdDetectUnsupported, "&Detect unsupported areas");
+    generateSupportsItem_ = slice->Append(IdGenerateSupports, "&Generate supports");
     optimizationItem_ = slice->Append(IdOptimizeOrientation, "&Optimize orientation");
     auto *bar = new wxMenuBar;
     bar->Append(file, "&File");
@@ -350,10 +361,14 @@ void DocumentFrame::UpdateCommandState() {
                             std::any_of(models_.begin(), models_.end(), [](const auto &model) {
                                 return model->selected;
                             });
-    if (unsupportedItem_)
-        unsupportedItem_->Enable(canAnalyze);
+    if (detectUnsupportedItem_)
+        detectUnsupportedItem_->Enable(canAnalyze);
+    if (generateSupportsItem_)
+        generateSupportsItem_->Enable(canAnalyze);
     if (toolbar_)
-        toolbar_->EnableTool(IdAnalyzeUnsupported, canAnalyze);
+        toolbar_->EnableTool(IdDetectUnsupported, canAnalyze);
+    if (toolbar_)
+        toolbar_->EnableTool(IdGenerateSupports, canAnalyze);
     if (optimizationItem_)
         optimizationItem_->Enable(canAnalyze);
     if (toolbar_)
@@ -613,7 +628,7 @@ void DocumentFrame::OnExportStl(wxCommandEvent &) {
 void DocumentFrame::OnInteractiveSlice(wxCommandEvent &) {
     canvas_->SetInteractiveSlice(!canvas_->InteractiveSlice());
 }
-void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
+void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
     if (optimizationRunning_)
         return;
     struct ModelSnapshot {
@@ -683,10 +698,17 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
         } catch (const std::exception &error) {
             payload->error = error.what();
         }
-        auto *event = new wxThreadEvent(wxEVT_THREAD, IdAnalyzeUnsupported);
+        auto *event = new wxThreadEvent(wxEVT_THREAD, IdDetectUnsupported);
         event->SetPayload(payload);
         wxQueueEvent(this, event);
     });
+}
+
+void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
+    wxMessageBox("Support contact-point generation is the next implementation step.",
+                 "Generate supports",
+                 wxOK | wxICON_INFORMATION,
+                 this);
 }
 void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
     if (unsupportedWorker_.joinable())

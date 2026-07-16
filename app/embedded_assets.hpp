@@ -18,5 +18,9 @@ extern const unsigned char transformModelsIconPng[];
 extern const std::size_t transformModelsIconPngSize;
 extern const unsigned char moveToOriginIconPng[];
 extern const std::size_t moveToOriginIconPngSize;
+extern const unsigned char supportGenerateIconPng[];
+extern const std::size_t supportGenerateIconPngSize;
+extern const unsigned char supportDetectIconPng[];
+extern const std::size_t supportDetectIconPngSize;
 
 } // namespace clip_slicer::assets

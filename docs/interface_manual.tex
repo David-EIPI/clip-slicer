@@ -68,11 +68,13 @@ interactive slicing is disabled, the field displays \texttt{Z: --}.
 
 \subsection{Unsupported Areas}
 
-The \emph{Supports} toolbar button or \emph{Slice > Highlight unsupported
-areas} command analyzes the selected models in their transformed positions.
-The analysis uses 0.1 model-unit layers and the configured critical support
-angle and overhang coefficient. It runs in the background so that document
-viewing remains responsive.
+The \emph{Detect} toolbar button or \emph{Slice > Detect unsupported areas}
+command analyzes the selected models in their transformed positions. The
+adjacent \emph{Generate} button and \emph{Slice > Generate supports} command
+are the entry point for creating support structures.
+The analysis uses the configured slicing thickness, critical support angle,
+and overhang coefficient. It runs in the background so that document viewing
+remains responsive.
 
 When analysis finishes, unsupported portions of layer surfaces are overlaid in
 bright red-orange. For clearer visibility against the source mesh, each
