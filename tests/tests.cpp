@@ -5,6 +5,7 @@
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
 #include "stl_slicer/stl_writer.hpp"
+#include "stl_slicer/support_generator.hpp"
 #include "stl_slicer/unsupported_area.hpp"
 #include <atomic>
 #include <cmath>
@@ -403,6 +404,74 @@ void testOrientationOptimizer() {
     require(invalidOffsetRejected, "optimizer accepted an invalid first-layer offset");
 }
 
+void testSupportGenerationScheduling() {
+    auto source = std::make_shared<TriangleMesh>();
+    addBox(*source, 0, 0, 0, 1, 1, 1);
+    auto slices = std::make_shared<SliceData>();
+    auto unsupported = std::make_shared<SliceData>();
+    for (std::size_t index = 0; index < 5; ++index) {
+        const double z = 0.05 + static_cast<double>(index) * 0.1;
+        slices->layers.push_back({z, {square(0, 0, 1, 1)}});
+        unsupported->layers.push_back({z,
+                                       index == 1 || index == 2 || index == 4
+                                           ? std::vector<SlicePath>{square(0, 0, 0.5, 0.5)}
+                                           : std::vector<SlicePath>{}});
+    }
+
+    std::array<std::atomic<int>, 5> layerCalls{};
+    std::atomic<int> pillarCalls{0};
+    SupportGenerationInput input{source, slices, unsupported};
+    SupportGenerationKernels kernels;
+    kernels.detectContactPoints = [&](const SupportGenerationInput &received,
+                                      std::size_t layerIndex,
+                                      const std::atomic<bool> *) {
+        require(received.sourceModel == source && received.slices == slices &&
+                    received.unsupported == unsupported,
+                "support workers did not share the immutable inputs");
+        ++layerCalls[layerIndex];
+        return std::vector<SupportContactPoint>{
+            {{double(layerIndex), 0.0, received.slices->layers[layerIndex].z}, layerIndex},
+            {{double(layerIndex), 1.0, received.slices->layers[layerIndex].z}, layerIndex}};
+    };
+    kernels.buildPillar = [&](const SupportGenerationInput &received,
+                              const SupportContactPoint &contact,
+                              const std::atomic<bool> *) {
+        require(received.sourceModel == source, "pillar workers did not share the source model");
+        ++pillarCalls;
+        TriangleMesh pillar;
+        const Vec3 base{contact.position.x, contact.position.y, 0.0};
+        pillar.addTriangle({{}, {base, {base.x + 0.1, base.y, 0.0}, contact.position}, 0});
+        return pillar;
+    };
+
+    const SupportGenerationResult result =
+        SupportGenerator{{4}, std::move(kernels)}.generate(input);
+    require(result.processedLayerCount == 3, "support generator processed the wrong layer count");
+    require(result.contactPoints.size() == 6, "support generator lost detected contact points");
+    require(pillarCalls == 6 && result.supports.triangles().size() == 6,
+            "support generator did not build one shell per contact point");
+    for (std::size_t index = 0; index < layerCalls.size(); ++index)
+        require(layerCalls[index] == (index == 1 || index == 2 || index == 4 ? 1 : 0),
+                "support slice work was not claimed exactly once");
+
+    std::atomic<bool> cancel{true};
+    const SupportGenerationResult cancelled = SupportGenerator{{4}}.generate(input, &cancel);
+    require(cancelled.cancelled && cancelled.processedLayerCount == 0,
+            "support generation ignored cancellation before startup");
+
+    SupportGenerationKernels failingKernels;
+    failingKernels.detectContactPoints =
+        [](const SupportGenerationInput &, std::size_t, const std::atomic<bool> *)
+        -> std::vector<SupportContactPoint> { throw std::runtime_error("contact failure"); };
+    bool workerErrorPropagated = false;
+    try {
+        (void)SupportGenerator{{4}, std::move(failingKernels)}.generate(input);
+    } catch (const std::runtime_error &) {
+        workerErrorPropagated = true;
+    }
+    require(workerErrorPropagated, "support worker failure was not propagated");
+}
+
 } // namespace
 
 int main() {
@@ -421,6 +490,7 @@ int main() {
         testMergeSlices();
         testUnsupportedAreas();
         testOrientationOptimizer();
+        testSupportGenerationScheduling();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception &error) {

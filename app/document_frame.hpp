@@ -54,6 +54,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnInteractiveSlice(wxCommandEvent &);
     void OnDetectUnsupported(wxCommandEvent &);
     void OnGenerateSupports(wxCommandEvent &);
+    void OnSupportGenerationFinished(wxThreadEvent &event);
     void OnUnsupportedAnalysisFinished(wxThreadEvent &event);
     void OnOptimizeOrientation(wxCommandEvent &);
     void OnStopOptimization(wxCommandEvent &);
@@ -81,11 +82,14 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *transformModelsItem_ = nullptr;
     wxMenuItem *moveToOriginItem_ = nullptr;
     std::thread unsupportedWorker_;
+    std::thread supportGenerationWorker_;
     std::thread optimizationWorker_;
+    std::atomic<bool> supportGenerationCancel_{false};
     std::atomic<bool> optimizationCancel_{false};
     std::atomic<bool> closing_{false};
     std::uint64_t modelRevision_ = 0;
     bool unsupportedAnalysisRunning_ = false;
+    bool supportGenerationRunning_ = false;
     bool optimizationRunning_ = false;
     std::size_t optimizationCompleted_ = 0;
     std::size_t optimizationTotal_ = 0;

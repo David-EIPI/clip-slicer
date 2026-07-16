@@ -1,6 +1,7 @@
 #pragma once
 
 #include "stl_slicer/slice.hpp"
+#include <atomic>
 
 namespace stl_slicer {
 
@@ -17,7 +18,8 @@ struct UnsupportedAreaResult {
 class UnsupportedAreaAnalyzer {
   public:
     explicit UnsupportedAreaAnalyzer(UnsupportedAreaOptions options = {});
-    UnsupportedAreaResult analyze(const SliceData &slices) const;
+    UnsupportedAreaResult analyze(const SliceData &slices,
+                                  const std::atomic<bool> *cancel = nullptr) const;
 
   private:
     UnsupportedAreaOptions options_;

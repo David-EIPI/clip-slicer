@@ -76,6 +76,14 @@ The analysis uses the configured slicing thickness, critical support angle,
 and overhang coefficient. It runs in the background so that document viewing
 remains responsive.
 
+Support generation snapshots the selected transformed models, slices them,
+and detects unsupported areas on a background coordinator thread. The source
+mesh, complete slices, and unsupported slices are shared as read-only data by
+the support workers. Unsupported layers are claimed independently; workers
+with no remaining layer to claim consume detected contact points and build
+triangulated pillar shells. Completed shells are combined into a new surface
+model in the same document.
+
 When analysis finishes, unsupported portions of layer surfaces are overlaid in
 bright red-orange. For clearer visibility against the source mesh, each
 unsupported area is drawn at the Z position of the preceding layer rather
@@ -108,9 +116,10 @@ first, and its initial score is displayed before rotated search candidates are
 evaluated. Model transformations or analysis-setting changes cancel stale
 optimization work.
 The \emph{Stop} toolbar button requests cooperative cancellation. Optimization
-workers stop between slicing layers, and the controls return to their idle
-state after all workers have exited. The same button cancels an interactive
-slice calculation currently running in the background.
+and support-generation workers stop between slicing or generation operations,
+and the controls return to their idle state after all workers have exited. The
+same button cancels an interactive slice calculation currently running in the
+background.
 
 \subsection{STL Export}
 
@@ -150,8 +159,9 @@ horizontal displacement between successive layers before an area is marked
 unsupported.
 
 The optimization-attempt setting controls the number of local searches per
-model and defaults to 10. The worker-thread setting controls the maximum
-number of those attempts evaluated concurrently and defaults to 4.
+model and defaults to 10. The worker-thread setting controls both the maximum
+number of optimization attempts evaluated concurrently and the support
+generation worker pool. It defaults to 4.
 Convergence tolerance is the minimum unsupported-area reduction accepted as
 an improving step and defaults to 0.1 square model units.
 

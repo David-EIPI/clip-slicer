@@ -54,7 +54,7 @@ double score(const TriangleMesh &mesh,
                                  .slice(candidate, cancel);
     if (cancel && cancel->load(std::memory_order_relaxed))
         return std::numeric_limits<double>::infinity();
-    return UnsupportedAreaAnalyzer{options.unsupportedArea}.analyze(slices).totalArea;
+    return UnsupportedAreaAnalyzer{options.unsupportedArea}.analyze(slices, cancel).totalArea;
 }
 
 Vec3 randomUnitVector(std::mt19937_64 &random) {

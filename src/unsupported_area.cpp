@@ -114,7 +114,8 @@ UnsupportedAreaAnalyzer::UnsupportedAreaAnalyzer(UnsupportedAreaOptions options)
         throw std::invalid_argument("Overhang coefficient must be a nonnegative finite value");
 }
 
-UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices) const {
+UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices,
+                                                       const std::atomic<bool> *cancel) const {
     UnsupportedAreaResult result;
     result.unsupported.sourceBounds = slices.sourceBounds;
     result.unsupported.thickness = slices.thickness;
@@ -127,6 +128,8 @@ UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices) 
     Paths64 previousLayer;
 
     for (std::size_t layerIndex = 0; layerIndex < slices.layers.size(); ++layerIndex) {
+        if (cancel && cancel->load(std::memory_order_relaxed))
+            break;
         const SliceLayer &layer = slices.layers[layerIndex];
         const Paths64 complete = layerPolygons(layer);
         Paths64 supported;

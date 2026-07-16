@@ -10,6 +10,7 @@
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
 #include "stl_slicer/stl_writer.hpp"
+#include "stl_slicer/support_generator.hpp"
 #include "stl_slicer/unsupported_area.hpp"
 #include <algorithm>
 #include <iomanip>
@@ -53,6 +54,48 @@ struct UnsupportedAnalysisPayload {
     std::uint64_t modelRevision = 0;
     std::string error;
 };
+
+struct SupportGenerationPayload {
+    stl_slicer::TriangleMesh supports;
+    std::size_t contactPointCount = 0;
+    std::size_t processedLayerCount = 0;
+    std::uint64_t modelRevision = 0;
+    bool cancelled = false;
+    std::string error;
+};
+
+struct ModelSnapshot {
+    std::shared_ptr<const stl_slicer::SceneModel> model;
+    stl_slicer::Mat4 transform;
+    std::size_t triangleCount = 0;
+};
+
+std::vector<ModelSnapshot>
+selectedModelSnapshots(const std::vector<std::shared_ptr<stl_slicer::SceneModel>> &models) {
+    std::vector<ModelSnapshot> snapshots;
+    for (const auto &model : models)
+        if (model->selected)
+            snapshots.push_back({model, model->transform, model->renderVertices().size() / 3});
+    return snapshots;
+}
+
+stl_slicer::TriangleMesh combinedTransformedMesh(const std::vector<ModelSnapshot> &snapshots) {
+    stl_slicer::TriangleMesh combined;
+    std::size_t triangleCount = 0;
+    for (const ModelSnapshot &snapshot : snapshots)
+        triangleCount += snapshot.triangleCount;
+    combined.reserve(triangleCount);
+    for (const ModelSnapshot &snapshot : snapshots) {
+        const stl_slicer::TriangleMesh mesh = snapshot.model->triangleMesh();
+        for (auto triangle : mesh.triangles()) {
+            for (auto &vertex : triangle.vertices)
+                vertex = snapshot.transform.transformPoint(vertex);
+            triangle.normal = snapshot.transform.transformVector(triangle.normal);
+            combined.addTriangle(std::move(triangle));
+        }
+    }
+    return combined;
+}
 
 enum class OrientationEventType { InitialScore, Improvement, Progress, Finished, Error };
 
@@ -195,6 +238,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnDetectUnsupported, this, IdDetectUnsupported);
     Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdDetectUnsupported);
     Bind(wxEVT_MENU, &DocumentFrame::OnGenerateSupports, this, IdGenerateSupports);
+    Bind(wxEVT_THREAD, &DocumentFrame::OnSupportGenerationFinished, this, IdGenerateSupports);
     Bind(wxEVT_MENU, &DocumentFrame::OnOptimizeOrientation, this, IdOptimizeOrientation);
     Bind(wxEVT_MENU, &DocumentFrame::OnStopOptimization, this, IdStopOptimization);
     Bind(wxEVT_THREAD, &DocumentFrame::OnOrientationOptimizationEvent, this, IdOptimizeOrientation);
@@ -216,9 +260,12 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
 }
 DocumentFrame::~DocumentFrame() {
     closing_.store(true, std::memory_order_relaxed);
+    supportGenerationCancel_.store(true, std::memory_order_relaxed);
     optimizationCancel_.store(true, std::memory_order_relaxed);
     if (unsupportedWorker_.joinable())
         unsupportedWorker_.join();
+    if (supportGenerationWorker_.joinable())
+        supportGenerationWorker_.join();
     if (optimizationWorker_.joinable())
         optimizationWorker_.join();
     DeletePendingEvents();
@@ -265,6 +312,8 @@ void DocumentFrame::AddModel(std::shared_ptr<stl_slicer::SceneModel> model) {
 }
 void DocumentFrame::InvalidateUnsupportedAnalysis() {
     ++modelRevision_;
+    if (supportGenerationRunning_)
+        supportGenerationCancel_.store(true, std::memory_order_relaxed);
     if (optimizationRunning_)
         optimizationCancel_.store(true, std::memory_order_relaxed);
     if (canvas_)
@@ -357,7 +406,8 @@ void DocumentFrame::UpdateCommandState() {
         toolbar_->EnableTool(IdTransformModels, modelSelected);
         toolbar_->EnableTool(IdMoveToOrigin, modelSelected);
     }
-    const bool canAnalyze = !unsupportedAnalysisRunning_ && !optimizationRunning_ &&
+    const bool canAnalyze = !unsupportedAnalysisRunning_ && !supportGenerationRunning_ &&
+                            !optimizationRunning_ &&
                             std::any_of(models_.begin(), models_.end(), [](const auto &model) {
                                 return model->selected;
                             });
@@ -375,7 +425,7 @@ void DocumentFrame::UpdateCommandState() {
         toolbar_->EnableTool(IdOptimizeOrientation, canAnalyze);
     if (toolbar_)
         toolbar_->EnableTool(IdStopOptimization,
-                             optimizationRunning_ ||
+                             optimizationRunning_ || supportGenerationRunning_ ||
                                  (canvas_ && canvas_->InteractiveSliceRunning()));
 }
 void DocumentFrame::OnListSelection(wxCommandEvent &) {
@@ -629,17 +679,9 @@ void DocumentFrame::OnInteractiveSlice(wxCommandEvent &) {
     canvas_->SetInteractiveSlice(!canvas_->InteractiveSlice());
 }
 void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
-    if (optimizationRunning_)
+    if (optimizationRunning_ || supportGenerationRunning_)
         return;
-    struct ModelSnapshot {
-        std::shared_ptr<const stl_slicer::SceneModel> model;
-        stl_slicer::Mat4 transform;
-        std::size_t triangleCount = 0;
-    };
-    std::vector<ModelSnapshot> snapshots;
-    for (const auto &model : models_)
-        if (model->selected)
-            snapshots.push_back({model, model->transform, model->renderVertices().size() / 3});
+    std::vector<ModelSnapshot> snapshots = selectedModelSnapshots(models_);
     if (snapshots.empty()) {
         wxMessageBox("Select at least one model to analyze.",
                      "Unsupported areas",
@@ -672,20 +714,7 @@ void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
         auto payload = std::make_shared<UnsupportedAnalysisPayload>();
         payload->modelRevision = revision;
         try {
-            stl_slicer::TriangleMesh combined;
-            std::size_t triangleCount = 0;
-            for (const auto &snapshot : snapshots)
-                triangleCount += snapshot.triangleCount;
-            combined.reserve(triangleCount);
-            for (const auto &snapshot : snapshots) {
-                const stl_slicer::TriangleMesh mesh = snapshot.model->triangleMesh();
-                for (auto triangle : mesh.triangles()) {
-                    for (auto &vertex : triangle.vertices)
-                        vertex = snapshot.transform.transformPoint(vertex);
-                    triangle.normal = snapshot.transform.transformVector(triangle.normal);
-                    combined.addTriangle(std::move(triangle));
-                }
-            }
+            stl_slicer::TriangleMesh combined = combinedTransformedMesh(snapshots);
             const stl_slicer::SliceData slices = stl_slicer::Slicer{
                 {layerThickness,
                  segmentationTolerance,
@@ -705,10 +734,94 @@ void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
 }
 
 void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
-    wxMessageBox("Support contact-point generation is the next implementation step.",
-                 "Generate supports",
-                 wxOK | wxICON_INFORMATION,
-                 this);
+    if (unsupportedAnalysisRunning_ || supportGenerationRunning_ || optimizationRunning_)
+        return;
+    std::vector<ModelSnapshot> snapshots = selectedModelSnapshots(models_);
+    if (snapshots.empty()) {
+        wxMessageBox("Select at least one model to generate supports.",
+                     "Generate supports",
+                     wxOK | wxICON_INFORMATION,
+                     this);
+        return;
+    }
+    if (supportGenerationWorker_.joinable())
+        supportGenerationWorker_.join();
+
+    const AppSettings settings = static_cast<MainFrame *>(GetMDIParent())->Settings();
+    const std::uint64_t revision = modelRevision_;
+    supportGenerationCancel_.store(false, std::memory_order_relaxed);
+    supportGenerationRunning_ = true;
+    canvas_->ClearUnsupportedVisualization();
+    UpdateCommandState();
+
+    supportGenerationWorker_ =
+        std::thread([this, snapshots = std::move(snapshots), settings, revision]() mutable {
+            auto payload = std::make_shared<SupportGenerationPayload>();
+            payload->modelRevision = revision;
+            try {
+                auto source = std::make_shared<const stl_slicer::TriangleMesh>(
+                    combinedTransformedMesh(snapshots));
+                auto slices = std::make_shared<const stl_slicer::SliceData>(stl_slicer::Slicer{
+                    {settings.layerThickness,
+                     settings.segmentationTolerance,
+                     settings.contourHealingThreshold,
+                     settings.firstLayerOffset}}.slice(*source, &supportGenerationCancel_));
+                if (!supportGenerationCancel_.load(std::memory_order_relaxed)) {
+                    stl_slicer::UnsupportedAreaResult detected =
+                        stl_slicer::UnsupportedAreaAnalyzer{
+                            {settings.criticalAngleDegrees, settings.overhangCoefficient}}
+                            .analyze(*slices, &supportGenerationCancel_);
+                    if (supportGenerationCancel_.load(std::memory_order_relaxed)) {
+                        payload->cancelled = true;
+                    } else {
+                        auto unsupported = std::make_shared<const stl_slicer::SliceData>(
+                            std::move(detected.unsupported));
+                        stl_slicer::SupportGenerationResult generated =
+                            stl_slicer::SupportGenerator{
+                                {static_cast<std::size_t>(settings.optimizationWorkers)}}
+                                .generate({source, slices, unsupported}, &supportGenerationCancel_);
+                        payload->supports = std::move(generated.supports);
+                        payload->contactPointCount = generated.contactPoints.size();
+                        payload->processedLayerCount = generated.processedLayerCount;
+                        payload->cancelled = generated.cancelled;
+                    }
+                } else {
+                    payload->cancelled = true;
+                }
+            } catch (const std::exception &error) {
+                payload->error = error.what();
+            }
+            if (closing_.load(std::memory_order_relaxed))
+                return;
+            auto *event = new wxThreadEvent(wxEVT_THREAD, IdGenerateSupports);
+            event->SetPayload(std::move(payload));
+            wxQueueEvent(this, event);
+        });
+}
+
+void DocumentFrame::OnSupportGenerationFinished(wxThreadEvent &event) {
+    if (supportGenerationWorker_.joinable())
+        supportGenerationWorker_.join();
+    supportGenerationRunning_ = false;
+    supportGenerationCancel_.store(false, std::memory_order_relaxed);
+    UpdateCommandState();
+
+    const auto payload = event.GetPayload<std::shared_ptr<SupportGenerationPayload>>();
+    if (!payload->error.empty()) {
+        wxMessageBox(payload->error, "Support generation failed", wxOK | wxICON_ERROR, this);
+        return;
+    }
+    if (payload->cancelled || payload->modelRevision != modelRevision_)
+        return;
+    if (payload->supports.triangles().empty()) {
+        wxMessageBox("No support contact points were generated.",
+                     "Generate supports",
+                     wxOK | wxICON_INFORMATION,
+                     this);
+        return;
+    }
+    AddModel(std::make_shared<stl_slicer::MeshSceneModel>("Generated supports",
+                                                          std::move(payload->supports)));
 }
 void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
     if (unsupportedWorker_.joinable())
@@ -727,7 +840,7 @@ void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
 }
 
 void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
-    if (optimizationRunning_ || unsupportedAnalysisRunning_)
+    if (optimizationRunning_ || unsupportedAnalysisRunning_ || supportGenerationRunning_)
         return;
 
     struct ModelSnapshot {
@@ -840,6 +953,8 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
 }
 
 void DocumentFrame::OnStopOptimization(wxCommandEvent &) {
+    if (supportGenerationRunning_)
+        supportGenerationCancel_.store(true, std::memory_order_relaxed);
     if (optimizationRunning_)
         optimizationCancel_.store(true, std::memory_order_relaxed);
     if (canvas_)
