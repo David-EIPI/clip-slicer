@@ -11,6 +11,35 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     auto *notebook = new wxNotebook(this, wxID_ANY);
     auto *slicing = new wxPanel(notebook);
     auto *slicingSizer = new wxFlexGridSizer(2, 8, 10);
+    slicingSizer->Add(
+        new wxStaticText(slicing, wxID_ANY, "Layer thickness (mm):"), 0, wxALIGN_CENTER_VERTICAL);
+    layerThickness_ = new wxSpinCtrlDouble(slicing,
+                                           wxID_ANY,
+                                           wxEmptyString,
+                                           wxDefaultPosition,
+                                           wxDefaultSize,
+                                           wxSP_ARROW_KEYS,
+                                           0.000001,
+                                           1000.0,
+                                           settings.layerThickness,
+                                           0.01);
+    layerThickness_->SetDigits(6);
+    slicingSizer->Add(layerThickness_, 1, wxEXPAND);
+    slicingSizer->Add(new wxStaticText(slicing, wxID_ANY, "First-layer offset (mm):"),
+                      0,
+                      wxALIGN_CENTER_VERTICAL);
+    firstLayerOffset_ = new wxSpinCtrlDouble(slicing,
+                                             wxID_ANY,
+                                             wxEmptyString,
+                                             wxDefaultPosition,
+                                             wxDefaultSize,
+                                             wxSP_ARROW_KEYS,
+                                             0.000001,
+                                             1000.0,
+                                             settings.firstLayerOffset,
+                                             0.01);
+    firstLayerOffset_->SetDigits(6);
+    slicingSizer->Add(firstLayerOffset_, 1, wxEXPAND);
     slicingSizer->Add(new wxStaticText(slicing, wxID_ANY, "Contour healing threshold:"),
                       0,
                       wxALIGN_CENTER_VERTICAL);
@@ -61,9 +90,8 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                                                  1.0);
     criticalAngleDegrees_->SetDigits(1);
     analysisSizer->Add(criticalAngleDegrees_, 1, wxEXPAND);
-    analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Overhang coefficient:"),
-                       0,
-                       wxALIGN_CENTER_VERTICAL);
+    analysisSizer->Add(
+        new wxStaticText(analysis, wxID_ANY, "Overhang coefficient:"), 0, wxALIGN_CENTER_VERTICAL);
     overhangCoefficient_ = new wxSpinCtrlDouble(analysis,
                                                 wxID_ANY,
                                                 wxEmptyString,
@@ -76,9 +104,8 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                                                 0.1);
     overhangCoefficient_->SetDigits(2);
     analysisSizer->Add(overhangCoefficient_, 1, wxEXPAND);
-    analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Optimization attempts:"),
-                       0,
-                       wxALIGN_CENTER_VERTICAL);
+    analysisSizer->Add(
+        new wxStaticText(analysis, wxID_ANY, "Optimization attempts:"), 0, wxALIGN_CENTER_VERTICAL);
     optimizationAttempts_ = new wxSpinCtrl(analysis,
                                            wxID_ANY,
                                            wxEmptyString,
@@ -89,9 +116,8 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                                            100000,
                                            settings.optimizationAttempts);
     analysisSizer->Add(optimizationAttempts_, 1, wxEXPAND);
-    analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Worker threads:"),
-                       0,
-                       wxALIGN_CENTER_VERTICAL);
+    analysisSizer->Add(
+        new wxStaticText(analysis, wxID_ANY, "Worker threads:"), 0, wxALIGN_CENTER_VERTICAL);
     optimizationWorkers_ = new wxSpinCtrl(analysis,
                                           wxID_ANY,
                                           wxEmptyString,
@@ -102,9 +128,8 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                                           256,
                                           settings.optimizationWorkers);
     analysisSizer->Add(optimizationWorkers_, 1, wxEXPAND);
-    analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Convergence tolerance:"),
-                       0,
-                       wxALIGN_CENTER_VERTICAL);
+    analysisSizer->Add(
+        new wxStaticText(analysis, wxID_ANY, "Convergence tolerance:"), 0, wxALIGN_CENTER_VERTICAL);
     optimizationTolerance_ = new wxSpinCtrlDouble(analysis,
                                                   wxID_ANY,
                                                   wxEmptyString,
@@ -121,11 +146,22 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     analysis->SetSizer(analysisSizer);
     notebook->AddPage(analysis, "Analysis");
 
+    auto *supports = new wxPanel(notebook);
+    notebook->AddPage(supports, "Supports");
+
     root->Add(notebook, 1, wxEXPAND | wxALL, 12);
     root->Add(
         CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
     SetSizerAndFit(root);
-    SetMinSize({420, 290});
+    SetMinSize({420, 350});
+}
+
+double SettingsDialog::LayerThickness() const {
+    return layerThickness_->GetValue();
+}
+
+double SettingsDialog::FirstLayerOffset() const {
+    return firstLayerOffset_->GetValue();
 }
 
 double SettingsDialog::ContourHealingThreshold() const {

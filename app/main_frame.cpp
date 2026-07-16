@@ -50,6 +50,8 @@ void MainFrame::ShowSettingsDialog() {
         return;
 
     AppSettings updated = settings_;
+    updated.layerThickness = dialog.LayerThickness();
+    updated.firstLayerOffset = dialog.FirstLayerOffset();
     updated.contourHealingThreshold = dialog.ContourHealingThreshold();
     updated.segmentationTolerance = dialog.SegmentationTolerance();
     updated.criticalAngleDegrees = dialog.CriticalAngleDegrees();

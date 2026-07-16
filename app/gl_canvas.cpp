@@ -784,8 +784,10 @@ void ModelCanvas::BeginInteractiveSlice() {
     if (meshes.empty())
         return;
 
-    const stl_slicer::SlicerOptions options{
-        0.1, document_.SegmentationTolerance(), document_.ContourHealingThreshold()};
+    const stl_slicer::SlicerOptions options{document_.LayerThickness(),
+                                            document_.SegmentationTolerance(),
+                                            document_.ContourHealingThreshold(),
+                                            document_.FirstLayerOffset()};
     const double position = slicePosition_;
     const std::uint64_t generation = interactiveSliceGeneration_;
     interactiveSliceCancel_.store(false, std::memory_order_relaxed);

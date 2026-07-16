@@ -9,6 +9,8 @@ class wxSpinCtrl;
 class SettingsDialog final : public wxDialog {
   public:
     SettingsDialog(wxWindow *parent, const AppSettings &settings);
+    double LayerThickness() const;
+    double FirstLayerOffset() const;
     double ContourHealingThreshold() const;
     double SegmentationTolerance() const;
     double CriticalAngleDegrees() const;
@@ -18,6 +20,8 @@ class SettingsDialog final : public wxDialog {
     double OptimizationTolerance() const;
 
   private:
+    wxSpinCtrlDouble *layerThickness_ = nullptr;
+    wxSpinCtrlDouble *firstLayerOffset_ = nullptr;
     wxSpinCtrlDouble *contourHealingThreshold_ = nullptr;
     wxSpinCtrlDouble *segmentationTolerance_ = nullptr;
     wxSpinCtrlDouble *criticalAngleDegrees_ = nullptr;

@@ -18,6 +18,8 @@ wxString AppSettings::FilePath() {
 }
 
 bool AppSettings::Load() {
+    layerThickness = defaultLayerThickness;
+    firstLayerOffset = defaultFirstLayerOffset;
     contourHealingThreshold = defaultContourHealingThreshold;
     segmentationTolerance = defaultSegmentationTolerance;
     criticalAngleDegrees = defaultCriticalAngleDegrees;
@@ -30,7 +32,15 @@ bool AppSettings::Load() {
 
     wxFileConfig config(
         wxEmptyString, wxEmptyString, FilePath(), wxEmptyString, wxCONFIG_USE_LOCAL_FILE);
-    double value = defaultContourHealingThreshold;
+    double value = defaultLayerThickness;
+    config.Read("/slicing/layerThickness", &value, defaultLayerThickness);
+    if (std::isfinite(value) && value > 0.0)
+        layerThickness = value;
+    value = defaultFirstLayerOffset;
+    config.Read("/slicing/firstLayerOffset", &value, defaultFirstLayerOffset);
+    if (std::isfinite(value) && value > 0.0)
+        firstLayerOffset = value;
+    value = defaultContourHealingThreshold;
     config.Read("/slicing/contourHealingThreshold", &value, defaultContourHealingThreshold);
     if (std::isfinite(value) && value > 0.0)
         contourHealingThreshold = value;
@@ -69,6 +79,8 @@ bool AppSettings::Save() const {
 
     wxFileConfig config(
         wxEmptyString, wxEmptyString, FilePath(), wxEmptyString, wxCONFIG_USE_LOCAL_FILE);
+    config.Write("/slicing/layerThickness", layerThickness);
+    config.Write("/slicing/firstLayerOffset", firstLayerOffset);
     config.Write("/slicing/contourHealingThreshold", contourHealingThreshold);
     config.Write("/slicing/segmentationTolerance", segmentationTolerance);
     config.Write("/analysis/criticalAngleDegrees", criticalAngleDegrees);

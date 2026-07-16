@@ -81,16 +81,6 @@ class SliceDialog final : public wxDialog {
   public:
     SliceDialog(wxWindow *parent) : wxDialog(parent, wxID_ANY, "Slice models") {
         auto *root = new wxBoxSizer(wxVERTICAL);
-        auto *grid = new wxFlexGridSizer(2, 6, 8);
-        grid->Add(new wxStaticText(this, wxID_ANY, "Thickness (mm):"), 0, wxALIGN_CENTER_VERTICAL);
-        thickness = new wxTextCtrl(this, wxID_ANY, "0.1");
-        grid->Add(thickness, 1, wxEXPAND);
-        grid->Add(
-            new wxStaticText(this, wxID_ANY, "Starting height (mm):"), 0, wxALIGN_CENTER_VERTICAL);
-        start = new wxTextCtrl(this, wxID_ANY, "0.1");
-        grid->Add(start, 1, wxEXPAND);
-        grid->AddGrowableCol(1);
-        root->Add(grid, 0, wxEXPAND | wxALL, 12);
         target = new wxRadioBox(this,
                                 wxID_ANY,
                                 "Output",
@@ -101,7 +91,6 @@ class SliceDialog final : public wxDialog {
         root->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 12);
         SetSizerAndFit(root);
     }
-    wxTextCtrl *thickness, *start;
     wxRadioBox *target;
 };
 
@@ -276,6 +265,12 @@ void DocumentFrame::SettingsChanged() {
 }
 void DocumentFrame::InteractiveSliceStateChanged() {
     UpdateCommandState();
+}
+double DocumentFrame::LayerThickness() const {
+    return static_cast<MainFrame *>(GetMDIParent())->Settings().layerThickness;
+}
+double DocumentFrame::FirstLayerOffset() const {
+    return static_cast<MainFrame *>(GetMDIParent())->Settings().firstLayerOffset;
 }
 double DocumentFrame::ContourHealingThreshold() const {
     return static_cast<MainFrame *>(GetMDIParent())->Settings().contourHealingThreshold;
@@ -530,12 +525,8 @@ void DocumentFrame::OnSlice(wxCommandEvent &) {
     SliceDialog d(this);
     if (d.ShowModal() != wxID_OK)
         return;
-    double dz, start;
-    if (!d.thickness->GetValue().ToDouble(&dz) || !d.start->GetValue().ToDouble(&start) ||
-        dz <= 0 || start < 0) {
-        wxMessageBox("Enter positive thickness and non-negative start height.");
-        return;
-    }
+    const double dz = LayerThickness();
+    const double start = FirstLayerOffset();
     std::vector<std::shared_ptr<stl_slicer::SceneModel>> made;
     for (const auto &m : models_)
         if (m->selected) {
@@ -650,6 +641,8 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
     const std::uint64_t revision = modelRevision_;
     const double healingThreshold = ContourHealingThreshold();
     const double segmentationTolerance = SegmentationTolerance();
+    const double layerThickness = LayerThickness();
+    const double firstLayerOffset = FirstLayerOffset();
     const double criticalAngleDegrees = CriticalAngleDegrees();
     const double overhangCoefficient = OverhangCoefficient();
     unsupportedWorker_ = std::thread([this,
@@ -657,6 +650,8 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
                                       revision,
                                       healingThreshold,
                                       segmentationTolerance,
+                                      layerThickness,
+                                      firstLayerOffset,
                                       criticalAngleDegrees,
                                       overhangCoefficient]() mutable {
         auto payload = std::make_shared<UnsupportedAnalysisPayload>();
@@ -676,9 +671,11 @@ void DocumentFrame::OnAnalyzeUnsupported(wxCommandEvent &) {
                     combined.addTriangle(std::move(triangle));
                 }
             }
-            const stl_slicer::SliceData slices =
-                stl_slicer::Slicer{{0.1, segmentationTolerance, healingThreshold, 0.05}}.slice(
-                    combined);
+            const stl_slicer::SliceData slices = stl_slicer::Slicer{
+                {layerThickness,
+                 segmentationTolerance,
+                 healingThreshold,
+                 firstLayerOffset}}.slice(combined);
             stl_slicer::UnsupportedAreaResult unsupported = stl_slicer::UnsupportedAreaAnalyzer{
                 {criticalAngleDegrees, overhangCoefficient}}.analyze(slices);
             payload->totalArea = unsupported.totalArea;
@@ -736,7 +733,8 @@ void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {
     options.attempts = static_cast<std::size_t>(settings.optimizationAttempts);
     options.workerCount = static_cast<std::size_t>(settings.optimizationWorkers);
     options.convergenceTolerance = settings.optimizationTolerance;
-    options.layerThickness = 0.1;
+    options.layerThickness = settings.layerThickness;
+    options.firstLayerOffset = settings.firstLayerOffset;
     options.segmentationTolerance = settings.segmentationTolerance;
     options.healingThreshold = settings.contourHealingThreshold;
     options.unsupportedArea = {settings.criticalAngleDegrees, settings.overhangCoefficient};

@@ -4,6 +4,8 @@
 
 class AppSettings {
   public:
+    static constexpr double defaultLayerThickness = 0.1;
+    static constexpr double defaultFirstLayerOffset = 0.05;
     static constexpr double defaultContourHealingThreshold = 0.01;
     static constexpr double defaultSegmentationTolerance = 0.01;
     static constexpr double defaultCriticalAngleDegrees = 30.0;
@@ -16,6 +18,8 @@ class AppSettings {
     bool Save() const;
     static wxString FilePath();
 
+    double layerThickness = defaultLayerThickness;
+    double firstLayerOffset = defaultFirstLayerOffset;
     double contourHealingThreshold = defaultContourHealingThreshold;
     double segmentationTolerance = defaultSegmentationTolerance;
     double criticalAngleDegrees = defaultCriticalAngleDegrees;

@@ -124,7 +124,12 @@ The \emph{File > Settings} command opens the application settings dialog.
 Settings are grouped into tabs so that additional categories can be added as
 the application grows.
 
-The \emph{Slicing} tab contains the contour healing threshold. After initial
+The \emph{Slicing} tab defines the default layer thickness and first-layer
+offset. These values are used by model slicing, unsupported-area analysis,
+orientation optimization, and interactive slicing. They default to 0.1 and
+0.05 model units, respectively.
+
+The tab also contains the contour healing threshold. After initial
 segment connection, endpoints separated by no more than this distance can be
 joined to close a contour. The default is 0.01 model units. The setting is
 used by normal slicing, interactive slicing, and unsupported-area analysis.
@@ -147,6 +152,8 @@ model and defaults to 10. The worker-thread setting controls the maximum
 number of those attempts evaluated concurrently and defaults to 4.
 Convergence tolerance is the minimum unsupported-area reduction accepted as
 an improving step and defaults to 0.1 square model units.
+
+The \emph{Supports} tab is reserved for support-generation parameters.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

@@ -14,6 +14,7 @@ struct OrientationOptimizerOptions {
     std::size_t workerCount = 4;
     double convergenceTolerance = 0.1;
     double layerThickness = 0.1;
+    double firstLayerOffset = 0.05;
     double segmentationTolerance = 0.01;
     double healingThreshold = 0.01;
     UnsupportedAreaOptions unsupportedArea;
@@ -34,12 +35,12 @@ using OrientationImprovementCallback = std::function<void(const OrientationCandi
 using OrientationProgressCallback = std::function<void(std::size_t completed, std::size_t total)>;
 using OrientationInitialScoreCallback = std::function<void(double unsupportedArea)>;
 
-OrientationOptimizationResult optimizeOrientation(
-    const TriangleMesh &mesh,
-    const OrientationOptimizerOptions &options = {},
-    const std::atomic<bool> *cancel = nullptr,
-    OrientationImprovementCallback improvementCallback = {},
-    OrientationProgressCallback progressCallback = {},
-    OrientationInitialScoreCallback initialScoreCallback = {});
+OrientationOptimizationResult
+optimizeOrientation(const TriangleMesh &mesh,
+                    const OrientationOptimizerOptions &options = {},
+                    const std::atomic<bool> *cancel = nullptr,
+                    OrientationImprovementCallback improvementCallback = {},
+                    OrientationProgressCallback progressCallback = {},
+                    OrientationInitialScoreCallback initialScoreCallback = {});
 
 } // namespace stl_slicer

@@ -47,12 +47,11 @@ double score(const TriangleMesh &mesh,
     if (cancel && cancel->load(std::memory_order_relaxed))
         return std::numeric_limits<double>::infinity();
     const TriangleMesh candidate = transformed(mesh, transform);
-    const SliceData slices =
-        Slicer{{options.layerThickness,
-                options.segmentationTolerance,
-                options.healingThreshold,
-                options.layerThickness * 0.5}}
-            .slice(candidate, cancel);
+    const SliceData slices = Slicer{{options.layerThickness,
+                                     options.segmentationTolerance,
+                                     options.healingThreshold,
+                                     options.firstLayerOffset}}
+                                 .slice(candidate, cancel);
     if (cancel && cancel->load(std::memory_order_relaxed))
         return std::numeric_limits<double>::infinity();
     return UnsupportedAreaAnalyzer{options.unsupportedArea}.analyze(slices).totalArea;
@@ -87,8 +86,7 @@ Mat4 randomRotation(std::mt19937_64 &random) {
 bool claimAttempt(std::atomic<std::size_t> &remaining, std::size_t &attemptIndex) {
     std::size_t available = remaining.load(std::memory_order_relaxed);
     while (available != 0) {
-        if (remaining.compare_exchange_weak(
-                available, available - 1, std::memory_order_relaxed)) {
+        if (remaining.compare_exchange_weak(available, available - 1, std::memory_order_relaxed)) {
             attemptIndex = available - 1;
             return true;
         }
@@ -98,13 +96,13 @@ bool claimAttempt(std::atomic<std::size_t> &remaining, std::size_t &attemptIndex
 
 } // namespace
 
-OrientationOptimizationResult optimizeOrientation(
-    const TriangleMesh &mesh,
-    const OrientationOptimizerOptions &options,
-    const std::atomic<bool> *cancel,
-    OrientationImprovementCallback improvementCallback,
-    OrientationProgressCallback progressCallback,
-    OrientationInitialScoreCallback initialScoreCallback) {
+OrientationOptimizationResult
+optimizeOrientation(const TriangleMesh &mesh,
+                    const OrientationOptimizerOptions &options,
+                    const std::atomic<bool> *cancel,
+                    OrientationImprovementCallback improvementCallback,
+                    OrientationProgressCallback progressCallback,
+                    OrientationInitialScoreCallback initialScoreCallback) {
     if (!mesh.bounds().valid())
         throw std::invalid_argument("Cannot optimize an empty mesh");
     if (options.attempts == 0)
@@ -113,6 +111,8 @@ OrientationOptimizationResult optimizeOrientation(
         throw std::invalid_argument("Orientation optimization requires at least one worker");
     if (!std::isfinite(options.convergenceTolerance) || options.convergenceTolerance <= 0.0)
         throw std::invalid_argument("Convergence tolerance must be a positive finite value");
+    if (!std::isfinite(options.firstLayerOffset) || options.firstLayerOffset <= 0.0)
+        throw std::invalid_argument("First-layer offset must be a positive finite value");
 
     const Bounds3 &bounds = mesh.bounds();
     const Vec3 center{(bounds.min.x + bounds.max.x) * 0.5,

@@ -198,8 +198,7 @@ void testTolerancePreservesShortEdges() {
         require(layer.paths.size() == 1, "short valid segments were discarded");
         require(layer.paths[0].type == PathType::External,
                 "nearby path ends closed before exact segments were connected");
-        require(std::abs(area(layer.paths[0]) - 0.05) < 1e-9,
-                "short-edge contour area changed");
+        require(std::abs(area(layer.paths[0]) - 0.05) < 1e-9, "short-edge contour area changed");
     }
 }
 
@@ -355,8 +354,7 @@ void testUnsupportedAreas() {
             "unsupported layer area did not support the layer above it");
 
     SliceData coefficientStack;
-    coefficientStack.layers = {
-        {0.05, {square(0, 0, 1, 1)}}, {0.15, {square(0.5, 0, 1.5, 1)}}};
+    coefficientStack.layers = {{0.05, {square(0, 0, 1, 1)}}, {0.15, {square(0.5, 0, 1.5, 1)}}};
     const auto defaultOverhang = UnsupportedAreaAnalyzer{{45.0, 1.0}}.analyze(coefficientStack);
     const auto extendedOverhang = UnsupportedAreaAnalyzer{{45.0, 5.0}}.analyze(coefficientStack);
     require(defaultOverhang.totalArea > 0.29 && defaultOverhang.totalArea < 0.31,
@@ -372,15 +370,14 @@ void testOrientationOptimizer() {
     options.attempts = 1;
     options.workerCount = 1;
     options.layerThickness = 0.5;
+    options.firstLayerOffset = 0.25;
     std::size_t completed = 0;
     double publishedScore = -1.0;
     const auto result = optimizeOrientation(
         cube,
         options,
         nullptr,
-        [&](const OrientationCandidate &candidate) {
-            publishedScore = candidate.unsupportedArea;
-        },
+        [&](const OrientationCandidate &candidate) { publishedScore = candidate.unsupportedArea; },
         [&](std::size_t current, std::size_t total) {
             completed = current;
             require(total == 1, "optimizer progress total");
@@ -395,6 +392,15 @@ void testOrientationOptimizer() {
     const auto cancelled = optimizeOrientation(cube, options, &cancel);
     require(cancelled.cancelled && cancelled.completedAttempts == 0,
             "optimizer ignored cancellation before startup");
+
+    options.firstLayerOffset = 0.0;
+    bool invalidOffsetRejected = false;
+    try {
+        (void)optimizeOrientation(cube, options);
+    } catch (const std::invalid_argument &) {
+        invalidOffsetRejected = true;
+    }
+    require(invalidOffsetRejected, "optimizer accepted an invalid first-layer offset");
 }
 
 } // namespace
