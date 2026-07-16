@@ -13,6 +13,7 @@ class AppSettings {
     static constexpr int defaultOptimizationAttempts = 10;
     static constexpr int defaultOptimizationWorkers = 4;
     static constexpr double defaultOptimizationTolerance = 0.1;
+    static constexpr double defaultSupportSpacing = 2.0;
 
     bool Load();
     bool Save() const;
@@ -27,4 +28,5 @@ class AppSettings {
     int optimizationAttempts = defaultOptimizationAttempts;
     int optimizationWorkers = defaultOptimizationWorkers;
     double optimizationTolerance = defaultOptimizationTolerance;
+    double supportSpacing = defaultSupportSpacing;
 };

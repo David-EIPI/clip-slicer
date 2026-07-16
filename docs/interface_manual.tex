@@ -165,7 +165,18 @@ generation worker pool. It defaults to 4.
 Convergence tolerance is the minimum unsupported-area reduction accepted as
 an improving step and defaults to 0.1 square model units.
 
-The \emph{Supports} tab is reserved for support-generation parameters.
+The \emph{Supports} tab contains support-generation parameters. Support spacing
+sets the nearest-neighbor distance of the hexagonal contact-point lattice and
+defaults to 2.0 model units. Boundary contacts use the same value as their
+maximum spacing and search radius.
+
+The Generate command places contact candidates on a triangular lattice within
+each unsupported component. This lattice has six equidistant neighbors around
+an interior point. Contacts outside the component or inside its voids are
+discarded. Along portions of the unsupported perimeter that coincide with the
+source-layer perimeter, nearby lattice contacts are moved onto the edge at the
+configured support spacing. Boundaries introduced only by subtracting the
+supported area are not treated as exposed model edges.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

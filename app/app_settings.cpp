@@ -27,6 +27,7 @@ bool AppSettings::Load() {
     optimizationAttempts = defaultOptimizationAttempts;
     optimizationWorkers = defaultOptimizationWorkers;
     optimizationTolerance = defaultOptimizationTolerance;
+    supportSpacing = defaultSupportSpacing;
     if (!wxFileExists(FilePath()))
         return true;
 
@@ -68,6 +69,10 @@ bool AppSettings::Load() {
     config.Read("/analysis/optimizationTolerance", &value, defaultOptimizationTolerance);
     if (std::isfinite(value) && value > 0.0)
         optimizationTolerance = value;
+    value = defaultSupportSpacing;
+    config.Read("/supports/supportSpacing", &value, defaultSupportSpacing);
+    if (std::isfinite(value) && value > 0.0)
+        supportSpacing = value;
     return true;
 }
 
@@ -88,5 +93,6 @@ bool AppSettings::Save() const {
     config.Write("/analysis/optimizationAttempts", optimizationAttempts);
     config.Write("/analysis/optimizationWorkers", optimizationWorkers);
     config.Write("/analysis/optimizationTolerance", optimizationTolerance);
+    config.Write("/supports/supportSpacing", supportSpacing);
     return config.Flush();
 }

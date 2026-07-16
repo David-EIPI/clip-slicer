@@ -59,6 +59,7 @@ void MainFrame::ShowSettingsDialog() {
     updated.optimizationAttempts = dialog.OptimizationAttempts();
     updated.optimizationWorkers = dialog.OptimizationWorkers();
     updated.optimizationTolerance = dialog.OptimizationTolerance();
+    updated.supportSpacing = dialog.SupportSpacing();
     if (!updated.Save()) {
         wxMessageBox("Unable to save settings to:\n" + AppSettings::FilePath(),
                      "Settings",

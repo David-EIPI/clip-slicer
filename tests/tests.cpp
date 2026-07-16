@@ -7,6 +7,8 @@
 #include "stl_slicer/stl_writer.hpp"
 #include "stl_slicer/support_generator.hpp"
 #include "stl_slicer/unsupported_area.hpp"
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -321,6 +323,10 @@ SlicePath square(double x0, double y0, double x1, double y1) {
     return {PathType::External, {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}, {x0, y0}}};
 }
 
+SlicePath internalSquare(double x0, double y0, double x1, double y1) {
+    return {PathType::Internal, {{x0, y0}, {x0, y1}, {x1, y1}, {x1, y0}, {x0, y0}}};
+}
+
 void testUnsupportedAreas() {
     SliceData slices;
     slices.thickness = 0.1;
@@ -472,6 +478,102 @@ void testSupportGenerationScheduling() {
     require(workerErrorPropagated, "support worker failure was not propagated");
 }
 
+void testSupportContactPlacement() {
+    auto source = std::make_shared<TriangleMesh>();
+    addBox(*source, 0, 0, 0, 10, 10, 1);
+
+    auto slices = std::make_shared<SliceData>();
+    auto unsupported = std::make_shared<SliceData>();
+    slices->layers = {{0.25, {square(0, 0, 6, 6)}}};
+    unsupported->layers = slices->layers;
+
+    const SupportGenerationResult fullBoundary =
+        SupportGenerator{{1, 2.0}}.generate({source, slices, unsupported});
+    require(!fullBoundary.contactPoints.empty(), "contact lattice was empty");
+    bool hasInterior = false;
+    std::array<bool, 4> hasBoundary{};
+    std::vector<double> boundaryPositions;
+    for (const SupportContactPoint &contact : fullBoundary.contactPoints) {
+        const Vec3 &point = contact.position;
+        require(contact.layerIndex == 0 && std::abs(point.z - 0.25) < 1e-12,
+                "contact lost its source layer coordinates");
+        require(point.x >= -1e-9 && point.x <= 6.0 + 1e-9 && point.y >= -1e-9 &&
+                    point.y <= 6.0 + 1e-9,
+                "contact was retained outside the unsupported polygon");
+        hasBoundary[0] = hasBoundary[0] || std::abs(point.x) < 1e-9;
+        hasBoundary[1] = hasBoundary[1] || std::abs(point.x - 6.0) < 1e-9;
+        hasBoundary[2] = hasBoundary[2] || std::abs(point.y) < 1e-9;
+        hasBoundary[3] = hasBoundary[3] || std::abs(point.y - 6.0) < 1e-9;
+        if (std::abs(point.y) < 1e-9)
+            boundaryPositions.push_back(point.x);
+        else if (std::abs(point.x - 6.0) < 1e-9)
+            boundaryPositions.push_back(6.0 + point.y);
+        else if (std::abs(point.y - 6.0) < 1e-9)
+            boundaryPositions.push_back(18.0 - point.x);
+        else if (std::abs(point.x) < 1e-9)
+            boundaryPositions.push_back(24.0 - point.y);
+        hasInterior = hasInterior ||
+                      (point.x > 1e-9 && point.x < 6.0 - 1e-9 && point.y > 1e-9 &&
+                       point.y < 6.0 - 1e-9);
+    }
+    require(hasInterior, "contact placement omitted the unsupported-area interior");
+    require(std::all_of(hasBoundary.begin(), hasBoundary.end(), [](bool present) {
+                return present;
+            }),
+            "contact placement did not cover every outer boundary");
+    std::sort(boundaryPositions.begin(), boundaryPositions.end());
+    require(boundaryPositions.size() >= 2, "outer boundary received too few contacts");
+    double maximumBoundaryGap = boundaryPositions.front() + 24.0 - boundaryPositions.back();
+    for (std::size_t index = 1; index < boundaryPositions.size(); ++index)
+        maximumBoundaryGap =
+            std::max(maximumBoundaryGap, boundaryPositions[index] - boundaryPositions[index - 1]);
+    require(maximumBoundaryGap <= 2.0 + 1e-9,
+            "outer boundary contacts exceeded the configured spacing");
+
+    slices->layers = {{0.5, {square(0, 0, 10, 10)}}};
+    unsupported->layers = {{0.5, {square(0, 0, 4, 10)}}};
+    const SupportGenerationResult partialBoundary =
+        SupportGenerator{{1, 3.0}}.generate({source, slices, unsupported});
+    bool reachesTopSourceEdge = false;
+    bool movedToCutEdge = false;
+    for (const SupportContactPoint &contact : partialBoundary.contactPoints) {
+        reachesTopSourceEdge = reachesTopSourceEdge || std::abs(contact.position.y - 10.0) < 1e-9;
+        movedToCutEdge = movedToCutEdge ||
+                         (std::abs(contact.position.x - 4.0) < 1e-9 &&
+                          contact.position.y > 1e-9 && contact.position.y < 10.0 - 1e-9);
+    }
+    require(reachesTopSourceEdge, "coincident source perimeter did not receive contacts");
+    require(!movedToCutEdge, "an internal unsupported-area cut was treated as an outer edge");
+
+    slices->layers = {
+        {0.75, {square(0, 0, 10, 10), internalSquare(4, 4, 6, 6)}}};
+    unsupported->layers = slices->layers;
+    const SupportGenerationResult withHole =
+        SupportGenerator{{1, 1.0}}.generate({source, slices, unsupported});
+    bool contactsHole = false;
+    for (const SupportContactPoint &contact : withHole.contactPoints) {
+        const Vec3 &point = contact.position;
+        require(!(point.x > 4.0 && point.x < 6.0 && point.y > 4.0 && point.y < 6.0),
+                "contact was placed inside a void");
+        contactsHole = contactsHole ||
+                       (((std::abs(point.x - 4.0) < 1e-9 ||
+                          std::abs(point.x - 6.0) < 1e-9) &&
+                         point.y >= 4.0 && point.y <= 6.0) ||
+                        ((std::abs(point.y - 4.0) < 1e-9 ||
+                          std::abs(point.y - 6.0) < 1e-9) &&
+                         point.x >= 4.0 && point.x <= 6.0));
+    }
+    require(contactsHole, "source-matching void perimeter did not receive contacts");
+
+    bool invalidSpacingRejected = false;
+    try {
+        (void)SupportGenerator{{1, 0.0}};
+    } catch (const std::invalid_argument &) {
+        invalidSpacingRejected = true;
+    }
+    require(invalidSpacingRejected, "support generator accepted zero contact spacing");
+}
+
 } // namespace
 
 int main() {
@@ -491,6 +593,7 @@ int main() {
         testUnsupportedAreas();
         testOrientationOptimizer();
         testSupportGenerationScheduling();
+        testSupportContactPlacement();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception &error) {

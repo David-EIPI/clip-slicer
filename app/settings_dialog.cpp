@@ -147,6 +147,23 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     notebook->AddPage(analysis, "Analysis");
 
     auto *supports = new wxPanel(notebook);
+    auto *supportsSizer = new wxFlexGridSizer(2, 8, 10);
+    supportsSizer->Add(
+        new wxStaticText(supports, wxID_ANY, "Support spacing (mm):"), 0, wxALIGN_CENTER_VERTICAL);
+    supportSpacing_ = new wxSpinCtrlDouble(supports,
+                                           wxID_ANY,
+                                           wxEmptyString,
+                                           wxDefaultPosition,
+                                           wxDefaultSize,
+                                           wxSP_ARROW_KEYS,
+                                           0.001,
+                                           1000.0,
+                                           settings.supportSpacing,
+                                           0.1);
+    supportSpacing_->SetDigits(3);
+    supportsSizer->Add(supportSpacing_, 1, wxEXPAND);
+    supportsSizer->AddGrowableCol(1);
+    supports->SetSizer(supportsSizer);
     notebook->AddPage(supports, "Supports");
 
     root->Add(notebook, 1, wxEXPAND | wxALL, 12);
@@ -190,4 +207,8 @@ int SettingsDialog::OptimizationWorkers() const {
 
 double SettingsDialog::OptimizationTolerance() const {
     return optimizationTolerance_->GetValue();
+}
+
+double SettingsDialog::SupportSpacing() const {
+    return supportSpacing_->GetValue();
 }

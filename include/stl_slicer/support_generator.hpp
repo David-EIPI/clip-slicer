@@ -34,6 +34,7 @@ struct SupportGenerationKernels {
 
 struct SupportGeneratorOptions {
     std::size_t workerCount = 4;
+    double supportSpacing = 2.0;
 };
 
 struct SupportGenerationResult {
