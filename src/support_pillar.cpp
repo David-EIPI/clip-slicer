@@ -67,6 +67,8 @@ void validateOptions(const ExternalPillarOptions &options) {
     const auto positiveFinite = [](double value) { return std::isfinite(value) && value > 0.0; };
     if (!positiveFinite(options.latticeCellSize))
         throw std::invalid_argument("Support lattice cell size must be positive and finite");
+    if (!std::isfinite(options.modelIsolation) || options.modelIsolation < 0.0)
+        throw std::invalid_argument("Model isolation must be non-negative and finite");
     if (!std::isfinite(options.minimumSupportAngleDegrees) ||
         options.minimumSupportAngleDegrees < 5.0 || options.minimumSupportAngleDegrees >= 90.0)
         throw std::invalid_argument("Minimum support angle must be from 5 to 90 degrees");
@@ -139,7 +141,7 @@ struct ExternalPillarSpace::Impl {
             return;
 
         maximumHeight = std::max(options.baseHeight, requestedMaximumHeight);
-        const double band = options.baseRadius * 2.0;
+        const double band = (options.baseRadius + options.modelIsolation) * 2.0;
         originX =
             std::floor((bounds.min.x - band) / options.latticeCellSize) * options.latticeCellSize;
         originY =
@@ -202,7 +204,8 @@ struct ExternalPillarSpace::Impl {
             return {};
         const double gridGuard = options.latticeCellSize * std::sqrt(2.0) * 0.5;
         return Clipper2Lib::InflatePaths(polygons,
-                                         (radius + gridGuard) * slice_polygon::coordinateScale,
+                                         (radius + options.modelIsolation + gridGuard) *
+                                             slice_polygon::coordinateScale,
                                          JoinType::Round,
                                          EndType::Polygon,
                                          2.0,

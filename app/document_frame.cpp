@@ -13,6 +13,7 @@
 #include "stl_slicer/support_generator.hpp"
 #include "stl_slicer/unsupported_area.hpp"
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <sstream>
 #include <wx/artprov.h>
@@ -38,6 +39,7 @@ enum {
     IdInteractive,
     IdDetectUnsupported,
     IdGenerateSupports,
+    IdSupportGenerationProgress,
     IdOptimizeOrientation,
     IdStopOptimization,
     IdShow,
@@ -64,6 +66,14 @@ struct SupportGenerationPayload {
     std::uint64_t modelRevision = 0;
     bool cancelled = false;
     std::string error;
+};
+
+struct SupportGenerationProgressPayload {
+    std::size_t stage = 0;
+    std::size_t completed = 0;
+    std::size_t total = 0;
+    std::uint64_t modelRevision = 0;
+    bool finished = false;
 };
 
 struct ModelSnapshot {
@@ -245,6 +255,10 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdDetectUnsupported);
     Bind(wxEVT_MENU, &DocumentFrame::OnGenerateSupports, this, IdGenerateSupports);
     Bind(wxEVT_THREAD, &DocumentFrame::OnSupportGenerationFinished, this, IdGenerateSupports);
+    Bind(wxEVT_THREAD,
+         &DocumentFrame::OnSupportGenerationProgress,
+         this,
+         IdSupportGenerationProgress);
     Bind(wxEVT_MENU, &DocumentFrame::OnOptimizeOrientation, this, IdOptimizeOrientation);
     Bind(wxEVT_MENU, &DocumentFrame::OnStopOptimization, this, IdStopOptimization);
     Bind(wxEVT_THREAD, &DocumentFrame::OnOrientationOptimizationEvent, this, IdOptimizeOrientation);
@@ -601,6 +615,21 @@ void DocumentFrame::PublishStatus() {
         if (optimizationHasScore_)
             optimizationProgress << " (S=" << std::fixed << std::setprecision(2)
                                  << optimizationBestScore_ << ')';
+    } else if (supportGenerationRunning_) {
+        static constexpr const char *labels[] = {"Slicing...",
+                                                  "Finding unsupported...",
+                                                  "Contact points...",
+                                                  "Volume segmentation...",
+                                                  "Generating supports..."};
+        for (std::size_t index = 0; index < supportProgress_.size(); ++index) {
+            const SupportProgressState &stage = supportProgress_[index];
+            if (!stage.started || stage.finished)
+                continue;
+            optimizationProgress << labels[index];
+            if (stage.total > 0)
+                optimizationProgress << " (" << stage.completed << " of " << stage.total << ')';
+            break;
+        }
     }
     parent->SetDocumentStatus(buildVolume.str(), slicePosition.str(), optimizationProgress.str());
 }
@@ -789,13 +818,32 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
     const std::uint64_t revision = modelRevision_;
     supportGenerationCancel_.store(false, std::memory_order_relaxed);
     supportGenerationRunning_ = true;
+    supportProgress_ = {};
+    supportProgress_[static_cast<std::size_t>(SupportProgressStage::Slicing)].started = true;
     canvas_->ClearUnsupportedVisualization();
     UpdateCommandState();
+    UpdateStatus();
 
     supportGenerationWorker_ =
         std::thread([this, snapshots = std::move(snapshots), settings, revision]() mutable {
             auto payload = std::make_shared<SupportGenerationPayload>();
             payload->modelRevision = revision;
+            const auto postProgress = [this, revision](SupportProgressStage stage,
+                                                       std::size_t completed,
+                                                       std::size_t total,
+                                                       bool finished) {
+                if (closing_.load(std::memory_order_relaxed))
+                    return;
+                auto progress = std::make_shared<SupportGenerationProgressPayload>();
+                progress->stage = static_cast<std::size_t>(stage);
+                progress->completed = completed;
+                progress->total = total;
+                progress->modelRevision = revision;
+                progress->finished = finished;
+                auto *event = new wxThreadEvent(wxEVT_THREAD, IdSupportGenerationProgress);
+                event->SetPayload(std::move(progress));
+                wxQueueEvent(this, event);
+            };
             try {
                 auto source = std::make_shared<const stl_slicer::TriangleMesh>(
                     combinedTransformedMesh(snapshots));
@@ -805,6 +853,8 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
                      settings.contourHealingThreshold,
                      settings.firstLayerOffset}}.slice(*source, &supportGenerationCancel_));
                 if (!supportGenerationCancel_.load(std::memory_order_relaxed)) {
+                    postProgress(SupportProgressStage::Slicing, 0, 0, true);
+                    postProgress(SupportProgressStage::FindingUnsupported, 0, 0, false);
                     stl_slicer::UnsupportedAreaResult detected =
                         stl_slicer::UnsupportedAreaAnalyzer{
                             {settings.criticalAngleDegrees, settings.overhangCoefficient}}
@@ -812,6 +862,16 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
                     if (supportGenerationCancel_.load(std::memory_order_relaxed)) {
                         payload->cancelled = true;
                     } else {
+                        const double latticeCellArea =
+                            std::sqrt(3.0) * 0.5 * settings.supportSpacing *
+                            settings.supportSpacing;
+                        const std::size_t estimatedContacts = static_cast<std::size_t>(
+                            std::max(1.0, std::ceil(detected.totalArea / latticeCellArea)));
+                        postProgress(SupportProgressStage::FindingUnsupported, 0, 0, true);
+                        postProgress(SupportProgressStage::ContactPoints,
+                                     0,
+                                     estimatedContacts,
+                                     false);
                         auto unsupported = std::make_shared<const stl_slicer::SliceData>(
                             std::move(detected.unsupported));
                         stl_slicer::SupportGenerationResult generated =
@@ -829,8 +889,30 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
                                   settings.supportBaseRadius,
                                   settings.supportPillarBottomRadius,
                                   settings.supportPillarTopRadius,
+                                  settings.supportModelIsolation,
                                   static_cast<std::size_t>(settings.supportCircumferencePoints)}}}
-                                .generate({source, slices, unsupported}, &supportGenerationCancel_);
+                                .generate(
+                                    {source, slices, unsupported},
+                                    &supportGenerationCancel_,
+                                    [&](const stl_slicer::SupportGenerationProgress &progress) {
+                                        SupportProgressStage stage =
+                                            SupportProgressStage::ContactPoints;
+                                        switch (progress.phase) {
+                                        case stl_slicer::SupportGenerationPhase::ContactPoints:
+                                            stage = SupportProgressStage::ContactPoints;
+                                            break;
+                                        case stl_slicer::SupportGenerationPhase::VolumeSegmentation:
+                                            stage = SupportProgressStage::VolumeSegmentation;
+                                            break;
+                                        case stl_slicer::SupportGenerationPhase::GeneratingSupports:
+                                            stage = SupportProgressStage::GeneratingSupports;
+                                            break;
+                                        }
+                                        postProgress(stage,
+                                                     progress.completed,
+                                                     progress.total,
+                                                     progress.finished);
+                                    });
                         payload->supports = std::move(generated.supports);
                         payload->contactPointCount = generated.contactPoints.size();
                         payload->processedLayerCount = generated.processedLayerCount;
@@ -850,12 +932,40 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
         });
 }
 
+void DocumentFrame::OnSupportGenerationProgress(wxThreadEvent &event) {
+    const auto payload =
+        event.GetPayload<std::shared_ptr<SupportGenerationProgressPayload>>();
+    if (!supportGenerationRunning_ || payload->modelRevision != modelRevision_ ||
+        payload->stage >= supportProgress_.size())
+        return;
+
+    SupportProgressState &stage = supportProgress_[payload->stage];
+    stage.started = true;
+    stage.completed = std::max(stage.completed, payload->completed);
+    if (payload->total > 0)
+        stage.total = payload->finished ? payload->total : std::max(stage.total, payload->total);
+    if (!payload->finished)
+        stage.total = std::max(stage.total, stage.completed);
+    stage.finished = stage.finished || payload->finished;
+
+    const std::size_t contactIndex =
+        static_cast<std::size_t>(SupportProgressStage::ContactPoints);
+    const std::size_t generationIndex =
+        static_cast<std::size_t>(SupportProgressStage::GeneratingSupports);
+    if (payload->stage == contactIndex && payload->finished) {
+        supportProgress_[generationIndex].total = payload->total;
+    }
+    UpdateStatus();
+}
+
 void DocumentFrame::OnSupportGenerationFinished(wxThreadEvent &event) {
     if (supportGenerationWorker_.joinable())
         supportGenerationWorker_.join();
     supportGenerationRunning_ = false;
     supportGenerationCancel_.store(false, std::memory_order_relaxed);
+    supportProgress_ = {};
     UpdateCommandState();
+    UpdateStatus();
 
     const auto payload = event.GetPayload<std::shared_ptr<SupportGenerationPayload>>();
     if (!payload->error.empty()) {

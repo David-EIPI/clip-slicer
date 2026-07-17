@@ -239,6 +239,13 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                        100.0,
                        0.1,
                        3);
+    addPillarDimension("Model isolation (mm):",
+                       supportModelIsolation_,
+                       settings.supportModelIsolation,
+                       0.0,
+                       1000.0,
+                       0.1,
+                       3);
     addPillarDimension("Minimum support angle (degrees):",
                        minimumSupportAngleDegrees_,
                        settings.minimumSupportAngleDegrees,
@@ -331,6 +338,10 @@ double SettingsDialog::SupportTipHeight() const {
 
 double SettingsDialog::SupportLatticeCellSize() const {
     return supportLatticeCellSize_->GetValue();
+}
+
+double SettingsDialog::SupportModelIsolation() const {
+    return supportModelIsolation_->GetValue();
 }
 
 double SettingsDialog::MinimumSupportAngleDegrees() const {

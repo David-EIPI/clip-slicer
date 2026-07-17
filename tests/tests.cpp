@@ -474,12 +474,33 @@ void testSupportGenerationScheduling() {
         return pillar;
     };
 
-    const SupportGenerationResult result =
-        SupportGenerator{{4}, std::move(kernels)}.generate(input);
+    std::atomic<bool> contactProgressFinished{false};
+    std::atomic<bool> generationProgressFinished{false};
+    std::atomic<std::size_t> reportedContacts{0};
+    std::atomic<std::size_t> reportedGenerated{0};
+    const SupportGenerationResult result = SupportGenerator{{4}, std::move(kernels)}.generate(
+        input,
+        nullptr,
+        [&](const SupportGenerationProgress &progress) {
+            if (progress.phase == SupportGenerationPhase::ContactPoints && progress.finished) {
+                reportedContacts.store(progress.total, std::memory_order_relaxed);
+                contactProgressFinished.store(true, std::memory_order_relaxed);
+            }
+            if (progress.phase == SupportGenerationPhase::GeneratingSupports &&
+                progress.finished) {
+                reportedGenerated.store(progress.completed, std::memory_order_relaxed);
+                generationProgressFinished.store(true, std::memory_order_relaxed);
+            }
+        });
     require(result.processedLayerCount == 3, "support generator processed the wrong layer count");
     require(result.contactPoints.size() == 6, "support generator lost detected contact points");
     require(pillarCalls == 6 && result.supports.triangles().size() == 6,
             "support generator did not build one shell per contact point");
+    require(contactProgressFinished.load(std::memory_order_relaxed) &&
+                generationProgressFinished.load(std::memory_order_relaxed) &&
+                reportedContacts.load(std::memory_order_relaxed) == 6 &&
+                reportedGenerated.load(std::memory_order_relaxed) == 6,
+            "support generator did not report completed contact and generation stages");
     for (std::size_t index = 0; index < layerCalls.size(); ++index)
         require(layerCalls[index] == (index == 1 || index == 2 || index == 4 ? 1 : 0),
                 "support slice work was not claimed exactly once");
@@ -612,6 +633,7 @@ void testExternalPillarGeneration() {
     options.baseRadius = 1.0;
     options.bottomRadius = 0.3;
     options.topRadius = 0.2;
+    options.modelIsolation = 0.0;
     options.circumferencePoints = 8;
 
     auto emptySpace = std::make_shared<ExternalPillarSpace>(emptySlices, bounds, 3.0, options);
@@ -658,6 +680,13 @@ void testExternalPillarGeneration() {
     require(obstructedSpace.route({0.0, 0.0, 2.1}).empty(),
             "external pillar escaped a trapped contact through the model");
 
+    ExternalPillarOptions isolatedOptions = options;
+    isolatedOptions.modelIsolation = 1.0;
+    ExternalPillarSpace isolatedSpace(
+        obstructedSlices, obstructionBounds, 3.0, isolatedOptions);
+    require(isolatedSpace.route({0.0, 0.0, 3.0}).empty(),
+            "model isolation did not enlarge the pillar clearance envelope");
+
     std::atomic<bool> cancel{true};
     ExternalPillarSpace cancelledSpace(emptySlices, bounds, 3.0, options, &cancel);
     require(!cancelledSpace.valid() && cancelledSpace.route({0.0, 0.0, 3.0}).empty(),
@@ -673,6 +702,16 @@ void testExternalPillarGeneration() {
     }
     require(invalidCellSizeRejected, "external pillar accepted a zero lattice cell size");
 
+    bool invalidIsolationRejected = false;
+    try {
+        ExternalPillarOptions invalid = options;
+        invalid.modelIsolation = -0.1;
+        (void)ExternalPillarSpace(emptySlices, bounds, 3.0, invalid);
+    } catch (const std::invalid_argument &) {
+        invalidIsolationRejected = true;
+    }
+    require(invalidIsolationRejected, "external pillar accepted negative model isolation");
+
     auto floatingModel = std::make_shared<TriangleMesh>();
     addBox(*floatingModel, 0.0, 0.0, 3.0, 1.0, 1.0, 4.0);
     auto floatingSlices = std::make_shared<SliceData>();
@@ -686,15 +725,29 @@ void testExternalPillarGeneration() {
     SupportGeneratorOptions generatorOptions;
     generatorOptions.workerCount = 2;
     generatorOptions.externalPillar = options;
-    const SupportGenerationResult integrated =
-        SupportGenerator(generatorOptions, std::move(oneContact))
-            .generate({floatingModel, floatingSlices, floatingUnsupported});
+    std::atomic<bool> segmentationStarted{false};
+    std::atomic<bool> segmentationFinished{false};
+    SupportGenerator generator(generatorOptions, std::move(oneContact));
+    const SupportGenerationResult integrated = generator.generate(
+        {floatingModel, floatingSlices, floatingUnsupported},
+        nullptr,
+        [&](const SupportGenerationProgress &progress) {
+            if (progress.phase != SupportGenerationPhase::VolumeSegmentation)
+                return;
+            if (progress.finished)
+                segmentationFinished.store(true, std::memory_order_relaxed);
+            else
+                segmentationStarted.store(true, std::memory_order_relaxed);
+        });
     require(integrated.contactPoints.size() == 1 &&
                 integrated.supports.triangles().size() >
                     generatorOptions.tip.circumferencePoints * 4,
             "support generator did not combine a tip with its external pillar");
     require(std::abs(integrated.supports.bounds().min.z) < 1e-12,
             "integrated external support did not rest on the build platform");
+    require(segmentationStarted.load(std::memory_order_relaxed) &&
+                segmentationFinished.load(std::memory_order_relaxed),
+            "external support generation did not report volume segmentation progress");
 }
 
 void testSupportTipGeneration() {

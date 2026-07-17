@@ -18,6 +18,7 @@ class AppSettings {
     static constexpr double defaultSupportTipBottomRadius = 0.75;
     static constexpr double defaultSupportTipHeight = 2.0;
     static constexpr double defaultSupportLatticeCellSize = 0.5;
+    static constexpr double defaultSupportModelIsolation = 1.0;
     static constexpr double defaultMinimumSupportAngleDegrees = 30.0;
     static constexpr double defaultSupportBaseHeight = 0.5;
     static constexpr double defaultSupportBaseRadius = 2.0;
@@ -43,6 +44,7 @@ class AppSettings {
     double supportTipBottomRadius = defaultSupportTipBottomRadius;
     double supportTipHeight = defaultSupportTipHeight;
     double supportLatticeCellSize = defaultSupportLatticeCellSize;
+    double supportModelIsolation = defaultSupportModelIsolation;
     double minimumSupportAngleDegrees = defaultMinimumSupportAngleDegrees;
     double supportBaseHeight = defaultSupportBaseHeight;
     double supportBaseRadius = defaultSupportBaseRadius;

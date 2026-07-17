@@ -117,6 +117,14 @@ in the form \texttt{Run 1 of 10 (S=12.34)}. The current orientation is analyzed
 first, and its initial score is displayed before rotated search candidates are
 evaluated. Model transformations or analysis-setting changes cancel stale
 optimization work.
+During support generation, the same status field follows an ordered step list:
+emph{Slicing}, emph{Finding unsupported}, emph{Contact points},
+emph{Volume segmentation}, and emph{Generating supports}. Contact discovery
+and volume segmentation may run concurrently, but the display advances only
+after the last worker for the current step has finished. Contact stages show
+calculated or processed contacts in the form 	exttt{(10 of 1234)}. Before the
+final contact count is known, the total is estimated from unsupported area and
+the configured contact spacing.
 The \emph{Stop} toolbar button requests cooperative cancellation. Detection,
 optimization, and support-generation workers stop between slicing, analysis,
 or generation operations, and the controls return to their idle state after
@@ -184,7 +192,9 @@ the route search and defaults to 0.5 model units. Minimum support angle is the
 smallest permitted angle between a pillar centerline segment and the build
 platform and defaults to 30 degrees. The cylindrical platform base defaults to
 a height of 0.5 and radius of 2.0 model units. The tapered pillar wire defaults
-to a bottom radius of 0.75 and a top radius of 0.5 model units.
+to a bottom radius of 0.75 and a top radius of 0.5 model units. Model isolation
+adds clearance between every external support and the model surface and
+defaults to 1.0 model unit.
 External pillar bases use the global Z=0 build platform. Models intended for
 support generation should therefore be placed in the positive Z half-space;
 the \emph{Move to Origin} command performs this placement when appropriate.
@@ -208,8 +218,9 @@ the cone outside the model. Accepted cone sides and both polygonal end
 surfaces are triangulated and combined in the generated support model.
 
 External-pillar routing is prepared concurrently with contact detection. The
-model's layer polygons are expanded by a conservative envelope of the local
-pillar radius and rasterized onto the configured cubic lattice. Starting with
+model's layer polygons are expanded by the local pillar radius, configured
+model isolation, and a conservative grid envelope before being rasterized onto
+the configured cubic lattice. Starting with
 base positions whose cylinders do not intersect the model, each successive Z
 level records cells reachable through an unobstructed segment which satisfies
 the minimum support angle. Each cell stores only the predecessor direction

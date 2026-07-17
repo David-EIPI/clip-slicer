@@ -28,6 +28,18 @@ using SupportContactDetector = std::function<std::vector<SupportContactPoint>(
 using SupportPillarBuilder = std::function<TriangleMesh(
     const SupportGenerationInput &, const SupportContactPoint &, const std::atomic<bool> *cancel)>;
 
+enum class SupportGenerationPhase { ContactPoints, VolumeSegmentation, GeneratingSupports };
+
+struct SupportGenerationProgress {
+    SupportGenerationPhase phase = SupportGenerationPhase::ContactPoints;
+    std::size_t completed = 0;
+    std::size_t total = 0;
+    bool finished = false;
+};
+
+using SupportGenerationProgressCallback =
+    std::function<void(const SupportGenerationProgress &progress)>;
+
 struct SupportGenerationKernels {
     // Kernels are invoked concurrently and must not mutate shared input data.
     SupportContactDetector detectContactPoints;
@@ -53,7 +65,8 @@ class SupportGenerator {
     explicit SupportGenerator(SupportGeneratorOptions options = {},
                               SupportGenerationKernels kernels = {});
     SupportGenerationResult generate(const SupportGenerationInput &input,
-                                     const std::atomic<bool> *cancel = nullptr) const;
+                                     const std::atomic<bool> *cancel = nullptr,
+                                     SupportGenerationProgressCallback progress = {}) const;
 
   private:
     SupportGeneratorOptions options_;

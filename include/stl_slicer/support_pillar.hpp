@@ -16,6 +16,7 @@ struct ExternalPillarOptions {
     double baseRadius = 2.0;
     double bottomRadius = 0.75;
     double topRadius = 0.5;
+    double modelIsolation = 1.0;
     std::size_t circumferencePoints = 12;
 };
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "stl_slicer/scene_model.hpp"
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -54,6 +55,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnInteractiveSlice(wxCommandEvent &);
     void OnDetectUnsupported(wxCommandEvent &);
     void OnGenerateSupports(wxCommandEvent &);
+    void OnSupportGenerationProgress(wxThreadEvent &event);
     void OnSupportGenerationFinished(wxThreadEvent &event);
     void OnUnsupportedAnalysisFinished(wxThreadEvent &event);
     void OnOptimizeOrientation(wxCommandEvent &);
@@ -69,6 +71,22 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnListCheck(wxCommandEvent &);
     void PublishStatus();
     void UpdateCommandState();
+
+    enum class SupportProgressStage : std::size_t {
+        Slicing,
+        FindingUnsupported,
+        ContactPoints,
+        VolumeSegmentation,
+        GeneratingSupports,
+        Count
+    };
+
+    struct SupportProgressState {
+        std::size_t completed = 0;
+        std::size_t total = 0;
+        bool started = false;
+        bool finished = false;
+    };
 
     std::vector<std::shared_ptr<stl_slicer::SceneModel>> models_;
     wxCheckListBox *modelList_ = nullptr;
@@ -93,6 +111,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     std::uint64_t modelRevision_ = 0;
     bool unsupportedAnalysisRunning_ = false;
     bool supportGenerationRunning_ = false;
+    std::array<SupportProgressState,
+               static_cast<std::size_t>(SupportProgressStage::Count)>
+        supportProgress_{};
     bool optimizationRunning_ = false;
     std::size_t optimizationCompleted_ = 0;
     std::size_t optimizationTotal_ = 0;

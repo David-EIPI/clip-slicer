@@ -23,6 +23,7 @@ class SettingsDialog final : public wxDialog {
     double SupportTipBottomRadius() const;
     double SupportTipHeight() const;
     double SupportLatticeCellSize() const;
+    double SupportModelIsolation() const;
     double MinimumSupportAngleDegrees() const;
     double SupportBaseHeight() const;
     double SupportBaseRadius() const;
@@ -45,6 +46,7 @@ class SettingsDialog final : public wxDialog {
     wxSpinCtrlDouble *supportTipBottomRadius_ = nullptr;
     wxSpinCtrlDouble *supportTipHeight_ = nullptr;
     wxSpinCtrlDouble *supportLatticeCellSize_ = nullptr;
+    wxSpinCtrlDouble *supportModelIsolation_ = nullptr;
     wxSpinCtrlDouble *minimumSupportAngleDegrees_ = nullptr;
     wxSpinCtrlDouble *supportBaseHeight_ = nullptr;
     wxSpinCtrlDouble *supportBaseRadius_ = nullptr;

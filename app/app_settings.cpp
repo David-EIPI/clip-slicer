@@ -32,6 +32,7 @@ bool AppSettings::Load() {
     supportTipBottomRadius = defaultSupportTipBottomRadius;
     supportTipHeight = defaultSupportTipHeight;
     supportLatticeCellSize = defaultSupportLatticeCellSize;
+    supportModelIsolation = defaultSupportModelIsolation;
     minimumSupportAngleDegrees = defaultMinimumSupportAngleDegrees;
     supportBaseHeight = defaultSupportBaseHeight;
     supportBaseRadius = defaultSupportBaseRadius;
@@ -99,6 +100,10 @@ bool AppSettings::Load() {
     config.Read("/supports/latticeCellSize", &value, defaultSupportLatticeCellSize);
     if (std::isfinite(value) && value > 0.0)
         supportLatticeCellSize = value;
+    value = defaultSupportModelIsolation;
+    config.Read("/supports/modelIsolation", &value, defaultSupportModelIsolation);
+    if (std::isfinite(value) && value >= 0.0)
+        supportModelIsolation = value;
     value = defaultMinimumSupportAngleDegrees;
     config.Read("/supports/minimumSupportAngleDegrees", &value, defaultMinimumSupportAngleDegrees);
     if (std::isfinite(value) && value >= 5.0 && value < 90.0)
@@ -148,6 +153,7 @@ bool AppSettings::Save() const {
     config.Write("/supports/tipBottomRadius", supportTipBottomRadius);
     config.Write("/supports/tipHeight", supportTipHeight);
     config.Write("/supports/latticeCellSize", supportLatticeCellSize);
+    config.Write("/supports/modelIsolation", supportModelIsolation);
     config.Write("/supports/minimumSupportAngleDegrees", minimumSupportAngleDegrees);
     config.Write("/supports/baseHeight", supportBaseHeight);
     config.Write("/supports/baseRadius", supportBaseRadius);

@@ -323,8 +323,10 @@ SupportGenerator::SupportGenerator(SupportGeneratorOptions options,
             };
 }
 
-SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput &input,
-                                                   const std::atomic<bool> *cancel) const {
+SupportGenerationResult
+SupportGenerator::generate(const SupportGenerationInput &input,
+                           const std::atomic<bool> *cancel,
+                           SupportGenerationProgressCallback progress) const {
     validateInput(input);
     SupportGenerationResult result;
     if (cancelled(cancel)) {
@@ -339,6 +341,7 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
         std::size_t nextLayer = 0;
         std::size_t remainingLayers = 0;
         std::size_t processedLayers = 0;
+        std::size_t processedContacts = 0;
         std::deque<SupportContactPoint> contactQueue;
         std::vector<SupportContactPoint> detectedContacts;
         TriangleMesh supports;
@@ -353,8 +356,11 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
         if (hasUnsupportedArea)
             ++shared.remainingLayers;
     }
-    if (shared.remainingLayers == 0)
+    if (shared.remainingLayers == 0) {
+        if (progress)
+            progress({SupportGenerationPhase::ContactPoints, 0, 0, true});
         return result;
+    }
 
     SupportPillarBuilder buildPillar = kernels_.buildPillar;
     std::shared_future<std::shared_ptr<const ExternalPillarSpace>> externalSpace;
@@ -371,15 +377,24 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
         }
         const std::launch spaceLaunch =
             options_.workerCount > 1 ? std::launch::async : std::launch::deferred;
+        if (progress)
+            progress({SupportGenerationPhase::VolumeSegmentation, 0, 0, false});
         externalSpace =
             std::async(spaceLaunch,
                        [slices = input.slices,
                         bounds = input.sourceModel->bounds(),
                         maximumUnsupportedHeight,
                         options = options_.externalPillar,
+                        progress,
                         cancel]() {
-                           return std::make_shared<const ExternalPillarSpace>(
+                           auto space = std::make_shared<const ExternalPillarSpace>(
                                slices, bounds, maximumUnsupportedHeight, options, cancel);
+                           if (progress)
+                               progress({SupportGenerationPhase::VolumeSegmentation,
+                                         0,
+                                         0,
+                                         true});
+                           return space;
                        })
                 .share();
         struct PillarBuilderState {
@@ -465,6 +480,8 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
                 if (workKind == WorkKind::Layer) {
                     std::vector<SupportContactPoint> contacts =
                         kernels_.detectContactPoints(input, layerIndex, cancel);
+                    std::size_t detectedCount = 0;
+                    bool detectionComplete = false;
                     {
                         std::lock_guard<std::mutex> lock(shared.mutex);
                         shared.layers[layerIndex] = LayerState::Complete;
@@ -474,14 +491,38 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
                             shared.detectedContacts.end(), contacts.begin(), contacts.end());
                         for (SupportContactPoint &contact : contacts)
                             shared.contactQueue.push_back(std::move(contact));
+                        detectedCount = shared.detectedContacts.size();
+                        detectionComplete = shared.remainingLayers == 0;
+                    }
+                    if (progress) {
+                        progress({SupportGenerationPhase::ContactPoints,
+                                  detectedCount,
+                                  detectionComplete ? detectedCount : 0,
+                                  detectionComplete});
+                        if (detectionComplete) {
+                            progress({SupportGenerationPhase::GeneratingSupports,
+                                      0,
+                                      detectedCount,
+                                      false});
+                        }
                     }
                     shared.workAvailable.notify_all();
                 } else {
                     TriangleMesh shell = buildPillar(input, contactPoint, cancel);
-                    if (!shell.triangles().empty()) {
+                    std::size_t processedContacts = 0;
+                    std::size_t totalContacts = 0;
+                    {
                         std::lock_guard<std::mutex> lock(shared.mutex);
-                        shared.supports.append(std::move(shell));
+                        if (!shell.triangles().empty())
+                            shared.supports.append(std::move(shell));
+                        processedContacts = ++shared.processedContacts;
+                        totalContacts = shared.detectedContacts.size();
                     }
+                    if (progress)
+                        progress({SupportGenerationPhase::GeneratingSupports,
+                                  processedContacts,
+                                  totalContacts,
+                                  false});
                 }
             } catch (...) {
                 fail(std::current_exception());
@@ -506,6 +547,11 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
         std::rethrow_exception(shared.error);
     if (externalSpace.valid())
         (void)externalSpace.get();
+    if (progress)
+        progress({SupportGenerationPhase::GeneratingSupports,
+                  shared.processedContacts,
+                  shared.detectedContacts.size(),
+                  true});
     result.cancelled = cancelled(cancel);
     result.processedLayerCount = shared.processedLayers;
     result.contactPoints = std::move(shared.detectedContacts);
