@@ -64,7 +64,10 @@ aligning the camera for the best view. The translucent section plane spans the
 shared bounds of the selected models and can be moved along its normal with
 Alt+wheel. Plane positions follow the configured slicing sequence: the first
 position is the selected-bounds minimum plus the first-layer offset, and each
-subsequent position advances by one layer thickness.
+subsequent position advances by one layer thickness. While Section mode is
+active, a spin box and vertical scrollbar beside the view show and control the
+slice index. With the scrollbar focused, the Up and Down keys move by one slice
+and Page Up and Page Down move by ten slices.
 
 Moving the plane recalculates the intersection contours for selected models.
 A filled, double-sided copy of those contours is drawn on a dedicated

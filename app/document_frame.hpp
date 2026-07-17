@@ -17,6 +17,11 @@ class wxActivateEvent;
 class wxCloseEvent;
 class wxDPIChangedEvent;
 class wxMenuItem;
+class wxPanel;
+class wxScrollBar;
+class wxScrollEvent;
+class wxSpinCtrl;
+class wxSpinEvent;
 class wxToolBar;
 class wxThreadEvent;
 
@@ -58,6 +63,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnExportStl(wxCommandEvent &);
     void OnSlice(wxCommandEvent &);
     void OnInteractiveSlice(wxCommandEvent &);
+    void OnSectionIndexChanged(wxSpinEvent &event);
+    void OnSectionScroll(wxScrollEvent &event);
     void OnDetectUnsupported(wxCommandEvent &);
     void OnGenerateSupports(wxCommandEvent &);
     void OnSupportGenerationProgress(wxThreadEvent &event);
@@ -76,6 +83,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnListCheck(wxCommandEvent &);
     void PublishStatus();
     void UpdateCommandState();
+    void UpdateSectionControls();
     void UpdateToolbarBitmaps();
 
     enum class SupportProgressStage : std::size_t {
@@ -97,6 +105,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     std::vector<std::shared_ptr<stl_slicer::SceneModel>> models_;
     wxCheckListBox *modelList_ = nullptr;
     ModelCanvas *canvas_ = nullptr;
+    wxPanel *sectionControls_ = nullptr;
+    wxSpinCtrl *sectionIndex_ = nullptr;
+    wxScrollBar *sectionScroll_ = nullptr;
     wxToolBar *toolbar_ = nullptr;
     wxMenuItem *exportItem_ = nullptr;
     wxMenuItem *exportStlItem_ = nullptr;

@@ -37,6 +37,13 @@ class ModelCanvas final : public wxGLCanvas {
     double SliceArea() const {
         return sliceArea_;
     }
+    std::size_t SliceIndex() const {
+        return sliceIndex_;
+    }
+    std::size_t MaximumSliceIndex() const {
+        return maximumSliceIndex_;
+    }
+    void SetSliceIndex(std::size_t index);
     SectionAxis SliceAxis() const {
         return sectionAxis_;
     }

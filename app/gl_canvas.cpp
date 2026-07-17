@@ -838,6 +838,19 @@ void ModelCanvas::UpdateSectionSliceRange(bool initializeIndex) {
         sliceIndex_ = std::min(sliceIndex_, maximumSliceIndex_);
     slicePosition_ = minimum + firstOffset + static_cast<double>(sliceIndex_) * thickness;
 }
+void ModelCanvas::SetSliceIndex(std::size_t index) {
+    if (!interactiveSlice_ || !sectionBounds_.valid())
+        return;
+    index = std::min(index, maximumSliceIndex_);
+    if (index == sliceIndex_)
+        return;
+    sliceIndex_ = index;
+    sliceStepAccumulator_ = 0.0;
+    slicePosition_ = axisCoordinate(sectionBounds_.min, sectionAxis_) +
+                     document_.FirstLayerOffset() +
+                     static_cast<double>(sliceIndex_) * document_.LayerThickness();
+    UpdateInteractiveSlice();
+}
 void ModelCanvas::AlignSectionView() {
     if (!sectionBounds_.valid())
         return;
@@ -885,6 +898,7 @@ void ModelCanvas::UpdateInteractiveSlice() {
     }
     document_.UpdateStatus();
     Refresh();
+    document_.InteractiveSliceStateChanged();
     if (interactiveSliceRunning_) {
         interactiveSlicePending_ = interactiveSlice_;
         interactiveSliceCancel_.store(true, std::memory_order_relaxed);
