@@ -241,7 +241,11 @@ where adjacent segments provide enough room. The base's vertical centerline
 and the contact tip's conical centerline participate in this smoothing, so the
 pillar enters both adjoining solids without a sharp elbow. Each bend radius is
 the local pillar radius, and its number of axial subdivisions scales with the
-configured circumference-point resolution.
+configured circumference-point resolution. Because the base and tip axes are
+terminal rather than shared centerline segments, their fillets may use nearly
+the full axis length when required by the transition angle. If either terminal
+axis is still too short, its bend radius is reduced to fit instead of leaving
+a sharp joint. Body bends retain the full local pillar radius.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

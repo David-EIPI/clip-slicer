@@ -661,7 +661,7 @@ void testExternalPillarGeneration() {
                 pillar.bounds().max.x >= options.baseRadius - 1e-12,
             "external pillar base radius was not applied");
 
-    const Vec3 angledTipCenter{0.5, 0.0, 3.5};
+    const Vec3 angledTipCenter{std::sqrt(3.0) * 0.025, 0.0, 3.025};
     const TriangleMesh roundedPillar =
         ExternalPillarBuilder(emptySpace, options).build(
             {0.0, 0.0, 3.0}, angledTipCenter);

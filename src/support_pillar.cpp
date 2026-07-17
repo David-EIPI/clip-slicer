@@ -98,13 +98,28 @@ std::vector<Vec3> smoothCenterline(const std::vector<Vec3> &route,
         const double angle = std::acos(cosine);
         const std::size_t routeIndex = corner - 1;
         const double fraction = distances[routeIndex] / distances.back();
-        const double radius =
+        const double desiredRadius =
             options.bottomRadius + (options.topRadius - options.bottomRadius) * fraction;
-        const double tangentDistance = radius * std::tan(angle * 0.5);
         const Vec3 axis = normalized(cross(incomingDirection, outgoingDirection));
+        const double incomingLimit = corner == 1 ? 0.95 : 0.45;
+        const double outgoingLimit =
+            hasTipGuide && corner == finalCorner ? 0.95 : 0.45;
+        const bool terminalJoint = corner == 1 ||
+                                   (hasTipGuide && corner == finalCorner);
+        const double tangentScale = std::tan(angle * 0.5);
+        const double maximumTangentDistance =
+            std::min(incomingLimit * incomingLength, outgoingLimit * outgoingLength);
+        const double radius = terminalJoint && tangentScale > 1e-12
+                                  ? std::min(desiredRadius,
+                                             maximumTangentDistance / tangentScale)
+                                  : desiredRadius;
+        const double tangentDistance = radius * tangentScale;
+        const double fitTolerance =
+            1e-12 * std::max({1.0, incomingLength, outgoingLength});
         const bool canSmooth = angle > 1e-4 && angle < pi - 1e-4 && length(axis) > 1e-12 &&
-                               tangentDistance <= 0.45 * incomingLength &&
-                               tangentDistance <= 0.45 * outgoingLength;
+                               radius > 1e-9 &&
+                               tangentDistance <= incomingLimit * incomingLength + fitTolerance &&
+                               tangentDistance <= outgoingLimit * outgoingLength + fitTolerance;
         if (!canSmooth) {
             result.push_back(extended[corner]);
             continue;
