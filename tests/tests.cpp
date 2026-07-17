@@ -661,6 +661,16 @@ void testExternalPillarGeneration() {
                 pillar.bounds().max.x >= options.baseRadius - 1e-12,
             "external pillar base radius was not applied");
 
+    const Vec3 angledTipCenter{0.5, 0.0, 3.5};
+    const TriangleMesh roundedPillar =
+        ExternalPillarBuilder(emptySpace, options).build(
+            {0.0, 0.0, 3.0}, angledTipCenter);
+    require(roundedPillar.triangles().size() > pillar.triangles().size(),
+            "external pillar did not add rings for its tip-axis fillet");
+    require(roundedPillar.bounds().max.z > 3.0 &&
+                roundedPillar.bounds().max.z < angledTipCenter.z + options.topRadius,
+            "external pillar fillet did not enter the adjoining tip volume");
+
     auto obstructedSlices = std::make_shared<SliceData>();
     for (std::size_t index = 0; index < 20; ++index) {
         const double z = 0.05 + static_cast<double>(index) * 0.1;

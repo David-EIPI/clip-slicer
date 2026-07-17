@@ -56,6 +56,86 @@ Vec3 normalized(const Vec3 &value) {
     return magnitude > 1e-15 ? multiply(value, 1.0 / magnitude) : Vec3{};
 }
 
+Vec3 rotateAroundAxis(const Vec3 &value, const Vec3 &axis, double angle) {
+    const double cosine = std::cos(angle);
+    const double sine = std::sin(angle);
+    return add(add(multiply(value, cosine), multiply(cross(axis, value), sine)),
+               multiply(axis, dot(axis, value) * (1.0 - cosine)));
+}
+
+std::vector<Vec3> smoothCenterline(const std::vector<Vec3> &route,
+                                   const Vec3 *tipCenter,
+                                   const ExternalPillarOptions &options) {
+    if (route.size() < 2)
+        return route;
+
+    std::vector<double> distances(route.size(), 0.0);
+    for (std::size_t index = 1; index < route.size(); ++index)
+        distances[index] =
+            distances[index - 1] + length(subtract(route[index], route[index - 1]));
+    if (distances.back() <= 1e-12)
+        return route;
+
+    std::vector<Vec3> extended;
+    extended.reserve(route.size() + 2);
+    extended.push_back({route.front().x, route.front().y, 0.0});
+    extended.insert(extended.end(), route.begin(), route.end());
+    if (tipCenter && length(subtract(*tipCenter, route.back())) > 1e-12)
+        extended.push_back(*tipCenter);
+
+    const bool hasTipGuide = extended.size() == route.size() + 2;
+    const std::size_t finalCorner = extended.size() - 2;
+    std::vector<Vec3> result;
+    result.reserve(route.size() + options.circumferencePoints * 2);
+    for (std::size_t corner = 1; corner <= finalCorner; ++corner) {
+        const Vec3 incoming = subtract(extended[corner], extended[corner - 1]);
+        const Vec3 outgoing = subtract(extended[corner + 1], extended[corner]);
+        const double incomingLength = length(incoming);
+        const double outgoingLength = length(outgoing);
+        const Vec3 incomingDirection = normalized(incoming);
+        const Vec3 outgoingDirection = normalized(outgoing);
+        const double cosine = std::clamp(dot(incomingDirection, outgoingDirection), -1.0, 1.0);
+        const double angle = std::acos(cosine);
+        const std::size_t routeIndex = corner - 1;
+        const double fraction = distances[routeIndex] / distances.back();
+        const double radius =
+            options.bottomRadius + (options.topRadius - options.bottomRadius) * fraction;
+        const double tangentDistance = radius * std::tan(angle * 0.5);
+        const Vec3 axis = normalized(cross(incomingDirection, outgoingDirection));
+        const bool canSmooth = angle > 1e-4 && angle < pi - 1e-4 && length(axis) > 1e-12 &&
+                               tangentDistance <= 0.45 * incomingLength &&
+                               tangentDistance <= 0.45 * outgoingLength;
+        if (!canSmooth) {
+            result.push_back(extended[corner]);
+            continue;
+        }
+
+        const Vec3 arcStart =
+            subtract(extended[corner], multiply(incomingDirection, tangentDistance));
+        const Vec3 arcEnd = add(extended[corner],
+                                multiply(outgoingDirection, tangentDistance));
+        const Vec3 centerDirection = normalized(subtract(outgoingDirection, incomingDirection));
+        const Vec3 arcCenter =
+            add(extended[corner], multiply(centerDirection, radius / std::cos(angle * 0.5)));
+        const Vec3 startRadius = subtract(arcStart, arcCenter);
+        result.push_back(arcStart);
+        const std::size_t arcSegments = std::max<std::size_t>(
+            2,
+            static_cast<std::size_t>(std::ceil(
+                static_cast<double>(options.circumferencePoints) * angle / (2.0 * pi))));
+        for (std::size_t segment = 1; segment < arcSegments; ++segment) {
+            const double segmentAngle =
+                angle * static_cast<double>(segment) / static_cast<double>(arcSegments);
+            result.push_back(add(arcCenter,
+                                 rotateAroundAxis(startRadius, axis, segmentAngle)));
+        }
+        result.push_back(arcEnd);
+    }
+    if (!hasTipGuide)
+        result.push_back(route.back());
+    return result;
+}
+
 void addTriangle(TriangleMesh &mesh, const Vec3 &first, const Vec3 &second, const Vec3 &third) {
     Triangle triangle;
     triangle.vertices = {first, second, third};
@@ -742,9 +822,24 @@ ExternalPillarBuilder::ExternalPillarBuilder(std::shared_ptr<const ExternalPilla
 
 TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
                                           const std::atomic<bool> *cancel) const {
+    return buildImpl(attachment, nullptr, cancel);
+}
+
+TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
+                                          const Vec3 &tipCenter,
+                                          const std::atomic<bool> *cancel) const {
+    return buildImpl(attachment, &tipCenter, cancel);
+}
+
+TriangleMesh ExternalPillarBuilder::buildImpl(const Vec3 &attachment,
+                                              const Vec3 *tipCenter,
+                                              const std::atomic<bool> *cancel) const {
     TriangleMesh result;
     std::vector<Vec3> centers = space_->route(attachment, cancel);
     if (centers.size() < 2 || cancelled(cancel))
+        return result;
+    centers = smoothCenterline(centers, tipCenter, options_);
+    if (centers.size() < 2)
         return result;
 
     std::vector<double> distances(centers.size(), 0.0);
@@ -768,10 +863,17 @@ TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
         else
             tangent = subtract(centers[centerIndex + 1], centers[centerIndex - 1]);
         tangent = normalized(tangent);
-        const Vec3 helper = std::abs(tangent.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
-        Vec3 firstDirection = normalized(cross(helper, tangent));
-        if (centerIndex > 0 && dot(firstDirection, previousFirstDirection) < 0.0)
-            firstDirection = multiply(firstDirection, -1.0);
+        Vec3 firstDirection;
+        if (centerIndex > 0) {
+            firstDirection = normalized(subtract(
+                previousFirstDirection,
+                multiply(tangent, dot(previousFirstDirection, tangent))));
+        }
+        if (length(firstDirection) <= 1e-12) {
+            const Vec3 helper =
+                std::abs(tangent.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
+            firstDirection = normalized(cross(helper, tangent));
+        }
         previousFirstDirection = firstDirection;
         const Vec3 secondDirection = normalized(cross(tangent, firstDirection));
         const double fraction = distances[centerIndex] / distances.back();

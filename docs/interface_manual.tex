@@ -118,11 +118,11 @@ first, and its initial score is displayed before rotated search candidates are
 evaluated. Model transformations or analysis-setting changes cancel stale
 optimization work.
 During support generation, the same status field follows an ordered step list:
-emph{Slicing}, emph{Finding unsupported}, emph{Contact points},
-emph{Volume segmentation}, and emph{Generating supports}. Contact discovery
+\emph{Slicing}, \emph{Finding unsupported}, \emph{Contact points},
+\emph{Volume segmentation}, and \emph{Generating supports}. Contact discovery
 and volume segmentation may run concurrently, but the display advances only
 after the last worker for the current step has finished. Contact stages show
-calculated or processed contacts in the form 	exttt{(10 of 1234)}. Before the
+calculated or processed contacts in the form \texttt{(10 of 1234)}. Before the
 final contact count is known, the total is estimated from unsupported area and
 the configured contact spacing.
 The \emph{Stop} toolbar button requests cooperative cancellation. Detection,
@@ -236,6 +236,12 @@ Collinear centerline steps are merged before a continuously tapered polygonal
 pipe and cylindrical base are triangulated. Contacts for which no
 collision-free external route exists are left for the future internal pillar
 stage and do not emit incomplete geometry.
+Direction changes in the centerline are replaced by tangent circular fillets
+where adjacent segments provide enough room. The base's vertical centerline
+and the contact tip's conical centerline participate in this smoothing, so the
+pillar enters both adjoining solids without a sharp elbow. Each bend radius is
+the local pillar radius, and its number of axial subdivisions scales with the
+configured circumference-point resolution.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

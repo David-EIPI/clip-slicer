@@ -416,7 +416,8 @@ SupportGenerator::generate(const SupportGenerationInput &input,
                     std::make_shared<const ExternalPillarBuilder>(space.get(), options);
             });
             TriangleMesh pillar =
-                pillarBuilderState->builder->build(tip.pillarAttachment, cancel);
+                pillarBuilderState->builder->build(
+                    tip.pillarAttachment, contact.position, cancel);
             if (pillar.triangles().empty() || cancelled(cancel))
                 return TriangleMesh{};
 

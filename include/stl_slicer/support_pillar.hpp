@@ -42,8 +42,15 @@ class ExternalPillarBuilder {
     ExternalPillarBuilder(std::shared_ptr<const ExternalPillarSpace> space,
                           ExternalPillarOptions options = {});
     TriangleMesh build(const Vec3 &attachment, const std::atomic<bool> *cancel = nullptr) const;
+    TriangleMesh build(const Vec3 &attachment,
+                       const Vec3 &tipCenter,
+                       const std::atomic<bool> *cancel = nullptr) const;
 
   private:
+    TriangleMesh buildImpl(const Vec3 &attachment,
+                           const Vec3 *tipCenter,
+                           const std::atomic<bool> *cancel) const;
+
     std::shared_ptr<const ExternalPillarSpace> space_;
     ExternalPillarOptions options_;
     std::vector<Vec3> unitCircle_;
