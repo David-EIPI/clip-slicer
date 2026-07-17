@@ -60,7 +60,9 @@ legible.
 
 The \emph{Section} toolbar button or \emph{Slice > Section} menu command opens
 a dialog for choosing an X-, Y-, or Z-normal section plane and optionally
-aligning the camera for the best view. The translucent section plane spans the
+aligning the camera for the best view. Its Clipping choice can remain \emph{No},
+or hide selected model geometry \emph{Above} or \emph{Below} the moving plane.
+The translucent section plane spans the
 shared bounds of the selected models and can be moved along its normal with
 Alt+wheel. Plane positions follow the configured slicing sequence: the first
 position is the selected-bounds minimum plus the first-layer offset, and each
@@ -74,6 +76,9 @@ A filled, double-sided copy of those contours is drawn on a dedicated
 semi-transparent plane outside the selected models, and the second status-bar
 field reports the coordinate using the selected axis letter. Best-view
 alignment faces the display plane squarely and scales it to fit the viewport.
+Hiding models affects their rendered geometry only: the build platform,
+section and projection planes, and projected contours remain visible, including
+when all models are hidden.
 
 \subsection{Unsupported Areas}
 

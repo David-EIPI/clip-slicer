@@ -146,10 +146,14 @@ The library API is divided into reusable data and processing components:
 - Section mode supports planes normal to the X, Y, or Z axis. Alt+wheel moves the translucent
   section plane and updates a filled, double-sided cross-section on a separate display plane
   outside the selected models. The optional best-view mode faces and fits that plane to the
-  viewport. Section positions snap to the configured first-layer offset and layer-thickness
+  viewport. Optional Above or Below clipping hides the corresponding side of selected model
+  geometry while leaving the section display intact. Section positions snap to the configured
+  first-layer offset and layer-thickness
   sequence. Alt+Shift+left drag provides the same section-position control without a wheel. A
   slice-index spin box and vertical scrollbar beside the view provide direct positioning; with
-  the scrollbar focused, Up/Down move one slice and Page Up/Page Down move ten slices.
+  the scrollbar focused, Up/Down move one slice and Page Up/Page Down move ten slices. Model
+  visibility does not hide the build platform, section plane, projection plane, or projected
+  contours.
 
 `File > Open...` creates a new document, while `File > Open into document...` adds a model to the
 active document. Slice export merges every selected sliced model and stably orders their layers by

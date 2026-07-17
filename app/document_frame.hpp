@@ -36,6 +36,7 @@ class DocumentFrame final : public wxMDIChildFrame {
         return models_;
     }
     void AddModel(std::shared_ptr<stl_slicer::SceneModel> model);
+    stl_slicer::Bounds3 ModelBounds() const;
     stl_slicer::Bounds3 VisibleBounds() const;
     stl_slicer::Vec3 SelectedCenter() const;
     void RefreshModelList();

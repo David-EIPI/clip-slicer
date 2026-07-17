@@ -15,6 +15,7 @@ class DocumentFrame;
 class wxThreadEvent;
 
 enum class SectionAxis { X, Y, Z };
+enum class SectionClipping { None, Above, Below };
 
 class ModelCanvas final : public wxGLCanvas {
   public:
@@ -27,7 +28,8 @@ class ModelCanvas final : public wxGLCanvas {
     void SettingsChanged();
     void SetInteractiveSection(bool enabled,
                                SectionAxis axis = SectionAxis::Z,
-                               bool autoRotate = false);
+                               bool autoRotate = false,
+                               SectionClipping clipping = SectionClipping::None);
     bool InteractiveSlice() const {
         return interactiveSlice_;
     }
@@ -84,6 +86,7 @@ class ModelCanvas final : public wxGLCanvas {
     GLuint unsupportedVertexBuffer_ = 0, unsupportedIndexBuffer_ = 0;
     GLsizei unsupportedIndexCount_ = 0;
     GLint matrixUniform_ = -1, modelUniform_ = -1, colorUniform_ = -1, litUniform_ = -1;
+    GLint clippingUniform_ = -1, clipPlaneUniform_ = -1;
     std::unordered_map<const stl_slicer::SceneModel *, Buffer> buffers_;
     std::unordered_map<const stl_slicer::SceneModel *,
                        std::shared_ptr<const stl_slicer::TriangleMesh>>
@@ -100,6 +103,7 @@ class ModelCanvas final : public wxGLCanvas {
     bool interactiveSliceRunning_ = false;
     bool interactiveSlicePending_ = false;
     SectionAxis sectionAxis_ = SectionAxis::Z;
+    SectionClipping sectionClipping_ = SectionClipping::None;
     stl_slicer::Bounds3 sectionBounds_;
     std::size_t sliceIndex_ = 0;
     std::size_t maximumSliceIndex_ = 0;

@@ -174,6 +174,16 @@ class SectionDialog final : public wxDialog {
                               wxRA_SPECIFY_ROWS);
         axis->SetSelection(2);
         root->Add(axis, 0, wxEXPAND | wxLEFT | wxRIGHT, 12);
+        clipping = new wxRadioBox(this,
+                                  wxID_ANY,
+                                  "Clipping",
+                                  wxDefaultPosition,
+                                  wxDefaultSize,
+                                  {"No", "Above", "Below"},
+                                  1,
+                                  wxRA_SPECIFY_ROWS);
+        clipping->SetSelection(0);
+        root->Add(clipping, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
         autoRotate = new wxCheckBox(this, wxID_ANY, "Auto rotate for best view");
         autoRotate->SetValue(true);
         root->Add(autoRotate, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
@@ -189,7 +199,16 @@ class SectionDialog final : public wxDialog {
         return SectionAxis::Z;
     }
 
+    SectionClipping SelectedClipping() const {
+        if (clipping->GetSelection() == 1)
+            return SectionClipping::Above;
+        if (clipping->GetSelection() == 2)
+            return SectionClipping::Below;
+        return SectionClipping::None;
+    }
+
     wxRadioBox *axis = nullptr;
+    wxRadioBox *clipping = nullptr;
     wxCheckBox *autoRotate = nullptr;
 };
 
@@ -693,6 +712,17 @@ stl_slicer::Bounds3 DocumentFrame::VisibleBounds() const {
         }
     return b;
 }
+stl_slicer::Bounds3 DocumentFrame::ModelBounds() const {
+    stl_slicer::Bounds3 bounds;
+    for (const auto &model : models_) {
+        const auto modelBounds = model->worldBounds();
+        if (modelBounds.valid()) {
+            bounds.include(modelBounds.min);
+            bounds.include(modelBounds.max);
+        }
+    }
+    return bounds;
+}
 stl_slicer::Vec3 DocumentFrame::SelectedCenter() const {
     const stl_slicer::Bounds3 b = SelectedBounds();
     return b.valid() ? stl_slicer::Vec3{(b.min.x + b.max.x) / 2,
@@ -933,7 +963,10 @@ void DocumentFrame::OnInteractiveSlice(wxCommandEvent &) {
         SectionDialog dialog(this);
         if (dialog.ShowModal() == wxID_OK)
             canvas_->SetInteractiveSection(
-                true, dialog.SelectedAxis(), dialog.autoRotate->GetValue());
+                true,
+                dialog.SelectedAxis(),
+                dialog.autoRotate->GetValue(),
+                dialog.SelectedClipping());
     }
     UpdateCommandState();
     UpdateStatus();

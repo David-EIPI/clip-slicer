@@ -97,10 +97,12 @@ GLuint shader(GLenum type, const char *source) {
 }
 const char *vertexShader = R"(#version 150
 in vec3 position; in vec3 normal; uniform mat4 viewProjection; uniform mat4 model;
-out vec3 worldNormal; void main(){gl_Position=viewProjection*model*vec4(position,1.0);worldNormal=mat3(model)*normal;})";
+out vec3 worldNormal; out vec3 worldPosition;
+void main(){vec4 world=model*vec4(position,1.0);gl_Position=viewProjection*world;worldPosition=world.xyz;worldNormal=mat3(model)*normal;})";
 const char *fragmentShader = R"(#version 150
-in vec3 worldNormal; uniform vec4 color; uniform int lit; out vec4 outputColor;
-void main(){float light=lit==0?1.0:0.68+0.32*abs(dot(normalize(worldNormal),normalize(vec3(0.3,-0.5,0.8))));outputColor=vec4(color.rgb*light,color.a);})";
+in vec3 worldNormal; in vec3 worldPosition; uniform vec4 color; uniform int lit;
+uniform int clipping; uniform vec4 clipPlane; out vec4 outputColor;
+void main(){if(clipping!=0&&dot(clipPlane.xyz,worldPosition)+clipPlane.w>0.0)discard;float light=lit==0?1.0:0.68+0.32*abs(dot(normalize(worldNormal),normalize(vec3(0.3,-0.5,0.8))));outputColor=vec4(color.rgb*light,color.a);})";
 
 const int *glAttributes() {
     static const int attributes[] = {
@@ -247,6 +249,8 @@ void ModelCanvas::InitializeGl() {
     modelUniform_ = glGetUniformLocation(program_, "model");
     colorUniform_ = glGetUniformLocation(program_, "color");
     litUniform_ = glGetUniformLocation(program_, "lit");
+    clippingUniform_ = glGetUniformLocation(program_, "clipping");
+    clipPlaneUniform_ = glGetUniformLocation(program_, "clipPlane");
     glGenBuffers(1, &overlayBuffer_);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -549,6 +553,20 @@ void ModelCanvas::DrawModels(const float *) {
         }
         glUniform4fv(colorUniform_, 1, color.data());
         glUniform1i(litUniform_, 1);
+        const bool clipModel = interactiveSlice_ && m->selected &&
+                               sectionClipping_ != SectionClipping::None;
+        glUniform1i(clippingUniform_, clipModel ? 1 : 0);
+        if (clipModel) {
+            std::array<float, 4> plane = {0, 0, 0, 0};
+            const std::size_t axis = sectionAxis_ == SectionAxis::X
+                                         ? 0
+                                         : (sectionAxis_ == SectionAxis::Y ? 1 : 2);
+            const float direction =
+                sectionClipping_ == SectionClipping::Above ? 1.0f : -1.0f;
+            plane[axis] = direction;
+            plane[3] = -direction * float(slicePosition_);
+            glUniform4fv(clipPlaneUniform_, 1, plane.data());
+        }
         glDrawArrays(GL_TRIANGLES, 0, it->second.count);
         if (it->second.capId) {
             glBindBuffer(GL_ARRAY_BUFFER, it->second.capId);
@@ -565,6 +583,7 @@ void ModelCanvas::DrawModels(const float *) {
         }
         ++ci;
     }
+    glUniform1i(clippingUniform_, 0);
 }
 void ModelCanvas::DrawOrientationVane() {
     const wxSize size = GetClientSize();
@@ -690,7 +709,7 @@ void ModelCanvas::DrawOrientationVane() {
     glEnable(GL_DEPTH_TEST);
 }
 void ModelCanvas::DrawOverlays(const float *) {
-    auto b = document_.VisibleBounds();
+    auto b = document_.ModelBounds();
     if (!b.valid())
         return;
     constexpr float z = 0.0f;
@@ -802,7 +821,10 @@ void ModelCanvas::DrawOverlays(const float *) {
         glStencilMask(0xff);
     }
 }
-void ModelCanvas::SetInteractiveSection(bool enabled, SectionAxis axis, bool autoRotate) {
+void ModelCanvas::SetInteractiveSection(bool enabled,
+                                        SectionAxis axis,
+                                        bool autoRotate,
+                                        SectionClipping clipping) {
     if (enabled && !interactiveSlice_) {
         preSectionViewCenter_ = viewCenter_;
         preSectionViewCenterSaved_ = true;
@@ -812,6 +834,7 @@ void ModelCanvas::SetInteractiveSection(bool enabled, SectionAxis axis, bool aut
     }
     interactiveSlice_ = enabled;
     sectionAxis_ = axis;
+    sectionClipping_ = enabled ? clipping : SectionClipping::None;
     sectionBounds_ = document_.SelectedBounds();
     sliceMeshes_.clear();
     sliceStepAccumulator_ = 0.0;
