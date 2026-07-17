@@ -62,7 +62,9 @@ The \emph{Section} toolbar button or \emph{Slice > Section} menu command opens
 a dialog for choosing an X-, Y-, or Z-normal section plane and optionally
 aligning the camera for the best view. The translucent section plane spans the
 shared bounds of the selected models and can be moved along its normal with
-Alt+wheel.
+Alt+wheel. Plane positions follow the configured slicing sequence: the first
+position is the selected-bounds minimum plus the first-layer offset, and each
+subsequent position advances by one layer thickness.
 
 Moving the plane recalculates the intersection contours for selected models.
 A filled, double-sided copy of those contours is drawn on a dedicated

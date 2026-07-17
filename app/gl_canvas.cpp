@@ -807,14 +807,29 @@ void ModelCanvas::SetInteractiveSection(bool enabled, SectionAxis axis, bool aut
     sectionAxis_ = axis;
     sectionBounds_ = document_.SelectedBounds();
     sliceMeshes_.clear();
+    sliceStepAccumulator_ = 0.0;
     if (enabled && sectionBounds_.valid())
-        slicePosition_ = (axisCoordinate(sectionBounds_.min, axis) +
-                          axisCoordinate(sectionBounds_.max, axis)) /
-                         2;
+        UpdateSectionSliceRange(true);
     if (enabled && autoRotate)
         AlignSectionView();
     UpdateInteractiveSlice();
     Refresh();
+}
+void ModelCanvas::UpdateSectionSliceRange(bool initializeIndex) {
+    if (!sectionBounds_.valid())
+        return;
+    const double thickness = document_.LayerThickness();
+    const double firstOffset = document_.FirstLayerOffset();
+    const double minimum = axisCoordinate(sectionBounds_.min, sectionAxis_);
+    const double maximum = axisCoordinate(sectionBounds_.max, sectionAxis_);
+    const double available = std::max(0.0, maximum - minimum - firstOffset);
+    maximumSliceIndex_ =
+        static_cast<std::size_t>(std::floor(available / thickness + 1e-9));
+    if (initializeIndex)
+        sliceIndex_ = maximumSliceIndex_ / 2;
+    else
+        sliceIndex_ = std::min(sliceIndex_, maximumSliceIndex_);
+    slicePosition_ = minimum + firstOffset + static_cast<double>(sliceIndex_) * thickness;
 }
 void ModelCanvas::AlignSectionView() {
     if (!sectionBounds_.valid())
@@ -852,9 +867,7 @@ void ModelCanvas::UpdateInteractiveSlice() {
     if (interactiveSlice_) {
         sectionBounds_ = document_.SelectedBounds();
         if (sectionBounds_.valid())
-            slicePosition_ = std::clamp(slicePosition_,
-                                        axisCoordinate(sectionBounds_.min, sectionAxis_),
-                                        axisCoordinate(sectionBounds_.max, sectionAxis_));
+            UpdateSectionSliceRange(false);
     }
     ++interactiveSliceGeneration_;
     // Keep displaying the last completed section while its replacement is calculated. The
@@ -980,12 +993,20 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
     const double worldUnitsPerPixel =
         2.0 * distance_ * std::tan(fieldOfView_ * 0.5) / std::max(200, GetClientSize().y);
     const auto moveSlicePlane = [&](double steps) {
-        slicePosition_ += steps * 0.1;
-        const auto bounds = document_.SelectedBounds();
-        if (bounds.valid())
-            slicePosition_ = std::clamp(slicePosition_,
-                                        axisCoordinate(bounds.min, sectionAxis_),
-                                        axisCoordinate(bounds.max, sectionAxis_));
+        sliceStepAccumulator_ += steps;
+        const long long indexSteps = static_cast<long long>(sliceStepAccumulator_);
+        if (indexSteps == 0)
+            return;
+        sliceStepAccumulator_ -= static_cast<double>(indexSteps);
+        const long long newIndex = std::clamp(static_cast<long long>(sliceIndex_) + indexSteps,
+                                              0LL,
+                                              static_cast<long long>(maximumSliceIndex_));
+        if (newIndex == static_cast<long long>(sliceIndex_))
+            return;
+        sliceIndex_ = static_cast<std::size_t>(newIndex);
+        slicePosition_ = axisCoordinate(sectionBounds_.min, sectionAxis_) +
+                         document_.FirstLayerOffset() +
+                         static_cast<double>(sliceIndex_) * document_.LayerThickness();
         UpdateInteractiveSlice();
     };
     const auto scaleTarget = [&](double steps) {

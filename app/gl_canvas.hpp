@@ -68,6 +68,7 @@ class ModelCanvas final : public wxGLCanvas {
     void UpdateInteractiveSlice();
     void BeginInteractiveSlice();
     void AlignSectionView();
+    void UpdateSectionSliceRange(bool initializeIndex);
     void TransformSelected(const stl_slicer::Mat4 &transform);
 
     DocumentFrame &document_;
@@ -93,6 +94,9 @@ class ModelCanvas final : public wxGLCanvas {
     bool interactiveSlicePending_ = false;
     SectionAxis sectionAxis_ = SectionAxis::Z;
     stl_slicer::Bounds3 sectionBounds_;
+    std::size_t sliceIndex_ = 0;
+    std::size_t maximumSliceIndex_ = 0;
+    double sliceStepAccumulator_ = 0.0;
     double slicePosition_ = 0.0, sliceArea_ = 0.0;
     double yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
     double fieldOfView_ = 0.75;
