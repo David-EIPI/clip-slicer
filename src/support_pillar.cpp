@@ -1,0 +1,669 @@
+#include "stl_slicer/support_pillar.hpp"
+#include "slice_polygon_utils.hpp"
+#include <algorithm>
+#include <clipper2/clipper.h>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
+#include <utility>
+
+namespace stl_slicer {
+namespace {
+
+using Clipper2Lib::EndType;
+using Clipper2Lib::JoinType;
+using Clipper2Lib::Path64;
+using Clipper2Lib::Paths64;
+using Clipper2Lib::Point64;
+using Clipper2Lib::PointInPolygonResult;
+
+constexpr double pi = 3.14159265358979323846;
+constexpr double offsetArcTolerance = 0.001 * slice_polygon::coordinateScale;
+
+bool cancelled(const std::atomic<bool> *cancel) {
+    return cancel && cancel->load(std::memory_order_relaxed);
+}
+
+Vec3 add(const Vec3 &first, const Vec3 &second) {
+    return {first.x + second.x, first.y + second.y, first.z + second.z};
+}
+
+Vec3 subtract(const Vec3 &first, const Vec3 &second) {
+    return {first.x - second.x, first.y - second.y, first.z - second.z};
+}
+
+Vec3 multiply(const Vec3 &value, double scalar) {
+    return {value.x * scalar, value.y * scalar, value.z * scalar};
+}
+
+double dot(const Vec3 &first, const Vec3 &second) {
+    return first.x * second.x + first.y * second.y + first.z * second.z;
+}
+
+Vec3 cross(const Vec3 &first, const Vec3 &second) {
+    return {first.y * second.z - first.z * second.y,
+            first.z * second.x - first.x * second.z,
+            first.x * second.y - first.y * second.x};
+}
+
+double length(const Vec3 &value) {
+    return std::sqrt(dot(value, value));
+}
+
+Vec3 normalized(const Vec3 &value) {
+    const double magnitude = length(value);
+    return magnitude > 1e-15 ? multiply(value, 1.0 / magnitude) : Vec3{};
+}
+
+void addTriangle(TriangleMesh &mesh, const Vec3 &first, const Vec3 &second, const Vec3 &third) {
+    Triangle triangle;
+    triangle.vertices = {first, second, third};
+    triangle.normal = normalized(cross(subtract(second, first), subtract(third, first)));
+    mesh.addTriangle(std::move(triangle));
+}
+
+void validateOptions(const ExternalPillarOptions &options) {
+    const auto positiveFinite = [](double value) { return std::isfinite(value) && value > 0.0; };
+    if (!positiveFinite(options.latticeCellSize))
+        throw std::invalid_argument("Support lattice cell size must be positive and finite");
+    if (!std::isfinite(options.minimumSupportAngleDegrees) ||
+        options.minimumSupportAngleDegrees < 5.0 || options.minimumSupportAngleDegrees >= 90.0)
+        throw std::invalid_argument("Minimum support angle must be from 5 to 90 degrees");
+    if (!positiveFinite(options.baseHeight) || !positiveFinite(options.baseRadius) ||
+        !positiveFinite(options.bottomRadius) || !positiveFinite(options.topRadius))
+        throw std::invalid_argument("External pillar dimensions must be positive and finite");
+    if (options.circumferencePoints < 3 || options.circumferencePoints > 1024)
+        throw std::invalid_argument("Pillar circumference point count must be 3 to 1024");
+}
+
+struct BitGrid {
+    BitGrid() = default;
+
+    BitGrid(std::size_t width, std::size_t height)
+        : width(width), height(height), words((width * height + 63) / 64) {}
+
+    bool test(std::size_t x, std::size_t y) const {
+        const std::size_t index = y * width + x;
+        return (words[index / 64] & (std::uint64_t{1} << (index % 64))) != 0;
+    }
+
+    void set(std::size_t x, std::size_t y) {
+        const std::size_t index = y * width + x;
+        words[index / 64] |= std::uint64_t{1} << (index % 64);
+    }
+
+    std::size_t width = 0;
+    std::size_t height = 0;
+    std::vector<std::uint64_t> words;
+};
+
+struct ClearanceLayer {
+    double z = 0.0;
+    Paths64 polygons;
+};
+
+struct GridOffset {
+    int x = 0;
+    int y = 0;
+};
+
+bool polygonsContain(const Paths64 &polygons, const Point64 &point) {
+    bool inside = false;
+    for (const Path64 &polygon : polygons) {
+        const PointInPolygonResult result = Clipper2Lib::PointInPolygon(point, polygon);
+        if (result == PointInPolygonResult::IsOn)
+            return true;
+        if (result == PointInPolygonResult::IsInside)
+            inside = !inside;
+    }
+    return inside;
+}
+
+} // namespace
+
+struct ExternalPillarSpace::Impl {
+    Impl(std::shared_ptr<const SliceData> sourceSlices,
+         Bounds3 sourceBounds,
+         double requestedMaximumHeight,
+         ExternalPillarOptions pillarOptions,
+         const std::atomic<bool> *cancel)
+        : slices(std::move(sourceSlices)), bounds(sourceBounds), options(pillarOptions) {
+        validateOptions(options);
+        if (!slices || !bounds.valid())
+            throw std::invalid_argument("External pillar space requires slices and model bounds");
+        if (!std::isfinite(requestedMaximumHeight))
+            throw std::invalid_argument("External pillar maximum height must be finite");
+        if (cancelled(cancel))
+            return;
+
+        maximumHeight = std::max(options.baseHeight, requestedMaximumHeight);
+        const double band = options.baseRadius * 2.0;
+        originX =
+            std::floor((bounds.min.x - band) / options.latticeCellSize) * options.latticeCellSize;
+        originY =
+            std::floor((bounds.min.y - band) / options.latticeCellSize) * options.latticeCellSize;
+        const double maximumX =
+            std::ceil((bounds.max.x + band) / options.latticeCellSize) * options.latticeCellSize;
+        const double maximumY =
+            std::ceil((bounds.max.y + band) / options.latticeCellSize) * options.latticeCellSize;
+        width =
+            static_cast<std::size_t>(std::llround((maximumX - originX) / options.latticeCellSize)) +
+            1;
+        height =
+            static_cast<std::size_t>(std::llround((maximumY - originY) / options.latticeCellSize)) +
+            1;
+        levelCount = static_cast<std::size_t>(std::ceil((maximumHeight - options.baseHeight) /
+                                                        options.latticeCellSize)) +
+                     1;
+
+        if (width == 0 || height == 0 || levelCount == 0 ||
+            width > std::numeric_limits<std::size_t>::max() / height ||
+            width * height > std::numeric_limits<std::size_t>::max() / levelCount)
+            throw std::length_error("Support lattice dimensions overflow addressable memory");
+        cellCountPerLevel = width * height;
+        const std::size_t totalCells = cellCountPerLevel * levelCount;
+        buildOffsets();
+        compactPredecessors = offsets.size() < std::numeric_limits<std::uint8_t>::max();
+        const std::size_t predecessorSize =
+            compactPredecessors ? sizeof(std::uint8_t) : sizeof(std::uint16_t);
+        constexpr std::size_t maximumPredecessorBytes = 512ULL * 1024ULL * 1024ULL;
+        if (totalCells > maximumPredecessorBytes / predecessorSize)
+            throw std::length_error(
+                "Support lattice exceeds 512 MiB; increase the lattice cell size");
+        if (compactPredecessors)
+            predecessors8.assign(totalCells, 0);
+        else
+            predecessors16.assign(totalCells, 0);
+        buildClearanceLayers(cancel);
+        if (cancelled(cancel))
+            return;
+        propagate(cancel);
+        complete = !cancelled(cancel);
+    }
+
+    double levelZ(std::size_t level) const {
+        return options.baseHeight + static_cast<double>(level) * options.latticeCellSize;
+    }
+
+    double clearanceRadius(double z) const {
+        if (options.topRadius >= options.bottomRadius)
+            return options.topRadius;
+        const double denominator =
+            std::max(options.latticeCellSize, maximumHeight - options.baseHeight);
+        const double fraction = std::clamp((z - options.baseHeight) / denominator, 0.0, 1.0);
+        return options.bottomRadius + (options.topRadius - options.bottomRadius) * fraction;
+    }
+
+    Paths64 expandedLayer(const SliceLayer &layer, double radius) const {
+        const Paths64 polygons = slice_polygon::layerPolygons(layer);
+        if (polygons.empty())
+            return {};
+        const double gridGuard = options.latticeCellSize * std::sqrt(2.0) * 0.5;
+        return Clipper2Lib::InflatePaths(polygons,
+                                         (radius + gridGuard) * slice_polygon::coordinateScale,
+                                         JoinType::Round,
+                                         EndType::Polygon,
+                                         2.0,
+                                         offsetArcTolerance);
+    }
+
+    void buildOffsets() {
+        const double angle = options.minimumSupportAngleDegrees * pi / 180.0;
+        horizontalCellsPerLevel = 1.0 / std::tan(angle);
+        const int extent = static_cast<int>(std::ceil(horizontalCellsPerLevel));
+        for (int y = -extent; y <= extent; ++y) {
+            for (int x = -extent; x <= extent; ++x) {
+                if (std::hypot(static_cast<double>(x), static_cast<double>(y)) <=
+                    horizontalCellsPerLevel + 1e-12)
+                    offsets.push_back({x, y});
+            }
+        }
+        std::sort(
+            offsets.begin(), offsets.end(), [](const GridOffset &first, const GridOffset &second) {
+                const int firstDistance = first.x * first.x + first.y * first.y;
+                const int secondDistance = second.x * second.x + second.y * second.y;
+                if (firstDistance != secondDistance)
+                    return firstDistance < secondDistance;
+                if (first.y != second.y)
+                    return first.y < second.y;
+                return first.x < second.x;
+            });
+        if (offsets.size() >= std::numeric_limits<std::uint16_t>::max())
+            throw std::length_error("Minimum support angle produces too many lattice neighbors");
+    }
+
+    std::uint16_t predecessor(std::size_t index) const {
+        return compactPredecessors ? predecessors8[index] : predecessors16[index];
+    }
+
+    void setPredecessor(std::size_t index, std::uint16_t value) {
+        if (compactPredecessors)
+            predecessors8[index] = static_cast<std::uint8_t>(value);
+        else
+            predecessors16[index] = value;
+    }
+
+    void buildClearanceLayers(const std::atomic<bool> *cancel) {
+        clearanceLayers.reserve(slices->layers.size());
+        for (const SliceLayer &layer : slices->layers) {
+            if (cancelled(cancel))
+                return;
+            if (layer.z < 0.0 || layer.z > maximumHeight + options.latticeCellSize)
+                continue;
+            ClearanceLayer clearance;
+            clearance.z = layer.z;
+            clearance.polygons = expandedLayer(layer, clearanceRadius(layer.z));
+            clearanceLayers.push_back(std::move(clearance));
+        }
+    }
+
+    BitGrid rasterize(const Paths64 &polygons) const {
+        BitGrid result(width, height);
+        if (polygons.empty())
+            return result;
+
+        std::vector<std::vector<double>> crossings(height);
+        for (const Path64 &polygon : polygons) {
+            if (polygon.size() < 3)
+                continue;
+            for (std::size_t index = 0; index < polygon.size(); ++index) {
+                const Point64 &first = polygon[index];
+                const Point64 &second = polygon[(index + 1) % polygon.size()];
+                const double firstX = double(first.x) / slice_polygon::coordinateScale;
+                const double firstY = double(first.y) / slice_polygon::coordinateScale;
+                const double secondX = double(second.x) / slice_polygon::coordinateScale;
+                const double secondY = double(second.y) / slice_polygon::coordinateScale;
+                if (firstY == secondY)
+                    continue;
+                const double lowerY = std::min(firstY, secondY);
+                const double upperY = std::max(firstY, secondY);
+                const long long firstRow =
+                    std::max<long long>(0,
+                                        static_cast<long long>(std::ceil((lowerY - originY) /
+                                                                         options.latticeCellSize)));
+                const long long finalRow =
+                    std::min<long long>(static_cast<long long>(height) - 1,
+                                        static_cast<long long>(std::ceil((upperY - originY) /
+                                                                         options.latticeCellSize)) -
+                                            1);
+                for (long long row = firstRow; row <= finalRow; ++row) {
+                    const double y = originY + static_cast<double>(row) * options.latticeCellSize;
+                    const double parameter = (y - firstY) / (secondY - firstY);
+                    crossings[static_cast<std::size_t>(row)].push_back(firstX + (secondX - firstX) *
+                                                                                    parameter);
+                }
+            }
+        }
+
+        for (std::size_t y = 0; y < height; ++y) {
+            std::vector<double> &row = crossings[y];
+            std::sort(row.begin(), row.end());
+            for (std::size_t crossing = 0; crossing + 1 < row.size(); crossing += 2) {
+                const long long firstColumn =
+                    std::max<long long>(0,
+                                        static_cast<long long>(std::ceil((row[crossing] - originX) /
+                                                                         options.latticeCellSize)));
+                const long long finalColumn = std::min<long long>(
+                    static_cast<long long>(width) - 1,
+                    static_cast<long long>(
+                        std::floor((row[crossing + 1] - originX) / options.latticeCellSize)));
+                for (long long x = firstColumn; x <= finalColumn; ++x)
+                    result.set(static_cast<std::size_t>(x), y);
+            }
+        }
+        return result;
+    }
+
+    bool segmentClear(const std::vector<std::pair<double, BitGrid>> &obstacles,
+                      std::size_t sourceX,
+                      std::size_t sourceY,
+                      std::size_t targetX,
+                      std::size_t targetY,
+                      double sourceZ,
+                      double targetZ) const {
+        for (const auto &obstacle : obstacles) {
+            const double fraction =
+                std::clamp((obstacle.first - sourceZ) / (targetZ - sourceZ), 0.0, 1.0);
+            const long long x = std::llround(
+                static_cast<double>(sourceX) +
+                (static_cast<double>(targetX) - static_cast<double>(sourceX)) * fraction);
+            const long long y = std::llround(
+                static_cast<double>(sourceY) +
+                (static_cast<double>(targetY) - static_cast<double>(sourceY)) * fraction);
+            if (x >= 0 && y >= 0 && x < static_cast<long long>(width) &&
+                y < static_cast<long long>(height) &&
+                obstacle.second.test(static_cast<std::size_t>(x), static_cast<std::size_t>(y)))
+                return false;
+        }
+        return true;
+    }
+
+    void initializeBase(const std::atomic<bool> *cancel) {
+        BitGrid blocked(width, height);
+        for (const SliceLayer &layer : slices->layers) {
+            if (cancelled(cancel))
+                return;
+            if (layer.z < 0.0 || layer.z > options.baseHeight + 1e-12)
+                continue;
+            const BitGrid layerBlocked = rasterize(expandedLayer(layer, options.baseRadius));
+            for (std::size_t word = 0; word < blocked.words.size(); ++word)
+                blocked.words[word] |= layerBlocked.words[word];
+        }
+        for (std::size_t y = 0; y < height; ++y) {
+            for (std::size_t x = 0; x < width; ++x) {
+                if (!blocked.test(x, y))
+                    setPredecessor(y * width + x, 1);
+            }
+        }
+    }
+
+    void propagate(const std::atomic<bool> *cancel) {
+        initializeBase(cancel);
+        std::size_t firstClearance = 0;
+        while (firstClearance < clearanceLayers.size() &&
+               clearanceLayers[firstClearance].z <= options.baseHeight + 1e-12)
+            ++firstClearance;
+
+        for (std::size_t level = 1; level < levelCount; ++level) {
+            if (cancelled(cancel))
+                return;
+            const double sourceZ = levelZ(level - 1);
+            const double targetZ = levelZ(level);
+            std::vector<std::pair<double, BitGrid>> obstacles;
+            while (firstClearance < clearanceLayers.size() &&
+                   clearanceLayers[firstClearance].z <= targetZ + 1e-12) {
+                if (clearanceLayers[firstClearance].z > sourceZ + 1e-12)
+                    obstacles.emplace_back(clearanceLayers[firstClearance].z,
+                                           rasterize(clearanceLayers[firstClearance].polygons));
+                ++firstClearance;
+            }
+
+            const std::size_t previousOffset = (level - 1) * cellCountPerLevel;
+            const std::size_t currentOffset = level * cellCountPerLevel;
+            for (std::size_t y = 0; y < height; ++y) {
+                if (cancelled(cancel))
+                    return;
+                for (std::size_t x = 0; x < width; ++x) {
+                    for (std::size_t offsetIndex = 0; offsetIndex < offsets.size(); ++offsetIndex) {
+                        const long long sourceX =
+                            static_cast<long long>(x) + offsets[offsetIndex].x;
+                        const long long sourceY =
+                            static_cast<long long>(y) + offsets[offsetIndex].y;
+                        if (sourceX < 0 || sourceY < 0 ||
+                            sourceX >= static_cast<long long>(width) ||
+                            sourceY >= static_cast<long long>(height))
+                            continue;
+                        const std::size_t sourceIndex = previousOffset +
+                                                        static_cast<std::size_t>(sourceY) * width +
+                                                        static_cast<std::size_t>(sourceX);
+                        if (predecessor(sourceIndex) == 0)
+                            continue;
+                        if (!segmentClear(obstacles,
+                                          static_cast<std::size_t>(sourceX),
+                                          static_cast<std::size_t>(sourceY),
+                                          x,
+                                          y,
+                                          sourceZ,
+                                          targetZ))
+                            continue;
+                        setPredecessor(currentOffset + y * width + x,
+                                       static_cast<std::uint16_t>(offsetIndex + 1));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    bool exactSegmentClear(const Vec3 &first, const Vec3 &second) const {
+        if (second.z <= first.z)
+            return false;
+        for (const ClearanceLayer &layer : clearanceLayers) {
+            if (layer.z <= first.z + 1e-12 || layer.z > second.z + 1e-12)
+                continue;
+            const double fraction = (layer.z - first.z) / (second.z - first.z);
+            const Vec3 point = add(first, multiply(subtract(second, first), fraction));
+            const Point64 scaled{slice_polygon::scaledCoordinate(point.x),
+                                 slice_polygon::scaledCoordinate(point.y)};
+            if (polygonsContain(layer.polygons, scaled))
+                return false;
+        }
+        return true;
+    }
+
+    std::vector<Vec3> route(const Vec3 &attachment, const std::atomic<bool> *cancel) const {
+        if (!complete || cancelled(cancel) || attachment.z <= options.baseHeight)
+            return {};
+        const double tangent = std::tan(options.minimumSupportAngleDegrees * pi / 180.0);
+        const std::size_t firstLevel =
+            std::min(levelCount - 1,
+                     static_cast<std::size_t>(std::floor((attachment.z - options.baseHeight) /
+                                                         options.latticeCellSize)));
+
+        std::size_t selectedLevel = levelCount;
+        std::size_t selectedX = 0;
+        std::size_t selectedY = 0;
+        for (std::size_t level = firstLevel + 1; level-- > 0;) {
+            if (cancelled(cancel))
+                return {};
+            const double z = levelZ(level);
+            const double horizontalLimit = (attachment.z - z) / tangent;
+            if (horizontalLimit < 0.0)
+                continue;
+            const long long minimumX = std::max<long long>(
+                0,
+                static_cast<long long>(std::ceil((attachment.x - horizontalLimit - originX) /
+                                                 options.latticeCellSize)));
+            const long long maximumX = std::min<long long>(
+                static_cast<long long>(width) - 1,
+                static_cast<long long>(std::floor((attachment.x + horizontalLimit - originX) /
+                                                  options.latticeCellSize)));
+            const long long minimumY = std::max<long long>(
+                0,
+                static_cast<long long>(std::ceil((attachment.y - horizontalLimit - originY) /
+                                                 options.latticeCellSize)));
+            const long long maximumY = std::min<long long>(
+                static_cast<long long>(height) - 1,
+                static_cast<long long>(std::floor((attachment.y + horizontalLimit - originY) /
+                                                  options.latticeCellSize)));
+            double bestDistance = std::numeric_limits<double>::infinity();
+            for (long long y = minimumY; y <= maximumY; ++y) {
+                for (long long x = minimumX; x <= maximumX; ++x) {
+                    if (predecessor(level * cellCountPerLevel +
+                                    static_cast<std::size_t>(y) * width +
+                                    static_cast<std::size_t>(x)) == 0)
+                        continue;
+                    const Vec3 point{originX + static_cast<double>(x) * options.latticeCellSize,
+                                     originY + static_cast<double>(y) * options.latticeCellSize,
+                                     z};
+                    const double horizontalDistance =
+                        std::hypot(point.x - attachment.x, point.y - attachment.y);
+                    if (horizontalDistance > horizontalLimit + 1e-12 ||
+                        horizontalDistance >= bestDistance || !exactSegmentClear(point, attachment))
+                        continue;
+                    bestDistance = horizontalDistance;
+                    selectedLevel = level;
+                    selectedX = static_cast<std::size_t>(x);
+                    selectedY = static_cast<std::size_t>(y);
+                }
+            }
+            if (selectedLevel != levelCount)
+                break;
+        }
+        if (selectedLevel == levelCount)
+            return {};
+
+        std::vector<Vec3> descending;
+        descending.push_back(attachment);
+        descending.push_back({originX + static_cast<double>(selectedX) * options.latticeCellSize,
+                              originY + static_cast<double>(selectedY) * options.latticeCellSize,
+                              levelZ(selectedLevel)});
+        while (selectedLevel > 0) {
+            const std::uint16_t code =
+                predecessor(selectedLevel * cellCountPerLevel + selectedY * width + selectedX);
+            if (code == 0 || code > offsets.size())
+                return {};
+            const GridOffset &offset = offsets[code - 1];
+            const long long predecessorX = static_cast<long long>(selectedX) + offset.x;
+            const long long predecessorY = static_cast<long long>(selectedY) + offset.y;
+            if (predecessorX < 0 || predecessorY < 0 ||
+                predecessorX >= static_cast<long long>(width) ||
+                predecessorY >= static_cast<long long>(height))
+                return {};
+            --selectedLevel;
+            selectedX = static_cast<std::size_t>(predecessorX);
+            selectedY = static_cast<std::size_t>(predecessorY);
+            descending.push_back(
+                {originX + static_cast<double>(selectedX) * options.latticeCellSize,
+                 originY + static_cast<double>(selectedY) * options.latticeCellSize,
+                 levelZ(selectedLevel)});
+        }
+
+        std::vector<Vec3> route;
+        route.reserve(descending.size());
+        for (auto iterator = descending.rbegin(); iterator != descending.rend(); ++iterator) {
+            if (!route.empty()) {
+                const Vec3 difference = subtract(*iterator, route.back());
+                if (length(difference) <= 1e-12)
+                    continue;
+            }
+            route.push_back(*iterator);
+        }
+        return route;
+    }
+
+    std::shared_ptr<const SliceData> slices;
+    Bounds3 bounds;
+    ExternalPillarOptions options;
+    double maximumHeight = 0.0;
+    double originX = 0.0;
+    double originY = 0.0;
+    double horizontalCellsPerLevel = 0.0;
+    std::size_t width = 0;
+    std::size_t height = 0;
+    std::size_t levelCount = 0;
+    std::size_t cellCountPerLevel = 0;
+    std::vector<GridOffset> offsets;
+    std::vector<std::uint8_t> predecessors8;
+    std::vector<std::uint16_t> predecessors16;
+    std::vector<ClearanceLayer> clearanceLayers;
+    bool compactPredecessors = true;
+    bool complete = false;
+};
+
+ExternalPillarSpace::ExternalPillarSpace(std::shared_ptr<const SliceData> slices,
+                                         Bounds3 modelBounds,
+                                         double maximumHeight,
+                                         ExternalPillarOptions options,
+                                         const std::atomic<bool> *cancel)
+    : impl_(
+          std::make_shared<Impl>(std::move(slices), modelBounds, maximumHeight, options, cancel)) {}
+
+std::vector<Vec3> ExternalPillarSpace::route(const Vec3 &attachment,
+                                             const std::atomic<bool> *cancel) const {
+    return impl_->route(attachment, cancel);
+}
+
+bool ExternalPillarSpace::valid() const noexcept {
+    return impl_ && impl_->complete;
+}
+
+ExternalPillarBuilder::ExternalPillarBuilder(std::shared_ptr<const ExternalPillarSpace> space,
+                                             ExternalPillarOptions options)
+    : space_(std::move(space)), options_(options) {
+    validateOptions(options_);
+    if (!space_)
+        throw std::invalid_argument("External pillar builder requires a reachability space");
+}
+
+TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
+                                          const std::atomic<bool> *cancel) const {
+    TriangleMesh result;
+    std::vector<Vec3> centers = space_->route(attachment, cancel);
+    if (centers.size() < 2 || cancelled(cancel))
+        return result;
+
+    std::vector<double> distances(centers.size(), 0.0);
+    for (std::size_t index = 1; index < centers.size(); ++index)
+        distances[index] =
+            distances[index - 1] + length(subtract(centers[index], centers[index - 1]));
+    if (distances.back() <= 1e-12)
+        return result;
+
+    const std::size_t pointCount = options_.circumferencePoints;
+    std::vector<std::vector<Vec3>> rings;
+    rings.reserve(centers.size());
+    Vec3 previousFirstDirection;
+    for (std::size_t centerIndex = 0; centerIndex < centers.size(); ++centerIndex) {
+        if (cancelled(cancel))
+            return {};
+        Vec3 tangent;
+        if (centerIndex == 0)
+            tangent = subtract(centers[1], centers[0]);
+        else if (centerIndex + 1 == centers.size())
+            tangent = subtract(centers.back(), centers[centers.size() - 2]);
+        else
+            tangent = subtract(centers[centerIndex + 1], centers[centerIndex - 1]);
+        tangent = normalized(tangent);
+        const Vec3 helper = std::abs(tangent.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
+        Vec3 firstDirection = normalized(cross(helper, tangent));
+        if (centerIndex > 0 && dot(firstDirection, previousFirstDirection) < 0.0)
+            firstDirection = multiply(firstDirection, -1.0);
+        previousFirstDirection = firstDirection;
+        const Vec3 secondDirection = normalized(cross(tangent, firstDirection));
+        const double fraction = distances[centerIndex] / distances.back();
+        const double radius =
+            options_.bottomRadius + (options_.topRadius - options_.bottomRadius) * fraction;
+        std::vector<Vec3> ring;
+        ring.reserve(pointCount);
+        for (std::size_t point = 0; point < pointCount; ++point) {
+            const double angle =
+                2.0 * pi * static_cast<double>(point) / static_cast<double>(pointCount);
+            const Vec3 radial = add(multiply(firstDirection, std::cos(angle)),
+                                    multiply(secondDirection, std::sin(angle)));
+            ring.push_back(add(centers[centerIndex], multiply(radial, radius)));
+        }
+        rings.push_back(std::move(ring));
+    }
+
+    result.setHeader("CLIP Slicer external support pillar");
+    const Vec3 baseBottom{centers.front().x, centers.front().y, 0.0};
+    const Vec3 baseTop{centers.front().x, centers.front().y, options_.baseHeight};
+    std::vector<Vec3> baseBottomRing;
+    std::vector<Vec3> baseTopRing;
+    baseBottomRing.reserve(pointCount);
+    baseTopRing.reserve(pointCount);
+    for (std::size_t point = 0; point < pointCount; ++point) {
+        const double angle =
+            2.0 * pi * static_cast<double>(point) / static_cast<double>(pointCount);
+        const Vec3 radial{
+            options_.baseRadius * std::cos(angle), options_.baseRadius * std::sin(angle), 0.0};
+        baseBottomRing.push_back(add(baseBottom, radial));
+        baseTopRing.push_back(add(baseTop, radial));
+    }
+
+    result.reserve((4 + 2 * (rings.size() - 1) + 2) * pointCount);
+    for (std::size_t point = 0; point < pointCount; ++point) {
+        const std::size_t next = (point + 1) % pointCount;
+        addTriangle(result, baseBottomRing[point], baseTopRing[next], baseTopRing[point]);
+        addTriangle(result, baseBottomRing[point], baseBottomRing[next], baseTopRing[next]);
+        addTriangle(result, baseBottom, baseBottomRing[next], baseBottomRing[point]);
+        addTriangle(result, baseTop, baseTopRing[point], baseTopRing[next]);
+    }
+    for (std::size_t ring = 0; ring + 1 < rings.size(); ++ring) {
+        for (std::size_t point = 0; point < pointCount; ++point) {
+            const std::size_t next = (point + 1) % pointCount;
+            addTriangle(result, rings[ring][point], rings[ring][next], rings[ring + 1][next]);
+            addTriangle(result, rings[ring][point], rings[ring + 1][next], rings[ring + 1][point]);
+        }
+    }
+    for (std::size_t point = 0; point < pointCount; ++point) {
+        const std::size_t next = (point + 1) % pointCount;
+        addTriangle(result, centers.front(), rings.front()[next], rings.front()[point]);
+        addTriangle(result, centers.back(), rings.back()[point], rings.back()[next]);
+    }
+    return result;
+}
+
+} // namespace stl_slicer

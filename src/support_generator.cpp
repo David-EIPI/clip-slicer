@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <deque>
 #include <exception>
+#include <future>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -66,9 +67,7 @@ std::vector<Segment64> boundarySegments(const Paths64 &polygons) {
 }
 
 std::vector<std::pair<long double, long double>> overlapIntervals(
-    const Point64 &first,
-    const Point64 &second,
-    const std::vector<Segment64> &sourceSegments) {
+    const Point64 &first, const Point64 &second, const std::vector<Segment64> &sourceSegments) {
     const long double dx = static_cast<long double>(second.x) - first.x;
     const long double dy = static_cast<long double>(second.y) - first.y;
     const long double length = std::hypot(dx, dy);
@@ -82,8 +81,7 @@ std::vector<std::pair<long double, long double>> overlapIntervals(
             const long double py = static_cast<long double>(point.y) - first.y;
             return std::abs(dx * py - dy * px) / length;
         };
-        if (distanceFromLine(source.first) > 0.5L ||
-            distanceFromLine(source.second) > 0.5L)
+        if (distanceFromLine(source.first) > 0.5L || distanceFromLine(source.second) > 0.5L)
             continue;
 
         const bool useX = std::abs(dx) >= std::abs(dy);
@@ -161,30 +159,26 @@ void collectSolidComponents(const PolyPath64 &node, std::vector<const PolyPath64
 }
 
 bool componentContains(const PolyPath64 &component, const Point64 &point) {
-    if (Clipper2Lib::PointInPolygon(point, component.Polygon()) ==
-        PointInPolygonResult::IsOutside)
+    if (Clipper2Lib::PointInPolygon(point, component.Polygon()) == PointInPolygonResult::IsOutside)
         return false;
     for (const auto &child : component)
         if (child->IsHole() &&
-            Clipper2Lib::PointInPolygon(point, child->Polygon()) ==
-                PointInPolygonResult::IsInside)
+            Clipper2Lib::PointInPolygon(point, child->Polygon()) == PointInPolygonResult::IsInside)
             return false;
     return true;
 }
 
-std::vector<LatticeNode> buildLattice(const PolyPath64 &component,
-                                      double supportSpacing,
-                                      const std::atomic<bool> *cancel) {
+std::vector<LatticeNode>
+buildLattice(const PolyPath64 &component, double supportSpacing, const std::atomic<bool> *cancel) {
     const Clipper2Lib::Rect64 bounds = Clipper2Lib::GetBounds(component.Polygon());
     const double minX = double(bounds.left) / slice_polygon::coordinateScale;
     const double minY = double(bounds.top) / slice_polygon::coordinateScale;
     const double maxX = double(bounds.right) / slice_polygon::coordinateScale;
     const double maxY = double(bounds.bottom) / slice_polygon::coordinateScale;
     const double rowStep = supportSpacing * std::sqrt(3.0) * 0.5;
-    const std::int64_t firstRow =
-        static_cast<std::int64_t>(std::floor(-supportSpacing / rowStep));
-    const std::int64_t lastRow = static_cast<std::int64_t>(
-        std::ceil((maxY - minY + supportSpacing) / rowStep));
+    const std::int64_t firstRow = static_cast<std::int64_t>(std::floor(-supportSpacing / rowStep));
+    const std::int64_t lastRow =
+        static_cast<std::int64_t>(std::ceil((maxY - minY + supportSpacing) / rowStep));
 
     std::vector<LatticeNode> nodes;
     // The removable guard ring prevents edge samples near bbox corners from
@@ -199,8 +193,7 @@ std::vector<LatticeNode> buildLattice(const PolyPath64 &component,
         const std::int64_t lastColumn = static_cast<std::int64_t>(
             std::floor((maxX + supportSpacing - rowStart) / supportSpacing));
         for (std::int64_t column = firstColumn; column <= lastColumn; ++column) {
-            const Vec2 point{rowStart + static_cast<double>(column) * supportSpacing,
-                             y};
+            const Vec2 point{rowStart + static_cast<double>(column) * supportSpacing, y};
             const Point64 scaled{slice_polygon::scaledCoordinate(point.x),
                                  slice_polygon::scaledCoordinate(point.y)};
             nodes.push_back({point, !componentContains(component, scaled), false});
@@ -239,8 +232,7 @@ void placeNodesAlongRun(std::vector<LatticeNode> &nodes,
     const bool closed = samePoint(run.front(), run.back());
     double runLength = 0.0;
     for (std::size_t index = 0; index + 1 < run.size(); ++index)
-        runLength += std::hypot(run[index + 1].x - run[index].x,
-                                run[index + 1].y - run[index].y);
+        runLength += std::hypot(run[index + 1].x - run[index].x, run[index + 1].y - run[index].y);
 
     double traversed = 0.0;
     double nextPlacement = 0.0;
@@ -297,8 +289,7 @@ std::vector<SupportContactPoint> detectContactPoints(const SupportGenerationInpu
 
         for (const LatticeNode &node : nodes)
             if (!node.remove)
-                contacts.push_back(
-                    {{node.point.x, node.point.y, sourceLayer.z}, layerIndex});
+                contacts.push_back({{node.point.x, node.point.y, sourceLayer.z}, layerIndex});
     }
     return contacts;
 }
@@ -324,12 +315,12 @@ SupportGenerator::SupportGenerator(SupportGeneratorOptions options,
     if (!std::isfinite(options_.supportSpacing) || options_.supportSpacing <= 0.0)
         throw std::invalid_argument("Support spacing must be a positive finite value");
     if (!kernels_.detectContactPoints)
-        kernels_.detectContactPoints = [spacing = options_.supportSpacing](
-                                           const SupportGenerationInput &input,
-                                           std::size_t layerIndex,
-                                           const std::atomic<bool> *cancel) {
-            return detectContactPoints(input, layerIndex, spacing, cancel);
-        };
+        kernels_.detectContactPoints =
+            [spacing = options_.supportSpacing](const SupportGenerationInput &input,
+                                                std::size_t layerIndex,
+                                                const std::atomic<bool> *cancel) {
+                return detectContactPoints(input, layerIndex, spacing, cancel);
+            };
 }
 
 SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput &input,
@@ -366,17 +357,52 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
         return result;
 
     SupportPillarBuilder buildPillar = kernels_.buildPillar;
+    std::shared_future<std::shared_ptr<const ExternalPillarSpace>> externalSpace;
     if (!buildPillar) {
         SupportTipBuilder tipBuilder(input.sourceModel, options_.tip, cancel);
         if (cancelled(cancel)) {
             result.cancelled = true;
             return result;
         }
-        buildPillar = [tipBuilder = std::move(tipBuilder)](
-                          const SupportGenerationInput &,
-                          const SupportContactPoint &contact,
-                          const std::atomic<bool> *cancel) {
-            return tipBuilder.build(contact.position, cancel);
+        double maximumUnsupportedHeight = options_.externalPillar.baseHeight;
+        for (const SliceLayer &layer : input.unsupported->layers) {
+            if (!layer.paths.empty())
+                maximumUnsupportedHeight = std::max(maximumUnsupportedHeight, layer.z);
+        }
+        const std::launch spaceLaunch =
+            options_.workerCount > 1 ? std::launch::async : std::launch::deferred;
+        externalSpace =
+            std::async(spaceLaunch,
+                       [slices = input.slices,
+                        bounds = input.sourceModel->bounds(),
+                        maximumUnsupportedHeight,
+                        options = options_.externalPillar,
+                        cancel]() {
+                           return std::make_shared<const ExternalPillarSpace>(
+                               slices, bounds, maximumUnsupportedHeight, options, cancel);
+                       })
+                .share();
+        buildPillar = [tipBuilder = std::move(tipBuilder),
+                       space = externalSpace,
+                       options = options_.externalPillar](const SupportGenerationInput &,
+                                                          const SupportContactPoint &contact,
+                                                          const std::atomic<bool> *cancel) {
+            SupportTipResult tip = tipBuilder.buildWithAttachment(contact.position, cancel);
+            if (!tip.valid() || cancelled(cancel))
+                return TriangleMesh{};
+            TriangleMesh pillar =
+                ExternalPillarBuilder(space.get(), options).build(tip.pillarAttachment, cancel);
+            if (pillar.triangles().empty() || cancelled(cancel))
+                return TriangleMesh{};
+
+            TriangleMesh shell;
+            shell.setHeader("CLIP Slicer external support");
+            shell.reserve(tip.mesh.triangles().size() + pillar.triangles().size());
+            for (const Triangle &triangle : pillar.triangles())
+                shell.addTriangle(triangle);
+            for (const Triangle &triangle : tip.mesh.triangles())
+                shell.addTriangle(triangle);
+            return shell;
         };
     }
 
@@ -457,9 +483,12 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
     };
 
     std::vector<std::thread> workers;
-    workers.reserve(options_.workerCount);
+    const std::size_t generationWorkerCount = externalSpace.valid() && options_.workerCount > 1
+                                                  ? options_.workerCount - 1
+                                                  : options_.workerCount;
+    workers.reserve(generationWorkerCount);
     try {
-        for (std::size_t index = 0; index < options_.workerCount; ++index)
+        for (std::size_t index = 0; index < generationWorkerCount; ++index)
             workers.emplace_back(worker);
     } catch (...) {
         fail(std::current_exception());
@@ -469,6 +498,8 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
 
     if (shared.error)
         std::rethrow_exception(shared.error);
+    if (externalSpace.valid())
+        (void)externalSpace.get();
     result.cancelled = cancelled(cancel);
     result.processedLayerCount = shared.processedLayers;
     result.contactPoints = std::move(shared.detectedContacts);

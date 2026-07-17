@@ -6,6 +6,7 @@
 #include "stl_slicer/stl_reader.hpp"
 #include "stl_slicer/stl_writer.hpp"
 #include "stl_slicer/support_generator.hpp"
+#include "stl_slicer/support_pillar.hpp"
 #include "stl_slicer/support_tip.hpp"
 #include "stl_slicer/unsupported_area.hpp"
 #include <algorithm>
@@ -334,8 +335,8 @@ SlicePath circle(double radius, std::size_t pointCount) {
     const double pi = std::acos(-1.0);
     result.points.reserve(pointCount + 1);
     for (std::size_t index = 0; index < pointCount; ++index) {
-        const double angle = 2.0 * pi * static_cast<double>(index) /
-                             static_cast<double>(pointCount);
+        const double angle =
+            2.0 * pi * static_cast<double>(index) / static_cast<double>(pointCount);
         result.points.push_back({radius * std::cos(angle), radius * std::sin(angle)});
     }
     result.points.push_back(result.points.front());
@@ -385,8 +386,7 @@ void testUnsupportedAreas() {
             "overhang coefficient did not extend the supported radius");
 
     SliceData detailedSupportedStack;
-    detailedSupportedStack.layers = {
-        {0.05, {circle(10.0, 720)}}, {0.15, {circle(10.0, 720)}}};
+    detailedSupportedStack.layers = {{0.05, {circle(10.0, 720)}}, {0.15, {circle(10.0, 720)}}};
     const auto detailedSupported =
         UnsupportedAreaAnalyzer{{30.0, 10.0}}.analyze(detailedSupportedStack);
     require(detailedSupported.unsupported.layers[1].paths.empty() &&
@@ -511,12 +511,18 @@ void testSupportContactPlacement() {
     slices->layers = {{0.25, {square(0, 0, 6, 6)}}};
     unsupported->layers = slices->layers;
 
-    const SupportGenerationResult fullBoundary =
-        SupportGenerator{{1, 2.0}}.generate({source, slices, unsupported});
+    const auto generateContacts = [&](SupportGeneratorOptions options) {
+        SupportGenerationKernels kernels;
+        kernels.buildPillar = [](const SupportGenerationInput &,
+                                 const SupportContactPoint &,
+                                 const std::atomic<bool> *) { return TriangleMesh{}; };
+        return SupportGenerator(options, std::move(kernels))
+            .generate({source, slices, unsupported});
+    };
+    const SupportGenerationResult fullBoundary = generateContacts({1, 2.0});
     require(!fullBoundary.contactPoints.empty(), "contact lattice was empty");
-    require(fullBoundary.supports.triangles().size() ==
-                fullBoundary.contactPoints.size() * 48,
-            "default support generation did not merge every contact tip");
+    require(fullBoundary.supports.triangles().empty(),
+            "contact-only generation unexpectedly emitted geometry");
     bool hasInterior = false;
     std::array<bool, 4> hasBoundary{};
     std::vector<double> boundaryPositions;
@@ -539,15 +545,13 @@ void testSupportContactPlacement() {
             boundaryPositions.push_back(18.0 - point.x);
         else if (std::abs(point.x) < 1e-9)
             boundaryPositions.push_back(24.0 - point.y);
-        hasInterior = hasInterior ||
-                      (point.x > 1e-9 && point.x < 6.0 - 1e-9 && point.y > 1e-9 &&
-                       point.y < 6.0 - 1e-9);
+        hasInterior = hasInterior || (point.x > 1e-9 && point.x < 6.0 - 1e-9 && point.y > 1e-9 &&
+                                      point.y < 6.0 - 1e-9);
     }
     require(hasInterior, "contact placement omitted the unsupported-area interior");
-    require(std::all_of(hasBoundary.begin(), hasBoundary.end(), [](bool present) {
-                return present;
-            }),
-            "contact placement did not cover every outer boundary");
+    require(
+        std::all_of(hasBoundary.begin(), hasBoundary.end(), [](bool present) { return present; }),
+        "contact placement did not cover every outer boundary");
     std::sort(boundaryPositions.begin(), boundaryPositions.end());
     require(boundaryPositions.size() >= 2, "outer boundary received too few contacts");
     double maximumBoundaryGap = boundaryPositions.front() + 24.0 - boundaryPositions.back();
@@ -559,36 +563,31 @@ void testSupportContactPlacement() {
 
     slices->layers = {{0.5, {square(0, 0, 10, 10)}}};
     unsupported->layers = {{0.5, {square(0, 0, 4, 10)}}};
-    const SupportGenerationResult partialBoundary =
-        SupportGenerator{{1, 3.0}}.generate({source, slices, unsupported});
+    const SupportGenerationResult partialBoundary = generateContacts({1, 3.0});
     bool reachesTopSourceEdge = false;
     bool movedToCutEdge = false;
     for (const SupportContactPoint &contact : partialBoundary.contactPoints) {
         reachesTopSourceEdge = reachesTopSourceEdge || std::abs(contact.position.y - 10.0) < 1e-9;
-        movedToCutEdge = movedToCutEdge ||
-                         (std::abs(contact.position.x - 4.0) < 1e-9 &&
-                          contact.position.y > 1e-9 && contact.position.y < 10.0 - 1e-9);
+        movedToCutEdge =
+            movedToCutEdge || (std::abs(contact.position.x - 4.0) < 1e-9 &&
+                               contact.position.y > 1e-9 && contact.position.y < 10.0 - 1e-9);
     }
     require(reachesTopSourceEdge, "coincident source perimeter did not receive contacts");
     require(!movedToCutEdge, "an internal unsupported-area cut was treated as an outer edge");
 
-    slices->layers = {
-        {0.75, {square(0, 0, 10, 10), internalSquare(4, 4, 6, 6)}}};
+    slices->layers = {{0.75, {square(0, 0, 10, 10), internalSquare(4, 4, 6, 6)}}};
     unsupported->layers = slices->layers;
-    const SupportGenerationResult withHole =
-        SupportGenerator{{1, 1.0}}.generate({source, slices, unsupported});
+    const SupportGenerationResult withHole = generateContacts({1, 1.0});
     bool contactsHole = false;
     for (const SupportContactPoint &contact : withHole.contactPoints) {
         const Vec3 &point = contact.position;
         require(!(point.x > 4.0 && point.x < 6.0 && point.y > 4.0 && point.y < 6.0),
                 "contact was placed inside a void");
-        contactsHole = contactsHole ||
-                       (((std::abs(point.x - 4.0) < 1e-9 ||
-                          std::abs(point.x - 6.0) < 1e-9) &&
-                         point.y >= 4.0 && point.y <= 6.0) ||
-                        ((std::abs(point.y - 4.0) < 1e-9 ||
-                          std::abs(point.y - 6.0) < 1e-9) &&
-                         point.x >= 4.0 && point.x <= 6.0));
+        contactsHole =
+            contactsHole || (((std::abs(point.x - 4.0) < 1e-9 || std::abs(point.x - 6.0) < 1e-9) &&
+                              point.y >= 4.0 && point.y <= 6.0) ||
+                             ((std::abs(point.y - 4.0) < 1e-9 || std::abs(point.y - 6.0) < 1e-9) &&
+                              point.x >= 4.0 && point.x <= 6.0));
     }
     require(contactsHole, "source-matching void perimeter did not receive contacts");
 
@@ -601,13 +600,105 @@ void testSupportContactPlacement() {
     require(invalidSpacingRejected, "support generator accepted zero contact spacing");
 }
 
+void testExternalPillarGeneration() {
+    auto emptySlices = std::make_shared<SliceData>();
+    Bounds3 bounds;
+    bounds.include({0.0, 0.0, 1.0});
+    bounds.include({1.0, 1.0, 2.0});
+    ExternalPillarOptions options;
+    options.latticeCellSize = 0.5;
+    options.minimumSupportAngleDegrees = 30.0;
+    options.baseHeight = 0.5;
+    options.baseRadius = 1.0;
+    options.bottomRadius = 0.3;
+    options.topRadius = 0.2;
+    options.circumferencePoints = 8;
+
+    auto emptySpace = std::make_shared<ExternalPillarSpace>(emptySlices, bounds, 3.0, options);
+    require(emptySpace->valid(), "empty external-pillar space was not completed");
+    const std::vector<Vec3> straightRoute = emptySpace->route({0.0, 0.0, 3.0});
+    require(straightRoute.size() >= 2, "external pillar did not reach the platform");
+    require(std::abs(straightRoute.front().z - options.baseHeight) < 1e-12 &&
+                std::abs(straightRoute.back().z - 3.0) < 1e-12,
+            "external pillar route has incorrect endpoints");
+    const double tangent = std::tan(options.minimumSupportAngleDegrees * std::acos(-1.0) / 180.0);
+    for (std::size_t index = 1; index < straightRoute.size(); ++index) {
+        const double dz = straightRoute[index].z - straightRoute[index - 1].z;
+        const double horizontal = std::hypot(straightRoute[index].x - straightRoute[index - 1].x,
+                                             straightRoute[index].y - straightRoute[index - 1].y);
+        require(dz > 0.0 && horizontal <= dz / tangent + 1e-9,
+                "external pillar route violates its minimum support angle");
+    }
+
+    const TriangleMesh pillar = ExternalPillarBuilder(emptySpace, options).build({0.0, 0.0, 3.0});
+    require(!pillar.triangles().empty(), "external pillar mesh was empty");
+    require(std::abs(pillar.bounds().min.z) < 1e-12 && pillar.bounds().max.z >= 3.0 - 1e-12,
+            "external pillar base or attachment height is incorrect");
+    require(pillar.bounds().min.x <= -options.baseRadius + 1e-12 &&
+                pillar.bounds().max.x >= options.baseRadius - 1e-12,
+            "external pillar base radius was not applied");
+
+    auto obstructedSlices = std::make_shared<SliceData>();
+    for (std::size_t index = 0; index < 20; ++index) {
+        const double z = 0.05 + static_cast<double>(index) * 0.1;
+        obstructedSlices->layers.push_back({z, {square(-1.0, -1.0, 1.0, 1.0)}});
+    }
+    Bounds3 obstructionBounds;
+    obstructionBounds.include({-1.0, -1.0, 0.0});
+    obstructionBounds.include({1.0, 1.0, 2.0});
+    ExternalPillarSpace obstructedSpace(obstructedSlices, obstructionBounds, 3.0, options);
+    const std::vector<Vec3> bentRoute = obstructedSpace.route({0.0, 0.0, 3.0});
+    require(!bentRoute.empty(), "external pillar did not route around a model obstruction");
+    const bool leavesObstruction =
+        std::any_of(bentRoute.begin(), bentRoute.end(), [](const Vec3 &point) {
+            return std::abs(point.x) > 1.0 || std::abs(point.y) > 1.0;
+        });
+    require(leavesObstruction, "external pillar route crossed the obstructing model");
+
+    std::atomic<bool> cancel{true};
+    ExternalPillarSpace cancelledSpace(emptySlices, bounds, 3.0, options, &cancel);
+    require(!cancelledSpace.valid() && cancelledSpace.route({0.0, 0.0, 3.0}).empty(),
+            "external-pillar space ignored cancellation");
+
+    bool invalidCellSizeRejected = false;
+    try {
+        ExternalPillarOptions invalid = options;
+        invalid.latticeCellSize = 0.0;
+        (void)ExternalPillarSpace(emptySlices, bounds, 3.0, invalid);
+    } catch (const std::invalid_argument &) {
+        invalidCellSizeRejected = true;
+    }
+    require(invalidCellSizeRejected, "external pillar accepted a zero lattice cell size");
+
+    auto floatingModel = std::make_shared<TriangleMesh>();
+    addBox(*floatingModel, 0.0, 0.0, 3.0, 1.0, 1.0, 4.0);
+    auto floatingSlices = std::make_shared<SliceData>();
+    floatingSlices->layers = {{3.0, {square(0.0, 0.0, 1.0, 1.0)}}};
+    auto floatingUnsupported = std::make_shared<SliceData>(*floatingSlices);
+    SupportGenerationKernels oneContact;
+    oneContact.detectContactPoints =
+        [](const SupportGenerationInput &, std::size_t layerIndex, const std::atomic<bool> *) {
+            return std::vector<SupportContactPoint>{{{0.5, 0.5, 3.0}, layerIndex}};
+        };
+    SupportGeneratorOptions generatorOptions;
+    generatorOptions.workerCount = 2;
+    generatorOptions.externalPillar = options;
+    const SupportGenerationResult integrated =
+        SupportGenerator(generatorOptions, std::move(oneContact))
+            .generate({floatingModel, floatingSlices, floatingUnsupported});
+    require(integrated.contactPoints.size() == 1 &&
+                integrated.supports.triangles().size() >
+                    generatorOptions.tip.circumferencePoints * 4,
+            "support generator did not combine a tip with its external pillar");
+    require(std::abs(integrated.supports.bounds().min.z) < 1e-12,
+            "integrated external support did not rest on the build platform");
+}
+
 void testSupportTipGeneration() {
     auto source = std::make_shared<TriangleMesh>();
     Triangle surface;
     surface.normal = {1.0, 0.0, 0.0};
-    surface.vertices = {{{0.0, -10.0, 0.0},
-                         {0.0, 10.0, 0.0},
-                         {0.0, 0.0, 20.0}}};
+    surface.vertices = {{{0.0, -10.0, 0.0}, {0.0, 10.0, 0.0}, {0.0, 0.0, 20.0}}};
     source->addTriangle(surface);
 
     const SupportTipOptions options{0.25, 0.75, 2.0, 12, 30.0};
@@ -624,17 +715,19 @@ void testSupportTipGeneration() {
     for (const Triangle &triangle : tip.triangles())
         for (const Vec3 &vertex : triangle.vertices)
             foundBottomCenter =
-                foundBottomCenter ||
-                (std::abs(vertex.x - expectedBottomCenter.x) < 1e-9 &&
-                 std::abs(vertex.y - expectedBottomCenter.y) < 1e-9 &&
-                 std::abs(vertex.z - expectedBottomCenter.z) < 1e-9);
-    require(foundBottomCenter,
-            "support tip axis was not clamped to the critical build angle");
+                foundBottomCenter || (std::abs(vertex.x - expectedBottomCenter.x) < 1e-9 &&
+                                      std::abs(vertex.y - expectedBottomCenter.y) < 1e-9 &&
+                                      std::abs(vertex.z - expectedBottomCenter.z) < 1e-9);
+    require(foundBottomCenter, "support tip axis was not clamped to the critical build angle");
+    const SupportTipResult tipWithAttachment =
+        SupportTipBuilder(source, options).buildWithAttachment({0.0, 0.0, 10.0});
+    require(tipWithAttachment.valid() &&
+                std::abs(tipWithAttachment.pillarAttachment.x - expectedBottomCenter.x) < 1e-9 &&
+                std::abs(tipWithAttachment.pillarAttachment.z - expectedBottomCenter.z) < 1e-9,
+            "support tip did not expose its pillar attachment center");
 
     std::atomic<bool> cancel{true};
-    require(SupportTipBuilder(source, options).build({0.0, 0.0, 10.0}, &cancel)
-                .triangles()
-                .empty(),
+    require(SupportTipBuilder(source, options).build({0.0, 0.0, 10.0}, &cancel).triangles().empty(),
             "support tip generation ignored cancellation");
 
     bool invalidPointCountRejected = false;
@@ -679,6 +772,7 @@ int main() {
         testOrientationOptimizer();
         testSupportGenerationScheduling();
         testSupportContactPlacement();
+        testExternalPillarGeneration();
         testSupportTipGeneration();
         std::cout << "All tests passed\n";
         return 0;

@@ -164,9 +164,8 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                                            0.1);
     supportSpacing_->SetDigits(3);
     spacingSizer->Add(supportSpacing_, 1, wxEXPAND);
-    spacingSizer->Add(new wxStaticText(supports, wxID_ANY, "Circumference points:"),
-                      0,
-                      wxALIGN_CENTER_VERTICAL);
+    spacingSizer->Add(
+        new wxStaticText(supports, wxID_ANY, "Circumference points:"), 0, wxALIGN_CENTER_VERTICAL);
     supportCircumferencePoints_ = new wxSpinCtrl(supports,
                                                  wxID_ANY,
                                                  wxEmptyString,
@@ -182,34 +181,92 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
 
     auto *tipBox = new wxStaticBoxSizer(wxVERTICAL, supports, "Contact tip");
     auto *tipSizer = new wxFlexGridSizer(2, 8, 10);
-    const auto addTipDimension = [&](const wxString &label,
-                                     wxSpinCtrlDouble *&control,
-                                     double value) {
-        tipSizer->Add(
-            new wxStaticText(tipBox->GetStaticBox(), wxID_ANY, label),
-            0,
-            wxALIGN_CENTER_VERTICAL);
-        control = new wxSpinCtrlDouble(tipBox->GetStaticBox(),
+    const auto addTipDimension =
+        [&](const wxString &label, wxSpinCtrlDouble *&control, double value) {
+            tipSizer->Add(new wxStaticText(tipBox->GetStaticBox(), wxID_ANY, label),
+                          0,
+                          wxALIGN_CENTER_VERTICAL);
+            control = new wxSpinCtrlDouble(tipBox->GetStaticBox(),
+                                           wxID_ANY,
+                                           wxEmptyString,
+                                           wxDefaultPosition,
+                                           wxDefaultSize,
+                                           wxSP_ARROW_KEYS,
+                                           0.001,
+                                           1000.0,
+                                           value,
+                                           0.1);
+            control->SetDigits(3);
+            tipSizer->Add(control, 1, wxEXPAND);
+        };
+    addTipDimension("Top radius (mm):", supportTipTopRadius_, settings.supportTipTopRadius);
+    addTipDimension(
+        "Bottom radius (mm):", supportTipBottomRadius_, settings.supportTipBottomRadius);
+    addTipDimension("Height (mm):", supportTipHeight_, settings.supportTipHeight);
+    tipSizer->AddGrowableCol(1);
+    tipBox->Add(tipSizer, 1, wxEXPAND | wxALL, 8);
+    supportsSizer->Add(tipBox, 0, wxEXPAND | wxBOTTOM, 10);
+
+    auto *pillarBox = new wxStaticBoxSizer(wxVERTICAL, supports, "External pillar");
+    auto *pillarSizer = new wxFlexGridSizer(2, 8, 10);
+    const auto addPillarDimension = [&](const wxString &label,
+                                        wxSpinCtrlDouble *&control,
+                                        double value,
+                                        double minimum,
+                                        double maximum,
+                                        double increment,
+                                        int digits) {
+        pillarSizer->Add(new wxStaticText(pillarBox->GetStaticBox(), wxID_ANY, label),
+                         0,
+                         wxALIGN_CENTER_VERTICAL);
+        control = new wxSpinCtrlDouble(pillarBox->GetStaticBox(),
                                        wxID_ANY,
                                        wxEmptyString,
                                        wxDefaultPosition,
                                        wxDefaultSize,
                                        wxSP_ARROW_KEYS,
-                                       0.001,
-                                       1000.0,
+                                       minimum,
+                                       maximum,
                                        value,
-                                       0.1);
-        control->SetDigits(3);
-        tipSizer->Add(control, 1, wxEXPAND);
+                                       increment);
+        control->SetDigits(digits);
+        pillarSizer->Add(control, 1, wxEXPAND);
     };
-    addTipDimension("Top radius (mm):", supportTipTopRadius_, settings.supportTipTopRadius);
-    addTipDimension("Bottom radius (mm):",
-                    supportTipBottomRadius_,
-                    settings.supportTipBottomRadius);
-    addTipDimension("Height (mm):", supportTipHeight_, settings.supportTipHeight);
-    tipSizer->AddGrowableCol(1);
-    tipBox->Add(tipSizer, 1, wxEXPAND | wxALL, 8);
-    supportsSizer->Add(tipBox, 0, wxEXPAND);
+    addPillarDimension("Lattice cell size (mm):",
+                       supportLatticeCellSize_,
+                       settings.supportLatticeCellSize,
+                       0.05,
+                       100.0,
+                       0.1,
+                       3);
+    addPillarDimension("Minimum support angle (degrees):",
+                       minimumSupportAngleDegrees_,
+                       settings.minimumSupportAngleDegrees,
+                       5.0,
+                       89.9,
+                       1.0,
+                       1);
+    addPillarDimension(
+        "Base height (mm):", supportBaseHeight_, settings.supportBaseHeight, 0.001, 1000.0, 0.1, 3);
+    addPillarDimension(
+        "Base radius (mm):", supportBaseRadius_, settings.supportBaseRadius, 0.001, 1000.0, 0.1, 3);
+    addPillarDimension("Bottom radius (mm):",
+                       supportPillarBottomRadius_,
+                       settings.supportPillarBottomRadius,
+                       0.001,
+                       1000.0,
+                       0.1,
+                       3);
+    addPillarDimension("Top radius (mm):",
+                       supportPillarTopRadius_,
+                       settings.supportPillarTopRadius,
+                       0.001,
+                       1000.0,
+                       0.1,
+                       3);
+    pillarSizer->AddGrowableCol(1);
+    pillarBox->Add(pillarSizer, 1, wxEXPAND | wxALL, 8);
+    supportsSizer->Add(pillarBox, 0, wxEXPAND);
     supports->SetSizer(supportsSizer);
     notebook->AddPage(supports, "Generator");
 
@@ -217,7 +274,7 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     root->Add(
         CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
     SetSizerAndFit(root);
-    SetMinSize({420, 350});
+    SetMinSize({460, 520});
 }
 
 double SettingsDialog::LayerThickness() const {
@@ -270,6 +327,30 @@ double SettingsDialog::SupportTipBottomRadius() const {
 
 double SettingsDialog::SupportTipHeight() const {
     return supportTipHeight_->GetValue();
+}
+
+double SettingsDialog::SupportLatticeCellSize() const {
+    return supportLatticeCellSize_->GetValue();
+}
+
+double SettingsDialog::MinimumSupportAngleDegrees() const {
+    return minimumSupportAngleDegrees_->GetValue();
+}
+
+double SettingsDialog::SupportBaseHeight() const {
+    return supportBaseHeight_->GetValue();
+}
+
+double SettingsDialog::SupportBaseRadius() const {
+    return supportBaseRadius_->GetValue();
+}
+
+double SettingsDialog::SupportPillarBottomRadius() const {
+    return supportPillarBottomRadius_->GetValue();
+}
+
+double SettingsDialog::SupportPillarTopRadius() const {
+    return supportPillarTopRadius_->GetValue();
 }
 
 int SettingsDialog::SupportCircumferencePoints() const {

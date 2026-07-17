@@ -168,11 +168,10 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->AddTool(
         IdShow, "Show", wxArtProvider::GetBitmap(wxART_TICK_MARK, wxART_TOOLBAR, toolSize));
-    toolbar_->AddTool(
-        IdDeleteModels,
-        "Delete",
-        wxArtProvider::GetBitmap(wxART_DELETE, wxART_TOOLBAR, toolSize),
-        "Delete selected models");
+    toolbar_->AddTool(IdDeleteModels,
+                      "Delete",
+                      wxArtProvider::GetBitmap(wxART_DELETE, wxART_TOOLBAR, toolSize),
+                      "Delete selected models");
     toolbar_->AddSeparator();
     toolbar_->AddTool(IdDetectUnsupported,
                       "Detect",
@@ -472,17 +471,14 @@ void DocumentFrame::OnHide(wxCommandEvent &) {
     UpdateStatus();
 }
 void DocumentFrame::OnDeleteModels(wxCommandEvent &) {
-    const bool hasSelectedModel =
-        std::any_of(models_.begin(), models_.end(), [](const auto &model) {
-            return model->selected;
-        });
+    const bool hasSelectedModel = std::any_of(
+        models_.begin(), models_.end(), [](const auto &model) { return model->selected; });
     if (!hasSelectedModel)
         return;
 
     InvalidateUnsupportedAnalysis();
-    const auto newEnd = std::remove_if(models_.begin(), models_.end(), [](const auto &model) {
-        return model->selected;
-    });
+    const auto newEnd = std::remove_if(
+        models_.begin(), models_.end(), [](const auto &model) { return model->selected; });
     models_.erase(newEnd, models_.end());
     RefreshModelList();
     canvas_->ModelsChanged();
@@ -755,18 +751,15 @@ void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
                  healingThreshold,
                  firstLayerOffset}}.slice(combined, &unsupportedAnalysisCancel_);
             if (!unsupportedAnalysisCancel_.load(std::memory_order_relaxed)) {
-                stl_slicer::UnsupportedAreaResult unsupported =
-                    stl_slicer::UnsupportedAreaAnalyzer{
-                        {criticalAngleDegrees, overhangCoefficient}}
-                        .analyze(slices, &unsupportedAnalysisCancel_);
+                stl_slicer::UnsupportedAreaResult unsupported = stl_slicer::UnsupportedAreaAnalyzer{
+                    {criticalAngleDegrees,
+                     overhangCoefficient}}.analyze(slices, &unsupportedAnalysisCancel_);
                 if (!unsupportedAnalysisCancel_.load(std::memory_order_relaxed)) {
                     payload->totalArea = unsupported.totalArea;
-                    payload->visualization =
-                        BuildUnsupportedSurfaces(unsupported.unsupported);
+                    payload->visualization = BuildUnsupportedSurfaces(unsupported.unsupported);
                 }
             }
-            payload->cancelled =
-                unsupportedAnalysisCancel_.load(std::memory_order_relaxed);
+            payload->cancelled = unsupportedAnalysisCancel_.load(std::memory_order_relaxed);
         } catch (const std::exception &error) {
             payload->error = error.what();
         }
@@ -829,7 +822,14 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
                                   settings.supportTipBottomRadius,
                                   settings.supportTipHeight,
                                   static_cast<std::size_t>(settings.supportCircumferencePoints),
-                                  settings.criticalAngleDegrees}}}
+                                  settings.criticalAngleDegrees},
+                                 {settings.supportLatticeCellSize,
+                                  settings.minimumSupportAngleDegrees,
+                                  settings.supportBaseHeight,
+                                  settings.supportBaseRadius,
+                                  settings.supportPillarBottomRadius,
+                                  settings.supportPillarTopRadius,
+                                  static_cast<std::size_t>(settings.supportCircumferencePoints)}}}
                                 .generate({source, slices, unsupported}, &supportGenerationCancel_);
                         payload->supports = std::move(generated.supports);
                         payload->contactPointCount = generated.contactPoints.size();
@@ -868,14 +868,10 @@ void DocumentFrame::OnSupportGenerationFinished(wxThreadEvent &event) {
         const wxString message =
             payload->contactPointCount == 0
                 ? "No support contact points were detected."
-                : wxString::Format(
-                      "%llu support contact points were detected.\n"
-                      "No contact-tip geometry was generated.",
-                      static_cast<unsigned long long>(payload->contactPointCount));
-        wxMessageBox(message,
-                     "Generate supports",
-                     wxOK | wxICON_INFORMATION,
-                     this);
+                : wxString::Format("%llu support contact points were detected.\n"
+                                   "No complete external support paths were generated.",
+                                   static_cast<unsigned long long>(payload->contactPointCount));
+        wxMessageBox(message, "Generate supports", wxOK | wxICON_INFORMATION, this);
         return;
     }
     AddModel(std::make_shared<stl_slicer::MeshSceneModel>("Generated supports",

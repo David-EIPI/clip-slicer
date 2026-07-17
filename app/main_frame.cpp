@@ -63,6 +63,12 @@ void MainFrame::ShowSettingsDialog() {
     updated.supportTipTopRadius = dialog.SupportTipTopRadius();
     updated.supportTipBottomRadius = dialog.SupportTipBottomRadius();
     updated.supportTipHeight = dialog.SupportTipHeight();
+    updated.supportLatticeCellSize = dialog.SupportLatticeCellSize();
+    updated.minimumSupportAngleDegrees = dialog.MinimumSupportAngleDegrees();
+    updated.supportBaseHeight = dialog.SupportBaseHeight();
+    updated.supportBaseRadius = dialog.SupportBaseRadius();
+    updated.supportPillarBottomRadius = dialog.SupportPillarBottomRadius();
+    updated.supportPillarTopRadius = dialog.SupportPillarTopRadius();
     updated.supportCircumferencePoints = dialog.SupportCircumferencePoints();
     if (!updated.Save()) {
         wxMessageBox("Unable to save settings to:\n" + AppSettings::FilePath(),

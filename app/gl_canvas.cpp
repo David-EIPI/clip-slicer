@@ -650,7 +650,7 @@ void ModelCanvas::DrawOverlays(const float *) {
     auto b = document_.VisibleBounds();
     if (!b.valid())
         return;
-    const float z = float(b.min.z - std::max(0.5, (b.max.z - b.min.z) * .03));
+    constexpr float z = 0.0f;
     std::vector<stl_slicer::RenderVertex> v = {{float(b.min.x), float(b.min.y), z, 0, 0, 1},
                                                {float(b.max.x), float(b.min.y), z, 0, 0, 1},
                                                {float(b.max.x), float(b.max.y), z, 0, 0, 1},

@@ -2,6 +2,7 @@
 
 #include "stl_slicer/model.hpp"
 #include "stl_slicer/slice.hpp"
+#include "stl_slicer/support_pillar.hpp"
 #include "stl_slicer/support_tip.hpp"
 #include <atomic>
 #include <cstddef>
@@ -37,6 +38,7 @@ struct SupportGeneratorOptions {
     std::size_t workerCount = 4;
     double supportSpacing = 2.0;
     SupportTipOptions tip;
+    ExternalPillarOptions externalPillar;
 };
 
 struct SupportGenerationResult {

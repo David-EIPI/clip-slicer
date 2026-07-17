@@ -31,6 +31,12 @@ bool AppSettings::Load() {
     supportTipTopRadius = defaultSupportTipTopRadius;
     supportTipBottomRadius = defaultSupportTipBottomRadius;
     supportTipHeight = defaultSupportTipHeight;
+    supportLatticeCellSize = defaultSupportLatticeCellSize;
+    minimumSupportAngleDegrees = defaultMinimumSupportAngleDegrees;
+    supportBaseHeight = defaultSupportBaseHeight;
+    supportBaseRadius = defaultSupportBaseRadius;
+    supportPillarBottomRadius = defaultSupportPillarBottomRadius;
+    supportPillarTopRadius = defaultSupportPillarTopRadius;
     supportCircumferencePoints = defaultSupportCircumferencePoints;
     if (!wxFileExists(FilePath()))
         return true;
@@ -89,10 +95,32 @@ bool AppSettings::Load() {
     config.Read("/supports/tipHeight", &value, defaultSupportTipHeight);
     if (std::isfinite(value) && value > 0.0)
         supportTipHeight = value;
+    value = defaultSupportLatticeCellSize;
+    config.Read("/supports/latticeCellSize", &value, defaultSupportLatticeCellSize);
+    if (std::isfinite(value) && value > 0.0)
+        supportLatticeCellSize = value;
+    value = defaultMinimumSupportAngleDegrees;
+    config.Read("/supports/minimumSupportAngleDegrees", &value, defaultMinimumSupportAngleDegrees);
+    if (std::isfinite(value) && value >= 5.0 && value < 90.0)
+        minimumSupportAngleDegrees = value;
+    value = defaultSupportBaseHeight;
+    config.Read("/supports/baseHeight", &value, defaultSupportBaseHeight);
+    if (std::isfinite(value) && value > 0.0)
+        supportBaseHeight = value;
+    value = defaultSupportBaseRadius;
+    config.Read("/supports/baseRadius", &value, defaultSupportBaseRadius);
+    if (std::isfinite(value) && value > 0.0)
+        supportBaseRadius = value;
+    value = defaultSupportPillarBottomRadius;
+    config.Read("/supports/pillarBottomRadius", &value, defaultSupportPillarBottomRadius);
+    if (std::isfinite(value) && value > 0.0)
+        supportPillarBottomRadius = value;
+    value = defaultSupportPillarTopRadius;
+    config.Read("/supports/pillarTopRadius", &value, defaultSupportPillarTopRadius);
+    if (std::isfinite(value) && value > 0.0)
+        supportPillarTopRadius = value;
     integerValue = defaultSupportCircumferencePoints;
-    config.Read("/supports/circumferencePoints",
-                &integerValue,
-                defaultSupportCircumferencePoints);
+    config.Read("/supports/circumferencePoints", &integerValue, defaultSupportCircumferencePoints);
     if (integerValue >= 3 && integerValue <= 1024)
         supportCircumferencePoints = static_cast<int>(integerValue);
     return true;
@@ -119,6 +147,12 @@ bool AppSettings::Save() const {
     config.Write("/supports/tipTopRadius", supportTipTopRadius);
     config.Write("/supports/tipBottomRadius", supportTipBottomRadius);
     config.Write("/supports/tipHeight", supportTipHeight);
+    config.Write("/supports/latticeCellSize", supportLatticeCellSize);
+    config.Write("/supports/minimumSupportAngleDegrees", minimumSupportAngleDegrees);
+    config.Write("/supports/baseHeight", supportBaseHeight);
+    config.Write("/supports/baseRadius", supportBaseRadius);
+    config.Write("/supports/pillarBottomRadius", supportPillarBottomRadius);
+    config.Write("/supports/pillarTopRadius", supportPillarTopRadius);
     config.Write("/supports/circumferencePoints", supportCircumferencePoints);
     return config.Flush();
 }

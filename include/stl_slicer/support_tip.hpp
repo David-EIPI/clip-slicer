@@ -15,13 +15,23 @@ struct SupportTipOptions {
     double criticalAngleDegrees = 30.0;
 };
 
+struct SupportTipResult {
+    TriangleMesh mesh;
+    Vec3 pillarAttachment;
+
+    bool valid() const noexcept {
+        return !mesh.triangles().empty();
+    }
+};
+
 class SupportTipBuilder {
   public:
     SupportTipBuilder(std::shared_ptr<const TriangleMesh> sourceModel,
                       SupportTipOptions options = {},
                       const std::atomic<bool> *cancel = nullptr);
-    TriangleMesh build(const Vec3 &contactPoint,
-                       const std::atomic<bool> *cancel = nullptr) const;
+    TriangleMesh build(const Vec3 &contactPoint, const std::atomic<bool> *cancel = nullptr) const;
+    SupportTipResult buildWithAttachment(const Vec3 &contactPoint,
+                                         const std::atomic<bool> *cancel = nullptr) const;
 
   private:
     struct Impl;

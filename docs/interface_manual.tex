@@ -30,6 +30,7 @@ fits tightly in the positive octant and rests on the build plane.
 
 The rectangle below the models represents the printer build platform. Its
 width and length follow the combined transformed bounds of all visible models.
+Its upper surface lies on the global Z=0 plane.
 The upper surface is dark gray. The underside remains visible when viewed from
 below and is shown in silver gray, making the platform orientation apparent.
 The first section of the application status bar reports the current build
@@ -177,6 +178,17 @@ model units. The Generator tab's circumference-points setting controls the
 polygonal resolution shared by circular tip and pillar surfaces and defaults
 to 12.
 
+The External pillar group controls supports which extend from the build
+platform to contact tips. Lattice cell size controls the spatial resolution of
+the route search and defaults to 0.5 model units. Minimum support angle is the
+smallest permitted angle between a pillar centerline segment and the build
+platform and defaults to 30 degrees. The cylindrical platform base defaults to
+a height of 0.5 and radius of 2.0 model units. The tapered pillar wire defaults
+to a bottom radius of 0.75 and a top radius of 0.5 model units.
+External pillar bases use the global Z=0 build platform. Models intended for
+support generation should therefore be placed in the positive Z half-space;
+the \emph{Move to Origin} command performs this placement when appropriate.
+
 The Generate command places contact candidates on a triangular lattice within
 each unsupported component. This lattice has six equidistant neighbors around
 an interior point. Contacts outside the component or inside its voids are
@@ -194,6 +206,23 @@ downward until its angle from the build plane equals the critical angle minus
 the cone slope angle. A tip is omitted when this cannot be done while keeping
 the cone outside the model. Accepted cone sides and both polygonal end
 surfaces are triangulated and combined in the generated support model.
+
+External-pillar routing is prepared concurrently with contact detection. The
+model's layer polygons are expanded by a conservative envelope of the local
+pillar radius and rasterized onto the configured cubic lattice. Starting with
+base positions whose cylinders do not intersect the model, each successive Z
+level records cells reachable through an unobstructed segment which satisfies
+the minimum support angle. Each cell stores only the predecessor direction
+used to reach it; temporary obstacle bitmaps are discarded after a level has
+been processed. This limits retained memory while preserving a complete route
+back to the platform.
+
+For an accepted tip, the route search starts at the tip cone's lower center
+and follows reachable predecessors down to the platform. The resulting
+centerline may bend at lattice levels. A continuously tapered polygonal pipe
+is built along the route and joined to a cylindrical base. Contacts for which
+no collision-free external route exists are left for the future internal
+pillar stage and do not emit incomplete geometry.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

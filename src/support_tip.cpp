@@ -164,20 +164,18 @@ struct SupportTipBuilder::Impl {
             throw std::invalid_argument("Support tip dimensions must be positive finite values");
         if (options.circumferencePoints < 3 || options.circumferencePoints > 1024)
             throw std::invalid_argument("Support tip circumference point count must be 3 to 1024");
-        if (!std::isfinite(options.criticalAngleDegrees) ||
-            options.criticalAngleDegrees <= 0.0 || options.criticalAngleDegrees >= 90.0)
+        if (!std::isfinite(options.criticalAngleDegrees) || options.criticalAngleDegrees <= 0.0 ||
+            options.criticalAngleDegrees >= 90.0)
             throw std::invalid_argument("Support tip critical angle must be between 0 and 90");
 
         const double pi = std::acos(-1.0);
-        slopeAngle = std::atan2(std::abs(options.bottomRadius - options.topRadius),
-                                options.height);
+        slopeAngle = std::atan2(std::abs(options.bottomRadius - options.topRadius), options.height);
         minimumAxisAngle = std::max(0.0, options.criticalAngleDegrees * pi / 180.0 - slopeAngle);
         const Bounds3 &bounds = sourceModel->bounds();
-        const double span = bounds.valid()
-                                ? std::max({bounds.max.x - bounds.min.x,
-                                            bounds.max.y - bounds.min.y,
-                                            bounds.max.z - bounds.min.z})
-                                : 1.0;
+        const double span = bounds.valid() ? std::max({bounds.max.x - bounds.min.x,
+                                                       bounds.max.y - bounds.min.y,
+                                                       bounds.max.z - bounds.min.z})
+                                           : 1.0;
         tolerance = std::max(1e-7, span * 1e-10);
 
         triangleIndices.resize(sourceModel->triangles().size());
@@ -223,8 +221,7 @@ struct SupportTipBuilder::Impl {
                          triangleIndices.begin() + static_cast<std::ptrdiff_t>(end),
                          [&](std::size_t first, std::size_t second) {
                              const auto center = [&](std::size_t triangleIndex) {
-                                 const Triangle &triangle =
-                                     sourceModel->triangles()[triangleIndex];
+                                 const Triangle &triangle = sourceModel->triangles()[triangleIndex];
                                  const double firstCoordinate =
                                      splitX ? triangle.vertices[0].x : triangle.vertices[0].y;
                                  const double secondCoordinate =
@@ -305,10 +302,8 @@ struct SupportTipBuilder::Impl {
         }
         for (std::size_t index = node.begin; index < node.end; ++index) {
             double z = 0.0;
-            if (projectedIntersection(sourceModel->triangles()[triangleIndices[index]],
-                                      point,
-                                      tolerance,
-                                      z) &&
+            if (projectedIntersection(
+                    sourceModel->triangles()[triangleIndices[index]], point, tolerance, z) &&
                 z > point.z + tolerance)
                 intersections.push_back(z);
         }
@@ -337,16 +332,12 @@ struct SupportTipBuilder::Impl {
 
     Vec3 outwardNormal(const Vec3 &surfacePoint, Vec3 normal) const {
         normal = normalized(normal);
-        const double probeBase =
-            std::max({tolerance * 16.0,
-                      1e-4,
-                      std::min(options.topRadius, options.bottomRadius) * 1e-3});
+        const double probeBase = std::max(
+            {tolerance * 16.0, 1e-4, std::min(options.topRadius, options.bottomRadius) * 1e-3});
         for (double multiplier : {1.0, 10.0, 100.0}) {
             const double distance = probeBase * multiplier;
-            const bool positiveInside =
-                isInside(add(surfacePoint, multiply(normal, distance)));
-            const bool negativeInside =
-                isInside(add(surfacePoint, multiply(normal, -distance)));
+            const bool positiveInside = isInside(add(surfacePoint, multiply(normal, distance)));
+            const bool negativeInside = isInside(add(surfacePoint, multiply(normal, -distance)));
             if (positiveInside != negativeInside)
                 return positiveInside ? multiply(normal, -1.0) : normal;
         }
@@ -361,13 +352,8 @@ struct SupportTipBuilder::Impl {
         double bestDistance = std::numeric_limits<double>::infinity();
         Vec3 closestPoint;
         if (!nodes.empty())
-            findSurfaceCandidates(0,
-                                  contact,
-                                  bestZ,
-                                  rayTriangle,
-                                  bestDistance,
-                                  closestTriangle,
-                                  closestPoint);
+            findSurfaceCandidates(
+                0, contact, bestZ, rayTriangle, bestDistance, closestTriangle, closestPoint);
 
         std::size_t bestTriangle = closestTriangle != noTriangle ? closestTriangle : rayTriangle;
 
@@ -394,14 +380,12 @@ struct SupportTipBuilder::Impl {
     }
 
     bool coneIsOutside(const Vec3 &contact, const Vec3 &axis) const {
-        const Vec3 helper = std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0}
-                                                    : Vec3{1.0, 0.0, 0.0};
+        const Vec3 helper = std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
         const Vec3 firstRadiusDirection = normalized(cross(helper, axis));
         const Vec3 secondRadiusDirection = normalized(cross(axis, firstRadiusDirection));
         const double pi = std::acos(-1.0);
         for (double fraction : {0.25, 0.5, 0.75, 1.0}) {
-            const Vec3 center =
-                add(contact, multiply(axis, options.height * fraction));
+            const Vec3 center = add(contact, multiply(axis, options.height * fraction));
             if (isInside(center))
                 return false;
             const double radius =
@@ -409,9 +393,8 @@ struct SupportTipBuilder::Impl {
             for (std::size_t index = 0; index < options.circumferencePoints; ++index) {
                 const double angle = 2.0 * pi * static_cast<double>(index) /
                                      static_cast<double>(options.circumferencePoints);
-                const Vec3 radial =
-                    add(multiply(firstRadiusDirection, std::cos(angle)),
-                        multiply(secondRadiusDirection, std::sin(angle)));
+                const Vec3 radial = add(multiply(firstRadiusDirection, std::cos(angle)),
+                                        multiply(secondRadiusDirection, std::sin(angle)));
                 if (isInside(add(center, multiply(radial, radius))))
                     return false;
             }
@@ -456,7 +439,12 @@ SupportTipBuilder::SupportTipBuilder(std::shared_ptr<const TriangleMesh> sourceM
 
 TriangleMesh SupportTipBuilder::build(const Vec3 &contactPoint,
                                       const std::atomic<bool> *cancel) const {
-    TriangleMesh result;
+    return buildWithAttachment(contactPoint, cancel).mesh;
+}
+
+SupportTipResult SupportTipBuilder::buildWithAttachment(const Vec3 &contactPoint,
+                                                        const std::atomic<bool> *cancel) const {
+    SupportTipResult result;
     if (cancel && cancel->load(std::memory_order_relaxed))
         return result;
 
@@ -464,8 +452,8 @@ TriangleMesh SupportTipBuilder::build(const Vec3 &contactPoint,
     if (!impl_->tipAxis(contactPoint, axis))
         return result;
     const Vec3 bottomCenter = add(contactPoint, multiply(axis, impl_->options.height));
-    const Vec3 helper = std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0}
-                                                : Vec3{1.0, 0.0, 0.0};
+    result.pillarAttachment = bottomCenter;
+    const Vec3 helper = std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
     const Vec3 firstRadiusDirection = normalized(cross(helper, axis));
     const Vec3 secondRadiusDirection = normalized(cross(axis, firstRadiusDirection));
     const std::size_t pointCount = impl_->options.circumferencePoints;
@@ -476,24 +464,24 @@ TriangleMesh SupportTipBuilder::build(const Vec3 &contactPoint,
     topRing.reserve(pointCount);
     bottomRing.reserve(pointCount);
     for (std::size_t index = 0; index < pointCount; ++index) {
-        const double angle = 2.0 * pi * static_cast<double>(index) /
-                             static_cast<double>(pointCount);
+        const double angle =
+            2.0 * pi * static_cast<double>(index) / static_cast<double>(pointCount);
         const Vec3 radial = add(multiply(firstRadiusDirection, std::cos(angle)),
                                 multiply(secondRadiusDirection, std::sin(angle)));
         topRing.push_back(add(contactPoint, multiply(radial, impl_->options.topRadius)));
         bottomRing.push_back(add(bottomCenter, multiply(radial, impl_->options.bottomRadius)));
     }
 
-    result.setHeader("CLIP Slicer support contact tip");
-    result.reserve(pointCount * 4);
+    result.mesh.setHeader("CLIP Slicer support contact tip");
+    result.mesh.reserve(pointCount * 4);
     for (std::size_t index = 0; index < pointCount; ++index) {
         if (cancel && cancel->load(std::memory_order_relaxed))
             return {};
         const std::size_t next = (index + 1) % pointCount;
-        addTriangle(result, topRing[index], topRing[next], bottomRing[next]);
-        addTriangle(result, topRing[index], bottomRing[next], bottomRing[index]);
-        addTriangle(result, contactPoint, topRing[next], topRing[index]);
-        addTriangle(result, bottomCenter, bottomRing[index], bottomRing[next]);
+        addTriangle(result.mesh, topRing[index], topRing[next], bottomRing[next]);
+        addTriangle(result.mesh, topRing[index], bottomRing[next], bottomRing[index]);
+        addTriangle(result.mesh, contactPoint, topRing[next], topRing[index]);
+        addTriangle(result.mesh, bottomCenter, bottomRing[index], bottomRing[next]);
     }
     return result;
 }
