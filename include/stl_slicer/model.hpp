@@ -3,7 +3,9 @@
 #include "stl_slicer/geometry.hpp"
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace stl_slicer {
@@ -44,6 +46,17 @@ class TriangleMesh {
         for (const auto &vertex : triangle.vertices)
             bounds_.include(vertex);
         triangles_.push_back(std::move(triangle));
+    }
+    void append(TriangleMesh mesh) {
+        if (mesh.triangles_.empty())
+            return;
+        if (mesh.bounds_.valid()) {
+            bounds_.include(mesh.bounds_.min);
+            bounds_.include(mesh.bounds_.max);
+        }
+        triangles_.insert(triangles_.end(),
+                          std::make_move_iterator(mesh.triangles_.begin()),
+                          std::make_move_iterator(mesh.triangles_.end()));
     }
 
   private:

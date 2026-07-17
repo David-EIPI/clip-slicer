@@ -213,16 +213,18 @@ pillar radius and rasterized onto the configured cubic lattice. Starting with
 base positions whose cylinders do not intersect the model, each successive Z
 level records cells reachable through an unobstructed segment which satisfies
 the minimum support angle. Each cell stores only the predecessor direction
-used to reach it; temporary obstacle bitmaps are discarded after a level has
-been processed. This limits retained memory while preserving a complete route
-back to the platform.
+used to reach it. Compact obstacle bitmaps are retained as a broad-phase
+collision cache for route generation, avoiding repeated polygon scans.
 
 For an accepted tip, the route search starts at the tip cone's lower center
-and follows reachable predecessors down to the platform. The resulting
-centerline may bend at lattice levels. A continuously tapered polygonal pipe
-is built along the route and joined to a cylindrical base. Contacts for which
-no collision-free external route exists are left for the future internal
-pillar stage and do not emit incomplete geometry.
+and searches downward through unobstructed lattice neighbors until it meets
+the platform-reachable field. A bounded direct-visibility probe handles thin
+obstructions without allowing unreachable tips to trigger an exhaustive cone
+scan. The two halves are joined through their stored predecessor links.
+Collinear centerline steps are merged before a continuously tapered polygonal
+pipe and cylindrical base are triangulated. Contacts for which no
+collision-free external route exists are left for the future internal pillar
+stage and do not emit incomplete geometry.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

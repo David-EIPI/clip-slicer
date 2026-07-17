@@ -101,6 +101,7 @@ struct BitGrid {
 struct ClearanceLayer {
     double z = 0.0;
     Paths64 polygons;
+    BitGrid blocked;
 };
 
 struct GridOffset {
@@ -254,6 +255,7 @@ struct ExternalPillarSpace::Impl {
             ClearanceLayer clearance;
             clearance.z = layer.z;
             clearance.polygons = expandedLayer(layer, clearanceRadius(layer.z));
+            clearance.blocked = rasterize(clearance.polygons);
             clearanceLayers.push_back(std::move(clearance));
         }
     }
@@ -315,16 +317,16 @@ struct ExternalPillarSpace::Impl {
         return result;
     }
 
-    bool segmentClear(const std::vector<std::pair<double, BitGrid>> &obstacles,
+    bool segmentClear(const std::vector<const ClearanceLayer *> &obstacles,
                       std::size_t sourceX,
                       std::size_t sourceY,
                       std::size_t targetX,
                       std::size_t targetY,
                       double sourceZ,
                       double targetZ) const {
-        for (const auto &obstacle : obstacles) {
+        for (const ClearanceLayer *obstacle : obstacles) {
             const double fraction =
-                std::clamp((obstacle.first - sourceZ) / (targetZ - sourceZ), 0.0, 1.0);
+                std::clamp((obstacle->z - sourceZ) / (targetZ - sourceZ), 0.0, 1.0);
             const long long x = std::llround(
                 static_cast<double>(sourceX) +
                 (static_cast<double>(targetX) - static_cast<double>(sourceX)) * fraction);
@@ -333,7 +335,7 @@ struct ExternalPillarSpace::Impl {
                 (static_cast<double>(targetY) - static_cast<double>(sourceY)) * fraction);
             if (x >= 0 && y >= 0 && x < static_cast<long long>(width) &&
                 y < static_cast<long long>(height) &&
-                obstacle.second.test(static_cast<std::size_t>(x), static_cast<std::size_t>(y)))
+                obstacle->blocked.test(static_cast<std::size_t>(x), static_cast<std::size_t>(y)))
                 return false;
         }
         return true;
@@ -370,12 +372,11 @@ struct ExternalPillarSpace::Impl {
                 return;
             const double sourceZ = levelZ(level - 1);
             const double targetZ = levelZ(level);
-            std::vector<std::pair<double, BitGrid>> obstacles;
+            std::vector<const ClearanceLayer *> obstacles;
             while (firstClearance < clearanceLayers.size() &&
                    clearanceLayers[firstClearance].z <= targetZ + 1e-12) {
                 if (clearanceLayers[firstClearance].z > sourceZ + 1e-12)
-                    obstacles.emplace_back(clearanceLayers[firstClearance].z,
-                                           rasterize(clearanceLayers[firstClearance].polygons));
+                    obstacles.push_back(&clearanceLayers[firstClearance]);
                 ++firstClearance;
             }
 
@@ -419,14 +420,63 @@ struct ExternalPillarSpace::Impl {
     bool exactSegmentClear(const Vec3 &first, const Vec3 &second) const {
         if (second.z <= first.z)
             return false;
-        for (const ClearanceLayer &layer : clearanceLayers) {
-            if (layer.z <= first.z + 1e-12 || layer.z > second.z + 1e-12)
-                continue;
-            const double fraction = (layer.z - first.z) / (second.z - first.z);
+        auto layer = std::upper_bound(
+            clearanceLayers.begin(),
+            clearanceLayers.end(),
+            first.z + 1e-12,
+            [](double z, const ClearanceLayer &candidate) { return z < candidate.z; });
+        for (; layer != clearanceLayers.end() && layer->z <= second.z + 1e-12; ++layer) {
+            const double fraction = (layer->z - first.z) / (second.z - first.z);
             const Vec3 point = add(first, multiply(subtract(second, first), fraction));
             const Point64 scaled{slice_polygon::scaledCoordinate(point.x),
                                  slice_polygon::scaledCoordinate(point.y)};
-            if (polygonsContain(layer.polygons, scaled))
+            if (polygonsContain(layer->polygons, scaled))
+                return false;
+        }
+        return true;
+    }
+
+    std::vector<Vec3> simplifyRoute(std::vector<Vec3> route,
+                                    const std::atomic<bool> *cancel) const {
+        if (route.size() <= 2 || cancelled(cancel))
+            return route;
+        std::vector<Vec3> simplified;
+        simplified.reserve(route.size());
+        simplified.push_back(route.front());
+        Vec3 previousDirection = normalized(subtract(route[1], route[0]));
+        for (std::size_t index = 1; index + 1 < route.size(); ++index) {
+            const Vec3 nextDirection = normalized(subtract(route[index + 1], route[index]));
+            if (dot(previousDirection, nextDirection) < 1.0 - 1e-12) {
+                simplified.push_back(route[index]);
+                previousDirection = nextDirection;
+            }
+        }
+        simplified.push_back(route.back());
+        return cancelled(cancel) ? std::vector<Vec3>{} : simplified;
+    }
+
+    bool cellSegmentClear(std::size_t sourceX,
+                          std::size_t sourceY,
+                          std::size_t targetX,
+                          std::size_t targetY,
+                          double sourceZ,
+                          double targetZ) const {
+        auto layer = std::upper_bound(
+            clearanceLayers.begin(),
+            clearanceLayers.end(),
+            sourceZ + 1e-12,
+            [](double z, const ClearanceLayer &candidate) { return z < candidate.z; });
+        for (; layer != clearanceLayers.end() && layer->z <= targetZ + 1e-12; ++layer) {
+            const double fraction = (layer->z - sourceZ) / (targetZ - sourceZ);
+            const long long x = std::llround(
+                static_cast<double>(sourceX) +
+                (static_cast<double>(targetX) - static_cast<double>(sourceX)) * fraction);
+            const long long y = std::llround(
+                static_cast<double>(sourceY) +
+                (static_cast<double>(targetY) - static_cast<double>(sourceY)) * fraction);
+            if (x < 0 || y < 0 || x >= static_cast<long long>(width) ||
+                y >= static_cast<long long>(height) ||
+                layer->blocked.test(static_cast<std::size_t>(x), static_cast<std::size_t>(y)))
                 return false;
         }
         return true;
@@ -441,16 +491,21 @@ struct ExternalPillarSpace::Impl {
                      static_cast<std::size_t>(std::floor((attachment.z - options.baseHeight) /
                                                          options.latticeCellSize)));
 
-        std::size_t selectedLevel = levelCount;
-        std::size_t selectedX = 0;
-        std::size_t selectedY = 0;
-        for (std::size_t level = firstLevel + 1; level-- > 0;) {
-            if (cancelled(cancel))
-                return {};
+        struct ConnectorNode {
+            std::size_t level = 0;
+            std::size_t x = 0;
+            std::size_t y = 0;
+            std::size_t parent = std::numeric_limits<std::size_t>::max();
+        };
+        constexpr std::size_t noNode = std::numeric_limits<std::size_t>::max();
+        std::vector<ConnectorNode> nodes;
+        std::vector<std::size_t> frontier;
+
+        auto addInitialCells = [&](std::size_t level, bool reachableOnly) {
             const double z = levelZ(level);
             const double horizontalLimit = (attachment.z - z) / tangent;
             if (horizontalLimit < 0.0)
-                continue;
+                return;
             const long long minimumX = std::max<long long>(
                 0,
                 static_cast<long long>(std::ceil((attachment.x - horizontalLimit - originX) /
@@ -467,12 +522,11 @@ struct ExternalPillarSpace::Impl {
                 static_cast<long long>(height) - 1,
                 static_cast<long long>(std::floor((attachment.y + horizontalLimit - originY) /
                                                   options.latticeCellSize)));
-            double bestDistance = std::numeric_limits<double>::infinity();
             for (long long y = minimumY; y <= maximumY; ++y) {
                 for (long long x = minimumX; x <= maximumX; ++x) {
-                    if (predecessor(level * cellCountPerLevel +
-                                    static_cast<std::size_t>(y) * width +
-                                    static_cast<std::size_t>(x)) == 0)
+                    const std::size_t cell =
+                        static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x);
+                    if (reachableOnly && predecessor(level * cellCountPerLevel + cell) == 0)
                         continue;
                     const Vec3 point{originX + static_cast<double>(x) * options.latticeCellSize,
                                      originY + static_cast<double>(y) * options.latticeCellSize,
@@ -480,22 +534,112 @@ struct ExternalPillarSpace::Impl {
                     const double horizontalDistance =
                         std::hypot(point.x - attachment.x, point.y - attachment.y);
                     if (horizontalDistance > horizontalLimit + 1e-12 ||
-                        horizontalDistance >= bestDistance || !exactSegmentClear(point, attachment))
+                        !exactSegmentClear(point, attachment))
                         continue;
-                    bestDistance = horizontalDistance;
-                    selectedLevel = level;
-                    selectedX = static_cast<std::size_t>(x);
-                    selectedY = static_cast<std::size_t>(y);
+                    nodes.push_back({level,
+                                     static_cast<std::size_t>(x),
+                                     static_cast<std::size_t>(y),
+                                     noNode});
+                    frontier.push_back(nodes.size() - 1);
                 }
             }
-            if (selectedLevel != levelCount)
-                break;
+        };
+
+        std::size_t connectorLevel = firstLevel;
+        addInitialCells(connectorLevel, false);
+        if (frontier.empty() && connectorLevel > 0) {
+            --connectorLevel;
+            addInitialCells(connectorLevel, false);
         }
-        if (selectedLevel == levelCount)
+        if (frontier.empty())
             return {};
 
+        std::size_t selectedNode = noNode;
+        double selectedDistance = std::numeric_limits<double>::infinity();
+        const auto selectReachableNode = [&](std::size_t firstNode) {
+            for (std::size_t index = firstNode; index < frontier.size(); ++index) {
+                const std::size_t nodeIndex = frontier[index];
+                const ConnectorNode &node = nodes[nodeIndex];
+                const double x = originX + static_cast<double>(node.x) * options.latticeCellSize;
+                const double y = originY + static_cast<double>(node.y) * options.latticeCellSize;
+                const double distance = std::hypot(x - attachment.x, y - attachment.y);
+                if (predecessor(node.level * cellCountPerLevel + node.y * width + node.x) != 0 &&
+                    distance < selectedDistance) {
+                    selectedNode = nodeIndex;
+                    selectedDistance = distance;
+                }
+            }
+        };
+        selectReachableNode(0);
+
+        constexpr std::size_t directProbeLevels = 4;
+        for (std::size_t probe = 1;
+             selectedNode == noNode && probe <= directProbeLevels && probe <= connectorLevel;
+             ++probe) {
+            const std::size_t firstNode = frontier.size();
+            const std::size_t savedNodeCount = nodes.size();
+            addInitialCells(connectorLevel - probe, true);
+            selectReachableNode(firstNode);
+            if (selectedNode == noNode) {
+                frontier.resize(firstNode);
+                nodes.resize(savedNodeCount);
+            }
+        }
+
+        std::vector<std::ptrdiff_t> nextNodeAtCell(cellCountPerLevel, -1);
+        while (selectedNode == noNode && connectorLevel > 0 && !frontier.empty()) {
+            if (cancelled(cancel))
+                return {};
+            std::vector<std::size_t> nextFrontier;
+            const double sourceZ = levelZ(connectorLevel - 1);
+            const double targetZ = levelZ(connectorLevel);
+            for (std::size_t nodeIndex : frontier) {
+                const ConnectorNode node = nodes[nodeIndex];
+                for (const GridOffset &offset : offsets) {
+                    const long long x = static_cast<long long>(node.x) + offset.x;
+                    const long long y = static_cast<long long>(node.y) + offset.y;
+                    if (x < 0 || y < 0 || x >= static_cast<long long>(width) ||
+                        y >= static_cast<long long>(height))
+                        continue;
+                    const std::size_t cell =
+                        static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x);
+                    if (nextNodeAtCell[cell] >= 0 ||
+                        !cellSegmentClear(static_cast<std::size_t>(x),
+                                          static_cast<std::size_t>(y),
+                                          node.x,
+                                          node.y,
+                                          sourceZ,
+                                          targetZ))
+                        continue;
+                    nodes.push_back({connectorLevel - 1,
+                                     static_cast<std::size_t>(x),
+                                     static_cast<std::size_t>(y),
+                                     nodeIndex});
+                    const std::size_t newNode = nodes.size() - 1;
+                    nextNodeAtCell[cell] = static_cast<std::ptrdiff_t>(newNode);
+                    nextFrontier.push_back(newNode);
+                    if (predecessor((connectorLevel - 1) * cellCountPerLevel + cell) != 0) {
+                        selectedNode = newNode;
+                        break;
+                    }
+                }
+                if (selectedNode != noNode)
+                    break;
+            }
+            for (std::size_t nodeIndex : nextFrontier) {
+                const ConnectorNode &node = nodes[nodeIndex];
+                nextNodeAtCell[node.y * width + node.x] = -1;
+            }
+            frontier = std::move(nextFrontier);
+            --connectorLevel;
+        }
+        if (selectedNode == noNode)
+            return {};
+
+        std::size_t selectedLevel = nodes[selectedNode].level;
+        std::size_t selectedX = nodes[selectedNode].x;
+        std::size_t selectedY = nodes[selectedNode].y;
         std::vector<Vec3> descending;
-        descending.push_back(attachment);
         descending.push_back({originX + static_cast<double>(selectedX) * options.latticeCellSize,
                               originY + static_cast<double>(selectedY) * options.latticeCellSize,
                               levelZ(selectedLevel)});
@@ -521,7 +665,7 @@ struct ExternalPillarSpace::Impl {
         }
 
         std::vector<Vec3> route;
-        route.reserve(descending.size());
+        route.reserve(descending.size() + nodes.size() + 1);
         for (auto iterator = descending.rbegin(); iterator != descending.rend(); ++iterator) {
             if (!route.empty()) {
                 const Vec3 difference = subtract(*iterator, route.back());
@@ -530,7 +674,16 @@ struct ExternalPillarSpace::Impl {
             }
             route.push_back(*iterator);
         }
-        return route;
+        std::size_t connector = nodes[selectedNode].parent;
+        while (connector != noNode) {
+            const ConnectorNode &node = nodes[connector];
+            route.push_back({originX + static_cast<double>(node.x) * options.latticeCellSize,
+                             originY + static_cast<double>(node.y) * options.latticeCellSize,
+                             levelZ(node.level)});
+            connector = node.parent;
+        }
+        route.push_back(attachment);
+        return simplifyRoute(std::move(route), cancel);
     }
 
     std::shared_ptr<const SliceData> slices;
@@ -575,6 +728,13 @@ ExternalPillarBuilder::ExternalPillarBuilder(std::shared_ptr<const ExternalPilla
     validateOptions(options_);
     if (!space_)
         throw std::invalid_argument("External pillar builder requires a reachability space");
+    unitCircle_.reserve(options_.circumferencePoints);
+    for (std::size_t point = 0; point < options_.circumferencePoints; ++point) {
+        const double angle =
+            2.0 * pi * static_cast<double>(point) /
+            static_cast<double>(options_.circumferencePoints);
+        unitCircle_.push_back({std::cos(angle), std::sin(angle), 0.0});
+    }
 }
 
 TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
@@ -592,8 +752,7 @@ TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
         return result;
 
     const std::size_t pointCount = options_.circumferencePoints;
-    std::vector<std::vector<Vec3>> rings;
-    rings.reserve(centers.size());
+    std::vector<Vec3> rings(centers.size() * pointCount);
     Vec3 previousFirstDirection;
     for (std::size_t centerIndex = 0; centerIndex < centers.size(); ++centerIndex) {
         if (cancelled(cancel))
@@ -615,16 +774,12 @@ TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
         const double fraction = distances[centerIndex] / distances.back();
         const double radius =
             options_.bottomRadius + (options_.topRadius - options_.bottomRadius) * fraction;
-        std::vector<Vec3> ring;
-        ring.reserve(pointCount);
         for (std::size_t point = 0; point < pointCount; ++point) {
-            const double angle =
-                2.0 * pi * static_cast<double>(point) / static_cast<double>(pointCount);
-            const Vec3 radial = add(multiply(firstDirection, std::cos(angle)),
-                                    multiply(secondDirection, std::sin(angle)));
-            ring.push_back(add(centers[centerIndex], multiply(radial, radius)));
+            const Vec3 radial = add(multiply(firstDirection, unitCircle_[point].x),
+                                    multiply(secondDirection, unitCircle_[point].y));
+            rings[centerIndex * pointCount + point] =
+                add(centers[centerIndex], multiply(radial, radius));
         }
-        rings.push_back(std::move(ring));
     }
 
     result.setHeader("CLIP Slicer external support pillar");
@@ -635,15 +790,14 @@ TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
     baseBottomRing.reserve(pointCount);
     baseTopRing.reserve(pointCount);
     for (std::size_t point = 0; point < pointCount; ++point) {
-        const double angle =
-            2.0 * pi * static_cast<double>(point) / static_cast<double>(pointCount);
-        const Vec3 radial{
-            options_.baseRadius * std::cos(angle), options_.baseRadius * std::sin(angle), 0.0};
+        const Vec3 radial{options_.baseRadius * unitCircle_[point].x,
+                          options_.baseRadius * unitCircle_[point].y,
+                          0.0};
         baseBottomRing.push_back(add(baseBottom, radial));
         baseTopRing.push_back(add(baseTop, radial));
     }
 
-    result.reserve((4 + 2 * (rings.size() - 1) + 2) * pointCount);
+    result.reserve((6 + 2 * (centers.size() - 1)) * pointCount);
     for (std::size_t point = 0; point < pointCount; ++point) {
         const std::size_t next = (point + 1) % pointCount;
         addTriangle(result, baseBottomRing[point], baseTopRing[next], baseTopRing[point]);
@@ -651,17 +805,27 @@ TriangleMesh ExternalPillarBuilder::build(const Vec3 &attachment,
         addTriangle(result, baseBottom, baseBottomRing[next], baseBottomRing[point]);
         addTriangle(result, baseTop, baseTopRing[point], baseTopRing[next]);
     }
-    for (std::size_t ring = 0; ring + 1 < rings.size(); ++ring) {
+    for (std::size_t ring = 0; ring + 1 < centers.size(); ++ring) {
         for (std::size_t point = 0; point < pointCount; ++point) {
             const std::size_t next = (point + 1) % pointCount;
-            addTriangle(result, rings[ring][point], rings[ring][next], rings[ring + 1][next]);
-            addTriangle(result, rings[ring][point], rings[ring + 1][next], rings[ring + 1][point]);
+            addTriangle(result,
+                        rings[ring * pointCount + point],
+                        rings[ring * pointCount + next],
+                        rings[(ring + 1) * pointCount + next]);
+            addTriangle(result,
+                        rings[ring * pointCount + point],
+                        rings[(ring + 1) * pointCount + next],
+                        rings[(ring + 1) * pointCount + point]);
         }
     }
     for (std::size_t point = 0; point < pointCount; ++point) {
         const std::size_t next = (point + 1) % pointCount;
-        addTriangle(result, centers.front(), rings.front()[next], rings.front()[point]);
-        addTriangle(result, centers.back(), rings.back()[point], rings.back()[next]);
+        addTriangle(result, centers.front(), rings[next], rings[point]);
+        const std::size_t finalRing = (centers.size() - 1) * pointCount;
+        addTriangle(result,
+                    centers.back(),
+                    rings[finalRing + point],
+                    rings[finalRing + next]);
     }
     return result;
 }

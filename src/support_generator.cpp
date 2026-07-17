@@ -341,7 +341,7 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
         std::size_t processedLayers = 0;
         std::deque<SupportContactPoint> contactQueue;
         std::vector<SupportContactPoint> detectedContacts;
-        std::vector<TriangleMesh> supportShells;
+        TriangleMesh supports;
         bool failed = false;
         std::exception_ptr error;
     } shared;
@@ -382,26 +382,34 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
                                slices, bounds, maximumUnsupportedHeight, options, cancel);
                        })
                 .share();
+        struct PillarBuilderState {
+            std::once_flag initialize;
+            std::shared_ptr<const ExternalPillarBuilder> builder;
+        };
+        auto pillarBuilderState = std::make_shared<PillarBuilderState>();
         buildPillar = [tipBuilder = std::move(tipBuilder),
                        space = externalSpace,
+                       pillarBuilderState,
                        options = options_.externalPillar](const SupportGenerationInput &,
                                                           const SupportContactPoint &contact,
                                                           const std::atomic<bool> *cancel) {
             SupportTipResult tip = tipBuilder.buildWithAttachment(contact.position, cancel);
             if (!tip.valid() || cancelled(cancel))
                 return TriangleMesh{};
+            std::call_once(pillarBuilderState->initialize, [&]() {
+                pillarBuilderState->builder =
+                    std::make_shared<const ExternalPillarBuilder>(space.get(), options);
+            });
             TriangleMesh pillar =
-                ExternalPillarBuilder(space.get(), options).build(tip.pillarAttachment, cancel);
+                pillarBuilderState->builder->build(tip.pillarAttachment, cancel);
             if (pillar.triangles().empty() || cancelled(cancel))
                 return TriangleMesh{};
 
             TriangleMesh shell;
             shell.setHeader("CLIP Slicer external support");
             shell.reserve(tip.mesh.triangles().size() + pillar.triangles().size());
-            for (const Triangle &triangle : pillar.triangles())
-                shell.addTriangle(triangle);
-            for (const Triangle &triangle : tip.mesh.triangles())
-                shell.addTriangle(triangle);
+            shell.append(std::move(pillar));
+            shell.append(std::move(tip.mesh));
             return shell;
         };
     }
@@ -472,7 +480,7 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
                     TriangleMesh shell = buildPillar(input, contactPoint, cancel);
                     if (!shell.triangles().empty()) {
                         std::lock_guard<std::mutex> lock(shared.mutex);
-                        shared.supportShells.push_back(std::move(shell));
+                        shared.supports.append(std::move(shell));
                     }
                 }
             } catch (...) {
@@ -483,9 +491,7 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
     };
 
     std::vector<std::thread> workers;
-    const std::size_t generationWorkerCount = externalSpace.valid() && options_.workerCount > 1
-                                                  ? options_.workerCount - 1
-                                                  : options_.workerCount;
+    const std::size_t generationWorkerCount = options_.workerCount;
     workers.reserve(generationWorkerCount);
     try {
         for (std::size_t index = 0; index < generationWorkerCount; ++index)
@@ -503,14 +509,8 @@ SupportGenerationResult SupportGenerator::generate(const SupportGenerationInput 
     result.cancelled = cancelled(cancel);
     result.processedLayerCount = shared.processedLayers;
     result.contactPoints = std::move(shared.detectedContacts);
-    std::size_t triangleCount = 0;
-    for (const TriangleMesh &shell : shared.supportShells)
-        triangleCount += shell.triangles().size();
-    result.supports.reserve(triangleCount);
+    result.supports = std::move(shared.supports);
     result.supports.setHeader("CLIP Slicer generated supports");
-    for (const TriangleMesh &shell : shared.supportShells)
-        for (const Triangle &triangle : shell.triangles())
-            result.supports.addTriangle(triangle);
     return result;
 }
 

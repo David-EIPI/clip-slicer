@@ -171,6 +171,13 @@ struct SupportTipBuilder::Impl {
         const double pi = std::acos(-1.0);
         slopeAngle = std::atan2(std::abs(options.bottomRadius - options.topRadius), options.height);
         minimumAxisAngle = std::max(0.0, options.criticalAngleDegrees * pi / 180.0 - slopeAngle);
+        unitCircle.reserve(options.circumferencePoints);
+        for (std::size_t index = 0; index < options.circumferencePoints; ++index) {
+            const double angle =
+                2.0 * pi * static_cast<double>(index) /
+                static_cast<double>(options.circumferencePoints);
+            unitCircle.push_back({std::cos(angle), std::sin(angle), 0.0});
+        }
         const Bounds3 &bounds = sourceModel->bounds();
         const double span = bounds.valid() ? std::max({bounds.max.x - bounds.min.x,
                                                        bounds.max.y - bounds.min.y,
@@ -315,8 +322,10 @@ struct SupportTipBuilder::Impl {
         Vec3 rayPoint = point;
         rayPoint.x += tolerance * 3.141592653589793;
         rayPoint.y += tolerance * 1.618033988749895;
-        std::vector<double> intersections;
-        intersections.reserve(16);
+        thread_local std::vector<double> intersections;
+        intersections.clear();
+        if (intersections.capacity() < 16)
+            intersections.reserve(16);
         collectVerticalIntersections(0, rayPoint, intersections);
         std::sort(intersections.begin(), intersections.end());
         std::size_t distinctCount = 0;
@@ -383,7 +392,6 @@ struct SupportTipBuilder::Impl {
         const Vec3 helper = std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
         const Vec3 firstRadiusDirection = normalized(cross(helper, axis));
         const Vec3 secondRadiusDirection = normalized(cross(axis, firstRadiusDirection));
-        const double pi = std::acos(-1.0);
         for (double fraction : {0.25, 0.5, 0.75, 1.0}) {
             const Vec3 center = add(contact, multiply(axis, options.height * fraction));
             if (isInside(center))
@@ -391,10 +399,8 @@ struct SupportTipBuilder::Impl {
             const double radius =
                 options.topRadius + (options.bottomRadius - options.topRadius) * fraction;
             for (std::size_t index = 0; index < options.circumferencePoints; ++index) {
-                const double angle = 2.0 * pi * static_cast<double>(index) /
-                                     static_cast<double>(options.circumferencePoints);
-                const Vec3 radial = add(multiply(firstRadiusDirection, std::cos(angle)),
-                                        multiply(secondRadiusDirection, std::sin(angle)));
+                const Vec3 radial = add(multiply(firstRadiusDirection, unitCircle[index].x),
+                                        multiply(secondRadiusDirection, unitCircle[index].y));
                 if (isInside(add(center, multiply(radial, radius))))
                     return false;
             }
@@ -426,6 +432,7 @@ struct SupportTipBuilder::Impl {
     SupportTipOptions options;
     std::vector<std::size_t> triangleIndices;
     std::vector<Node> nodes;
+    std::vector<Vec3> unitCircle;
     double slopeAngle = 0.0;
     double minimumAxisAngle = 0.0;
     double tolerance = 1e-7;
@@ -457,17 +464,14 @@ SupportTipResult SupportTipBuilder::buildWithAttachment(const Vec3 &contactPoint
     const Vec3 firstRadiusDirection = normalized(cross(helper, axis));
     const Vec3 secondRadiusDirection = normalized(cross(axis, firstRadiusDirection));
     const std::size_t pointCount = impl_->options.circumferencePoints;
-    const double pi = std::acos(-1.0);
 
     std::vector<Vec3> topRing;
     std::vector<Vec3> bottomRing;
     topRing.reserve(pointCount);
     bottomRing.reserve(pointCount);
     for (std::size_t index = 0; index < pointCount; ++index) {
-        const double angle =
-            2.0 * pi * static_cast<double>(index) / static_cast<double>(pointCount);
-        const Vec3 radial = add(multiply(firstRadiusDirection, std::cos(angle)),
-                                multiply(secondRadiusDirection, std::sin(angle)));
+        const Vec3 radial = add(multiply(firstRadiusDirection, impl_->unitCircle[index].x),
+                                multiply(secondRadiusDirection, impl_->unitCircle[index].y));
         topRing.push_back(add(contactPoint, multiply(radial, impl_->options.topRadius)));
         bottomRing.push_back(add(bottomCenter, multiply(radial, impl_->options.bottomRadius)));
     }

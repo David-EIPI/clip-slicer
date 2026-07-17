@@ -45,6 +45,7 @@ class ExternalPillarBuilder {
   private:
     std::shared_ptr<const ExternalPillarSpace> space_;
     ExternalPillarOptions options_;
+    std::vector<Vec3> unitCircle_;
 };
 
 } // namespace stl_slicer

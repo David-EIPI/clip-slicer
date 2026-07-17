@@ -617,7 +617,8 @@ void testExternalPillarGeneration() {
     auto emptySpace = std::make_shared<ExternalPillarSpace>(emptySlices, bounds, 3.0, options);
     require(emptySpace->valid(), "empty external-pillar space was not completed");
     const std::vector<Vec3> straightRoute = emptySpace->route({0.0, 0.0, 3.0});
-    require(straightRoute.size() >= 2, "external pillar did not reach the platform");
+    require(straightRoute.size() == 2,
+            "unobstructed external pillar retained redundant lattice points");
     require(std::abs(straightRoute.front().z - options.baseHeight) < 1e-12 &&
                 std::abs(straightRoute.back().z - 3.0) < 1e-12,
             "external pillar route has incorrect endpoints");
@@ -654,6 +655,8 @@ void testExternalPillarGeneration() {
             return std::abs(point.x) > 1.0 || std::abs(point.y) > 1.0;
         });
     require(leavesObstruction, "external pillar route crossed the obstructing model");
+    require(obstructedSpace.route({0.0, 0.0, 2.1}).empty(),
+            "external pillar escaped a trapped contact through the model");
 
     std::atomic<bool> cancel{true};
     ExternalPillarSpace cancelledSpace(emptySlices, bounds, 3.0, options, &cancel);
