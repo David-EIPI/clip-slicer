@@ -39,6 +39,7 @@ bool AppSettings::Load() {
     supportPillarBottomRadius = defaultSupportPillarBottomRadius;
     supportPillarTopRadius = defaultSupportPillarTopRadius;
     supportCircumferencePoints = defaultSupportCircumferencePoints;
+    crossSectionDisplayDistance = defaultCrossSectionDisplayDistance;
     if (!wxFileExists(FilePath()))
         return true;
 
@@ -128,6 +129,12 @@ bool AppSettings::Load() {
     config.Read("/supports/circumferencePoints", &integerValue, defaultSupportCircumferencePoints);
     if (integerValue >= 3 && integerValue <= 1024)
         supportCircumferencePoints = static_cast<int>(integerValue);
+    value = defaultCrossSectionDisplayDistance;
+    config.Read("/interface/crossSectionDisplayDistance",
+                &value,
+                defaultCrossSectionDisplayDistance);
+    if (std::isfinite(value) && value > 0.0)
+        crossSectionDisplayDistance = value;
     return true;
 }
 
@@ -160,5 +167,6 @@ bool AppSettings::Save() const {
     config.Write("/supports/pillarBottomRadius", supportPillarBottomRadius);
     config.Write("/supports/pillarTopRadius", supportPillarTopRadius);
     config.Write("/supports/circumferencePoints", supportCircumferencePoints);
+    config.Write("/interface/crossSectionDisplayDistance", crossSectionDisplayDistance);
     return config.Flush();
 }

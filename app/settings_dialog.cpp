@@ -1,6 +1,8 @@
 #include "settings_dialog.hpp"
+#include <algorithm>
+#include <wx/display.h>
 #include <wx/notebook.h>
-#include <wx/panel.h>
+#include <wx/scrolwin.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
 #include <wx/statbox.h>
@@ -8,9 +10,15 @@
 
 SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     : wxDialog(parent, wxID_ANY, "Settings") {
+    const auto makePage = [](wxNotebook *notebook) {
+        auto *page = new wxScrolledWindow(notebook, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                                          wxVSCROLL | wxTAB_TRAVERSAL);
+        page->SetScrollRate(0, page->FromDIP(10));
+        return page;
+    };
     auto *root = new wxBoxSizer(wxVERTICAL);
     auto *notebook = new wxNotebook(this, wxID_ANY);
-    auto *slicing = new wxPanel(notebook);
+    auto *slicing = makePage(notebook);
     auto *slicingSizer = new wxFlexGridSizer(2, 8, 10);
     slicingSizer->Add(
         new wxStaticText(slicing, wxID_ANY, "Layer thickness (mm):"), 0, wxALIGN_CENTER_VERTICAL);
@@ -72,9 +80,10 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     slicingSizer->Add(segmentationTolerance_, 1, wxEXPAND);
     slicingSizer->AddGrowableCol(1);
     slicing->SetSizer(slicingSizer);
+    slicing->FitInside();
     notebook->AddPage(slicing, "Slicing", true);
 
-    auto *analysis = new wxPanel(notebook);
+    auto *analysis = makePage(notebook);
     auto *analysisSizer = new wxFlexGridSizer(2, 8, 10);
     analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Critical angle (degrees):"),
                        0,
@@ -145,9 +154,10 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     analysisSizer->Add(optimizationTolerance_, 1, wxEXPAND);
     analysisSizer->AddGrowableCol(1);
     analysis->SetSizer(analysisSizer);
+    analysis->FitInside();
     notebook->AddPage(analysis, "Analysis");
 
-    auto *supports = new wxPanel(notebook);
+    auto *supports = makePage(notebook);
     auto *supportsSizer = new wxBoxSizer(wxVERTICAL);
     auto *spacingSizer = new wxFlexGridSizer(2, 8, 10);
     spacingSizer->Add(
@@ -275,13 +285,47 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     pillarBox->Add(pillarSizer, 1, wxEXPAND | wxALL, 8);
     supportsSizer->Add(pillarBox, 0, wxEXPAND);
     supports->SetSizer(supportsSizer);
+    supports->FitInside();
     notebook->AddPage(supports, "Generator");
+
+    auto *interfacePage = makePage(notebook);
+    auto *interfaceSizer = new wxFlexGridSizer(2, 8, 10);
+    interfaceSizer->Add(new wxStaticText(interfacePage,
+                                         wxID_ANY,
+                                         "Cross-section display distance (mm):"),
+                        0,
+                        wxALIGN_CENTER_VERTICAL);
+    crossSectionDisplayDistance_ = new wxSpinCtrlDouble(interfacePage,
+                                                        wxID_ANY,
+                                                        wxEmptyString,
+                                                        wxDefaultPosition,
+                                                        wxDefaultSize,
+                                                        wxSP_ARROW_KEYS,
+                                                        0.001,
+                                                        1000000.0,
+                                                        settings.crossSectionDisplayDistance,
+                                                        1.0);
+    crossSectionDisplayDistance_->SetDigits(3);
+    interfaceSizer->Add(crossSectionDisplayDistance_, 1, wxEXPAND);
+    interfaceSizer->AddGrowableCol(1);
+    interfacePage->SetSizer(interfaceSizer);
+    interfacePage->FitInside();
+    notebook->AddPage(interfacePage, "Interface");
 
     root->Add(notebook, 1, wxEXPAND | wxALL, 12);
     root->Add(
         CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
     SetSizerAndFit(root);
-    SetMinSize({460, 520});
+
+    int displayIndex = wxDisplay::GetFromWindow(parent);
+    if (displayIndex == wxNOT_FOUND)
+        displayIndex = 0;
+    const wxRect displayArea = wxDisplay(displayIndex).GetClientArea();
+    const int targetHeight = displayArea.GetHeight() / 2;
+    const int minimumHeight = std::min(targetHeight, FromDIP(320));
+    SetMinSize({FromDIP(460), minimumHeight});
+    SetSize({std::max(GetSize().GetWidth(), FromDIP(460)), targetHeight});
+    CentreOnParent();
 }
 
 double SettingsDialog::LayerThickness() const {
@@ -366,4 +410,8 @@ double SettingsDialog::SupportPillarTopRadius() const {
 
 int SettingsDialog::SupportCircumferencePoints() const {
     return supportCircumferencePoints_->GetValue();
+}
+
+double SettingsDialog::CrossSectionDisplayDistance() const {
+    return crossSectionDisplayDistance_->GetValue();
 }

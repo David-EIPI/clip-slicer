@@ -30,6 +30,7 @@ class SettingsDialog final : public wxDialog {
     double SupportPillarBottomRadius() const;
     double SupportPillarTopRadius() const;
     int SupportCircumferencePoints() const;
+    double CrossSectionDisplayDistance() const;
 
   private:
     wxSpinCtrlDouble *layerThickness_ = nullptr;
@@ -53,4 +54,5 @@ class SettingsDialog final : public wxDialog {
     wxSpinCtrlDouble *supportPillarBottomRadius_ = nullptr;
     wxSpinCtrlDouble *supportPillarTopRadius_ = nullptr;
     wxSpinCtrl *supportCircumferencePoints_ = nullptr;
+    wxSpinCtrlDouble *crossSectionDisplayDistance_ = nullptr;
 };

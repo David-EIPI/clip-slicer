@@ -137,6 +137,47 @@ std::string openGlInitializationError() {
         << "\n\nInstalling the current graphics driver may provide the required OpenGL support.";
     return message.str();
 }
+
+double axisCoordinate(const stl_slicer::Vec3 &point, SectionAxis axis) {
+    if (axis == SectionAxis::X)
+        return point.x;
+    if (axis == SectionAxis::Y)
+        return point.y;
+    return point.z;
+}
+
+stl_slicer::Vec3 sectionCoordinates(const stl_slicer::Vec3 &point, SectionAxis axis) {
+    if (axis == SectionAxis::X)
+        return {point.y, point.z, point.x};
+    if (axis == SectionAxis::Y)
+        return {point.x, point.z, point.y};
+    return point;
+}
+
+stl_slicer::TriangleMesh sectionMesh(const stl_slicer::TriangleMesh &source, SectionAxis axis) {
+    if (axis == SectionAxis::Z)
+        return source;
+    stl_slicer::TriangleMesh result;
+    result.reserve(source.triangles().size());
+    for (auto triangle : source.triangles()) {
+        triangle.normal = sectionCoordinates(triangle.normal, axis);
+        for (auto &vertex : triangle.vertices)
+            vertex = sectionCoordinates(vertex, axis);
+        result.addTriangle(std::move(triangle));
+    }
+    return result;
+}
+
+stl_slicer::Vec3 sectionDisplayPoint(double u,
+                                     double v,
+                                     double planePosition,
+                                     SectionAxis axis) {
+    if (axis == SectionAxis::X)
+        return {planePosition, u, v};
+    if (axis == SectionAxis::Y)
+        return {u, planePosition, v};
+    return {u, v, planePosition};
+}
 } // namespace
 
 ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
@@ -266,10 +307,12 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
         glViewport(0, 0, size.x, size.y);
         glClearColor(0.72f, 0.86f, 0.72f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        const double sectionDepth =
+            interactiveSlice_ ? document_.CrossSectionDisplayDistance() * 2.0 : 0.0;
         auto projection = perspective(float(fieldOfView_),
                                       std::max(1, size.x) / float(std::max(1, size.y)),
                                       0.1f,
-                                      float(distance_ * 20 + 1000));
+                                      float(distance_ * 20 + sectionDepth + 1000));
         auto view = multiply(translation(0, 0, float(-distance_)),
                              multiply(rotation(float(pitch_), 1, 0, 0),
                                       multiply(rotation(float(yaw_), 0, 0, 1),
@@ -680,36 +723,58 @@ void ModelCanvas::DrawOverlays(const float *) {
          {float(b.max.x), float(b.max.y), z, 0, 0, -1}};
     const float plateUnderside[] = {.62f, .65f, .67f, 1};
     upload(GL_TRIANGLES, plateUnderside);
-    if (interactiveSlice_) {
-        v = {{float(b.min.x), float(b.min.y), float(slicePosition_), 0, 0, 1},
-             {float(b.max.x), float(b.min.y), float(slicePosition_), 0, 0, 1},
-             {float(b.max.x), float(b.max.y), float(slicePosition_), 0, 0, 1},
-             {float(b.min.x), float(b.min.y), float(slicePosition_), 0, 0, 1},
-             {float(b.max.x), float(b.max.y), float(slicePosition_), 0, 0, 1},
-             {float(b.min.x), float(b.max.y), float(slicePosition_), 0, 0, 1}};
+    if (interactiveSlice_ && sectionBounds_.valid()) {
+        const stl_slicer::Vec3 sectionMin = sectionCoordinates(sectionBounds_.min, sectionAxis_);
+        const stl_slicer::Vec3 sectionMax = sectionCoordinates(sectionBounds_.max, sectionAxis_);
+        const double displayPosition =
+            sectionAxis_ == SectionAxis::Y
+                ? sectionBounds_.min.y - document_.CrossSectionDisplayDistance()
+                : axisCoordinate(sectionBounds_.max, sectionAxis_) +
+                      document_.CrossSectionDisplayDistance();
+        const stl_slicer::Vec3 normal = sectionDisplayPoint(0, 0, 1, sectionAxis_);
+        const auto vertex =
+            [&](double u, double vertical, double position, double direction = 1.0) {
+            const stl_slicer::Vec3 point =
+                sectionDisplayPoint(u, vertical, position, sectionAxis_);
+            return stl_slicer::RenderVertex{float(point.x),
+                                            float(point.y),
+                                            float(point.z),
+                                            float(normal.x * direction),
+                                            float(normal.y * direction),
+                                            float(normal.z * direction)};
+        };
+        const auto rectangle = [&](double position) {
+            return std::vector<stl_slicer::RenderVertex>{
+                vertex(sectionMin.x, sectionMin.y, position),
+                vertex(sectionMax.x, sectionMin.y, position),
+                vertex(sectionMax.x, sectionMax.y, position),
+                vertex(sectionMin.x, sectionMin.y, position),
+                vertex(sectionMax.x, sectionMax.y, position),
+                vertex(sectionMin.x, sectionMax.y, position)};
+        };
+
         glDepthMask(GL_FALSE);
-        const float plane[] = {.25f, .65f, .80f, .28f};
-        upload(GL_TRIANGLES, plane);
-        v = {{float(b.min.x), float(b.min.y), float(slicePosition_), 0, 0, -1},
-             {float(b.max.x), float(b.max.y), float(slicePosition_), 0, 0, -1},
-             {float(b.max.x), float(b.min.y), float(slicePosition_), 0, 0, -1},
-             {float(b.min.x), float(b.min.y), float(slicePosition_), 0, 0, -1},
-             {float(b.min.x), float(b.max.y), float(slicePosition_), 0, 0, -1},
-             {float(b.max.x), float(b.max.y), float(slicePosition_), 0, 0, -1}};
-        const float planeUnderside[] = {.92f, .43f, .16f, .34f};
-        upload(GL_TRIANGLES, planeUnderside);
+        glDisable(GL_CULL_FACE);
+        v = rectangle(slicePosition_);
+        const float sectionPlane[] = {.25f, .65f, .80f, .28f};
+        upload(GL_TRIANGLES, sectionPlane);
+        v = rectangle(displayPosition);
+        const float displayPlane[] = {.12f, .24f, .42f, .26f};
+        upload(GL_TRIANGLES, displayPlane);
+        glEnable(GL_CULL_FACE);
         glDepthMask(GL_TRUE);
 
-        const float projectionZ = z;
         v.clear();
+        const stl_slicer::RenderVertex anchor =
+            vertex(sectionMin.x, sectionMin.y, displayPosition);
         for (const auto &layer : interactiveLayers_)
             for (const auto &path : layer.paths)
-                for (std::size_t i = 0; i + 1 < path.points.size(); ++i) {
-                    const auto &a = path.points[i];
-                    const auto &edge = path.points[i + 1];
-                    v.push_back({float(b.min.x), float(b.min.y), projectionZ, 0, 0, 1});
-                    v.push_back({float(a.x), float(a.y), projectionZ, 0, 0, 1});
-                    v.push_back({float(edge.x), float(edge.y), projectionZ, 0, 0, 1});
+                for (std::size_t index = 0; index + 1 < path.points.size(); ++index) {
+                    const auto &first = path.points[index];
+                    const auto &second = path.points[index + 1];
+                    v.push_back(anchor);
+                    v.push_back(vertex(first.x, first.y, displayPosition));
+                    v.push_back(vertex(second.x, second.y, displayPosition));
                 }
 
         glClear(GL_STENCIL_BUFFER_BIT);
@@ -725,35 +790,79 @@ void ModelCanvas::DrawOverlays(const float *) {
 
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         glEnable(GL_DEPTH_TEST);
-        glEnable(GL_CULL_FACE);
         glStencilMask(0x00);
         glStencilFunc(GL_NOTEQUAL, 0, 0xff);
-        v = {{float(b.min.x), float(b.min.y), projectionZ, 0, 0, 1},
-             {float(b.max.x), float(b.min.y), projectionZ, 0, 0, 1},
-             {float(b.max.x), float(b.max.y), projectionZ, 0, 0, 1},
-             {float(b.min.x), float(b.min.y), projectionZ, 0, 0, 1},
-             {float(b.max.x), float(b.max.y), projectionZ, 0, 0, 1},
-             {float(b.min.x), float(b.max.y), projectionZ, 0, 0, 1}};
-        const float projection[] = {.08f, .34f, .16f, 1};
+        v = rectangle(displayPosition);
+        const float projection[] = {.04f, .58f, .24f, 1};
         glDepthFunc(GL_LEQUAL);
         upload(GL_TRIANGLES, projection);
         glDepthFunc(GL_LESS);
+        glEnable(GL_CULL_FACE);
         glDisable(GL_STENCIL_TEST);
         glStencilMask(0xff);
     }
 }
-void ModelCanvas::SetInteractiveSlice(bool enabled) {
+void ModelCanvas::SetInteractiveSection(bool enabled, SectionAxis axis, bool autoRotate) {
     interactiveSlice_ = enabled;
-    auto b = document_.VisibleBounds();
-    if (enabled && b.valid())
-        slicePosition_ = (b.min.z + b.max.z) / 2;
+    sectionAxis_ = axis;
+    sectionBounds_ = document_.SelectedBounds();
+    sliceMeshes_.clear();
+    if (enabled && sectionBounds_.valid())
+        slicePosition_ = (axisCoordinate(sectionBounds_.min, axis) +
+                          axisCoordinate(sectionBounds_.max, axis)) /
+                         2;
+    if (enabled && autoRotate)
+        AlignSectionView();
     UpdateInteractiveSlice();
     Refresh();
 }
+void ModelCanvas::AlignSectionView() {
+    if (!sectionBounds_.valid())
+        return;
+    constexpr double halfPi = 1.57079632679489661923;
+    const stl_slicer::Vec3 sectionMin = sectionCoordinates(sectionBounds_.min, sectionAxis_);
+    const stl_slicer::Vec3 sectionMax = sectionCoordinates(sectionBounds_.max, sectionAxis_);
+    const double displayPosition =
+        sectionAxis_ == SectionAxis::Y
+            ? sectionBounds_.min.y - document_.CrossSectionDisplayDistance()
+            : axisCoordinate(sectionBounds_.max, sectionAxis_) +
+                  document_.CrossSectionDisplayDistance();
+    viewCenter_ = sectionDisplayPoint((sectionMin.x + sectionMax.x) / 2,
+                                      (sectionMin.y + sectionMax.y) / 2,
+                                      displayPosition,
+                                      sectionAxis_);
+    if (sectionAxis_ == SectionAxis::X) {
+        yaw_ = -halfPi;
+        pitch_ = -halfPi;
+    } else if (sectionAxis_ == SectionAxis::Y) {
+        yaw_ = 0.0;
+        pitch_ = -halfPi;
+    } else {
+        yaw_ = 0.0;
+        pitch_ = 0.0;
+    }
+    const wxSize size = GetClientSize();
+    const double aspect = double(std::max(1, size.x)) / std::max(1, size.y);
+    const double halfWidth = std::max(0.5, (sectionMax.x - sectionMin.x) / 2);
+    const double halfHeight = std::max(0.5, (sectionMax.y - sectionMin.y) / 2);
+    distance_ = 1.08 * std::max(halfHeight, halfWidth / aspect) /
+                std::tan(fieldOfView_ * 0.5);
+}
 void ModelCanvas::UpdateInteractiveSlice() {
+    if (interactiveSlice_) {
+        sectionBounds_ = document_.SelectedBounds();
+        if (sectionBounds_.valid())
+            slicePosition_ = std::clamp(slicePosition_,
+                                        axisCoordinate(sectionBounds_.min, sectionAxis_),
+                                        axisCoordinate(sectionBounds_.max, sectionAxis_));
+    }
     ++interactiveSliceGeneration_;
-    interactiveLayers_.clear();
-    sliceArea_ = 0.0;
+    // Keep displaying the last completed section while its replacement is calculated. The
+    // worker payload acts as a back buffer and is swapped in only when it is complete.
+    if (!interactiveSlice_ || !sectionBounds_.valid()) {
+        interactiveLayers_.clear();
+        sliceArea_ = 0.0;
+    }
     document_.UpdateStatus();
     Refresh();
     if (interactiveSliceRunning_) {
@@ -775,8 +884,8 @@ void ModelCanvas::BeginInteractiveSlice() {
         if (mesh == sliceMeshes_.end()) {
             mesh = sliceMeshes_
                        .emplace(model.get(),
-                                std::make_shared<const stl_slicer::TriangleMesh>(
-                                    stl_slicer::transformedMesh(*model)))
+                                std::make_shared<const stl_slicer::TriangleMesh>(sectionMesh(
+                                    stl_slicer::transformedMesh(*model), sectionAxis_)))
                        .first;
         }
         meshes.push_back(mesh->second);
@@ -836,7 +945,7 @@ void ModelCanvas::OnInteractiveSliceFinished(wxThreadEvent &event) {
 
     if (!payload->error.empty()) {
         const wxString message = wxString::FromUTF8(payload->error);
-        wxLogError("Interactive slicing: %s", message.c_str());
+        wxLogError("Cross-section: %s", message.c_str());
     }
     if (!payload->cancelled && payload->generation == interactiveSliceGeneration_) {
         interactiveLayers_ = std::move(payload->layers);
@@ -872,11 +981,12 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
         2.0 * distance_ * std::tan(fieldOfView_ * 0.5) / std::max(200, GetClientSize().y);
     const auto moveSlicePlane = [&](double steps) {
         slicePosition_ += steps * 0.1;
-        const auto bounds = document_.VisibleBounds();
+        const auto bounds = document_.SelectedBounds();
         if (bounds.valid())
-            slicePosition_ = std::clamp(slicePosition_, bounds.min.z, bounds.max.z);
+            slicePosition_ = std::clamp(slicePosition_,
+                                        axisCoordinate(bounds.min, sectionAxis_),
+                                        axisCoordinate(bounds.max, sectionAxis_));
         UpdateInteractiveSlice();
-        Refresh();
     };
     const auto scaleTarget = [&](double steps) {
         if (transformModels) {
@@ -946,7 +1056,6 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
             moveSlicePlane(steps);
         } else
             scaleTarget(steps);
-        Refresh();
     }
     lastMouse_ = now;
     e.Skip();

@@ -17,6 +17,7 @@
 #include <iomanip>
 #include <sstream>
 #include <wx/artprov.h>
+#include <wx/checkbox.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/msgdlg.h>
@@ -129,9 +130,13 @@ wxBitmap LoadEmbeddedIcon(const unsigned char *data,
                           const wxArtID &fallback,
                           const wxSize &size) {
     wxBitmap icon = wxBitmap::NewFromPNGData(data, dataSize);
-    if (!icon.IsOk() || icon.GetSize() != size)
+    if (!icon.IsOk())
         return wxArtProvider::GetBitmap(fallback, wxART_TOOLBAR, size);
-    return icon;
+    if (icon.GetSize() == size)
+        return icon;
+    wxImage image = icon.ConvertToImage();
+    image.Rescale(size.GetWidth(), size.GetHeight(), wxIMAGE_QUALITY_HIGH);
+    return wxBitmap(image);
 }
 } // namespace
 
@@ -152,13 +157,46 @@ class SliceDialog final : public wxDialog {
     wxRadioBox *target;
 };
 
+class SectionDialog final : public wxDialog {
+  public:
+    explicit SectionDialog(wxWindow *parent) : wxDialog(parent, wxID_ANY, "Cross-section") {
+        auto *root = new wxBoxSizer(wxVERTICAL);
+        axis = new wxRadioBox(this,
+                              wxID_ANY,
+                              "Section plane normal",
+                              wxDefaultPosition,
+                              wxDefaultSize,
+                              {"X axis", "Y axis", "Z axis"},
+                              1,
+                              wxRA_SPECIFY_ROWS);
+        axis->SetSelection(2);
+        root->Add(axis, 0, wxEXPAND | wxLEFT | wxRIGHT, 12);
+        autoRotate = new wxCheckBox(this, wxID_ANY, "Auto rotate for best view");
+        autoRotate->SetValue(true);
+        root->Add(autoRotate, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
+        root->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 12);
+        SetSizerAndFit(root);
+    }
+
+    SectionAxis SelectedAxis() const {
+        if (axis->GetSelection() == 0)
+            return SectionAxis::X;
+        if (axis->GetSelection() == 1)
+            return SectionAxis::Y;
+        return SectionAxis::Z;
+    }
+
+    wxRadioBox *axis = nullptr;
+    wxCheckBox *autoRotate = nullptr;
+};
+
 DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     : wxMDIChildFrame(parent, wxID_ANY, title, wxDefaultPosition, {1000, 700}) {
     BuildMenus();
     auto *root = new wxBoxSizer(wxVERTICAL);
     toolbar_ = new wxToolBar(
         this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTB_HORIZONTAL | wxTB_TEXT);
-    const wxSize toolSize{24, 24};
+    const wxSize toolSize = FromDIP(wxSize(24, 24));
     toolbar_->SetToolBitmapSize(toolSize);
     toolbar_->AddTool(
         IdExport, "Export", wxArtProvider::GetBitmap(wxART_FILE_SAVE_AS, wxART_TOOLBAR, toolSize));
@@ -169,12 +207,12 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        wxART_EXECUTABLE_FILE,
                                        toolSize));
     toolbar_->AddTool(IdInteractive,
-                      "Plane",
+                      "Section",
                       LoadEmbeddedIcon(clip_slicer::assets::planeSliceIconPng,
                                        clip_slicer::assets::planeSliceIconPngSize,
                                        wxART_LIST_VIEW,
                                        toolSize),
-                      "Interactive slicing",
+                      "Interactive cross-section",
                       wxITEM_CHECK);
     toolbar_->AddTool(
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
@@ -244,6 +282,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     SetSizer(root);
     Bind(wxEVT_ACTIVATE, &DocumentFrame::OnActivate, this);
     Bind(wxEVT_CLOSE_WINDOW, &DocumentFrame::OnClose, this);
+    Bind(wxEVT_DPI_CHANGED, &DocumentFrame::OnDPIChanged, this);
     Bind(
         wxEVT_MENU,
         [this](wxCommandEvent &) { static_cast<MainFrame *>(GetMDIParent())->OpenDialog(); },
@@ -314,7 +353,7 @@ void DocumentFrame::BuildMenus() {
     moveToOriginItem_ = models->Append(IdMoveToOrigin, "Move to &Origin");
     auto *slice = new wxMenu;
     slice->Append(IdSlice, "&Slice selected...");
-    slice->AppendCheckItem(IdInteractive, "&Interactive slicing");
+    sectionItem_ = slice->AppendCheckItem(IdInteractive, "&Section...");
     detectUnsupportedItem_ = slice->Append(IdDetectUnsupported, "&Detect unsupported areas");
     generateSupportsItem_ = slice->Append(IdGenerateSupports, "&Generate supports");
     optimizationItem_ = slice->Append(IdOptimizeOrientation, "&Optimize orientation");
@@ -370,6 +409,9 @@ double DocumentFrame::CriticalAngleDegrees() const {
 }
 double DocumentFrame::OverhangCoefficient() const {
     return static_cast<MainFrame *>(GetMDIParent())->Settings().overhangCoefficient;
+}
+double DocumentFrame::CrossSectionDisplayDistance() const {
+    return static_cast<MainFrame *>(GetMDIParent())->Settings().crossSectionDisplayDistance;
 }
 void DocumentFrame::OpenPath(const wxString &path) {
     try {
@@ -453,6 +495,14 @@ void DocumentFrame::UpdateCommandState() {
         optimizationItem_->Enable(canAnalyze);
     if (toolbar_)
         toolbar_->EnableTool(IdOptimizeOrientation, canAnalyze);
+    if (sectionItem_) {
+        sectionItem_->Enable(modelSelected);
+        sectionItem_->Check(canvas_ && canvas_->InteractiveSlice());
+    }
+    if (toolbar_) {
+        toolbar_->EnableTool(IdInteractive, modelSelected);
+        toolbar_->ToggleTool(IdInteractive, canvas_ && canvas_->InteractiveSlice());
+    }
     if (toolbar_)
         toolbar_->EnableTool(IdStopOptimization,
                              optimizationRunning_ || unsupportedAnalysisRunning_ ||
@@ -574,6 +624,13 @@ stl_slicer::Bounds3 DocumentFrame::VisibleBounds() const {
     return b;
 }
 stl_slicer::Vec3 DocumentFrame::SelectedCenter() const {
+    const stl_slicer::Bounds3 b = SelectedBounds();
+    return b.valid() ? stl_slicer::Vec3{(b.min.x + b.max.x) / 2,
+                                        (b.min.y + b.max.y) / 2,
+                                        (b.min.z + b.max.z) / 2}
+                     : stl_slicer::Vec3{};
+}
+stl_slicer::Bounds3 DocumentFrame::SelectedBounds() const {
     stl_slicer::Bounds3 b;
     for (const auto &m : models_)
         if (m->selected) {
@@ -583,10 +640,7 @@ stl_slicer::Vec3 DocumentFrame::SelectedCenter() const {
                 b.include(mb.max);
             }
         }
-    return b.valid() ? stl_slicer::Vec3{(b.min.x + b.max.x) / 2,
-                                        (b.min.y + b.max.y) / 2,
-                                        (b.min.z + b.max.z) / 2}
-                     : stl_slicer::Vec3{};
+    return b;
 }
 void DocumentFrame::UpdateStatus() {
     auto *parent = static_cast<MainFrame *>(GetMDIParent());
@@ -606,7 +660,10 @@ void DocumentFrame::PublishStatus() {
     else
         buildVolume << "0.00 x 0.00 x 0.00";
     std::ostringstream slicePosition;
-    slicePosition << "Z: ";
+    const char axisLetter = canvas_->SliceAxis() == SectionAxis::X
+                                ? 'X'
+                                : (canvas_->SliceAxis() == SectionAxis::Y ? 'Y' : 'Z');
+    slicePosition << axisLetter << ": ";
     if (canvas_->InteractiveSlice())
         slicePosition << std::fixed << std::setprecision(3) << canvas_->SlicePosition();
     else
@@ -641,6 +698,68 @@ void DocumentFrame::OnActivate(wxActivateEvent &event) {
     if (event.GetActive())
         PublishStatus();
     event.Skip();
+}
+void DocumentFrame::OnDPIChanged(wxDPIChangedEvent &event) {
+    event.Skip();
+    CallAfter([this] { UpdateToolbarBitmaps(); });
+}
+void DocumentFrame::UpdateToolbarBitmaps() {
+    if (!toolbar_)
+        return;
+    const wxSize toolSize = FromDIP(wxSize(24, 24));
+    toolbar_->SetToolBitmapSize(toolSize);
+    const auto setBitmap = [this](int id, const wxBitmap &bitmap) {
+        if (auto *tool = toolbar_->FindById(id))
+            tool->SetNormalBitmap(bitmap);
+    };
+    setBitmap(IdExport, wxArtProvider::GetBitmap(wxART_FILE_SAVE_AS, wxART_TOOLBAR, toolSize));
+    setBitmap(IdSlice,
+              LoadEmbeddedIcon(clip_slicer::assets::sliceBreadIconPng,
+                               clip_slicer::assets::sliceBreadIconPngSize,
+                               wxART_EXECUTABLE_FILE,
+                               toolSize));
+    setBitmap(IdInteractive,
+              LoadEmbeddedIcon(clip_slicer::assets::planeSliceIconPng,
+                               clip_slicer::assets::planeSliceIconPngSize,
+                               wxART_LIST_VIEW,
+                               toolSize));
+    setBitmap(IdHide, wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
+    setBitmap(IdShow, wxArtProvider::GetBitmap(wxART_TICK_MARK, wxART_TOOLBAR, toolSize));
+    setBitmap(IdDeleteModels, wxArtProvider::GetBitmap(wxART_DELETE, wxART_TOOLBAR, toolSize));
+    setBitmap(IdDetectUnsupported,
+              LoadEmbeddedIcon(clip_slicer::assets::supportDetectIconPng,
+                               clip_slicer::assets::supportDetectIconPngSize,
+                               wxART_FIND,
+                               toolSize));
+    setBitmap(IdOptimizeOrientation,
+              LoadEmbeddedIcon(clip_slicer::assets::orientationOptimizerIconPng,
+                               clip_slicer::assets::orientationOptimizerIconPngSize,
+                               wxART_GO_UP,
+                               toolSize));
+    setBitmap(IdGenerateSupports,
+              LoadEmbeddedIcon(clip_slicer::assets::supportGenerateIconPng,
+                               clip_slicer::assets::supportGenerateIconPngSize,
+                               wxART_PLUS,
+                               toolSize));
+    setBitmap(IdStopOptimization,
+              wxArtProvider::GetBitmap(wxART_STOP, wxART_TOOLBAR, toolSize));
+    setBitmap(IdResetTransform,
+              LoadEmbeddedIcon(clip_slicer::assets::resetTransformIconPng,
+                               clip_slicer::assets::resetTransformIconPngSize,
+                               wxART_UNDO,
+                               toolSize));
+    setBitmap(IdTransformModels,
+              LoadEmbeddedIcon(clip_slicer::assets::transformModelsIconPng,
+                               clip_slicer::assets::transformModelsIconPngSize,
+                               wxART_REDO,
+                               toolSize));
+    setBitmap(IdMoveToOrigin,
+              LoadEmbeddedIcon(clip_slicer::assets::moveToOriginIconPng,
+                               clip_slicer::assets::moveToOriginIconPngSize,
+                               wxART_GO_HOME,
+                               toolSize));
+    toolbar_->Realize();
+    Layout();
 }
 void DocumentFrame::OnClose(wxCloseEvent &event) {
     auto *parent = static_cast<MainFrame *>(GetMDIParent());
@@ -738,7 +857,16 @@ void DocumentFrame::OnExportStl(wxCommandEvent &) {
     }
 }
 void DocumentFrame::OnInteractiveSlice(wxCommandEvent &) {
-    canvas_->SetInteractiveSlice(!canvas_->InteractiveSlice());
+    if (canvas_->InteractiveSlice()) {
+        canvas_->SetInteractiveSection(false, canvas_->SliceAxis());
+    } else {
+        SectionDialog dialog(this);
+        if (dialog.ShowModal() == wxID_OK)
+            canvas_->SetInteractiveSection(
+                true, dialog.SelectedAxis(), dialog.autoRotate->GetValue());
+    }
+    UpdateCommandState();
+    UpdateStatus();
 }
 void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
     if (unsupportedAnalysisRunning_ || optimizationRunning_ || supportGenerationRunning_)

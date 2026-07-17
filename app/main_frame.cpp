@@ -68,6 +68,7 @@ void MainFrame::ShowSettingsDialog() {
     updated.supportPillarBottomRadius = dialog.SupportPillarBottomRadius();
     updated.supportPillarTopRadius = dialog.SupportPillarTopRadius();
     updated.supportCircumferencePoints = dialog.SupportCircumferencePoints();
+    updated.crossSectionDisplayDistance = dialog.CrossSectionDisplayDistance();
     if (!updated.Save()) {
         wxMessageBox("Unable to save settings to:\n" + AppSettings::FilePath(),
                      "Settings",

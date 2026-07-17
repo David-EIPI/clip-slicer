@@ -25,6 +25,7 @@ class AppSettings {
     static constexpr double defaultSupportPillarBottomRadius = 0.75;
     static constexpr double defaultSupportPillarTopRadius = 0.5;
     static constexpr int defaultSupportCircumferencePoints = 12;
+    static constexpr double defaultCrossSectionDisplayDistance = 10.0;
 
     bool Load();
     bool Save() const;
@@ -51,4 +52,5 @@ class AppSettings {
     double supportPillarBottomRadius = defaultSupportPillarBottomRadius;
     double supportPillarTopRadius = defaultSupportPillarTopRadius;
     int supportCircumferencePoints = defaultSupportCircumferencePoints;
+    double crossSectionDisplayDistance = defaultCrossSectionDisplayDistance;
 };

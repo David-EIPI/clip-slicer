@@ -15,6 +15,7 @@
 class ModelCanvas;
 class wxActivateEvent;
 class wxCloseEvent;
+class wxDPIChangedEvent;
 class wxMenuItem;
 class wxToolBar;
 class wxThreadEvent;
@@ -44,12 +45,15 @@ class DocumentFrame final : public wxMDIChildFrame {
     double SegmentationTolerance() const;
     double CriticalAngleDegrees() const;
     double OverhangCoefficient() const;
+    double CrossSectionDisplayDistance() const;
+    stl_slicer::Bounds3 SelectedBounds() const;
 
   private:
     void BuildMenus();
     void OnOpen(wxCommandEvent &);
     void OnActivate(wxActivateEvent &);
     void OnClose(wxCloseEvent &);
+    void OnDPIChanged(wxDPIChangedEvent &event);
     void OnExport(wxCommandEvent &);
     void OnExportStl(wxCommandEvent &);
     void OnSlice(wxCommandEvent &);
@@ -72,6 +76,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnListCheck(wxCommandEvent &);
     void PublishStatus();
     void UpdateCommandState();
+    void UpdateToolbarBitmaps();
 
     enum class SupportProgressStage : std::size_t {
         Slicing,
@@ -102,6 +107,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *resetTransformItem_ = nullptr;
     wxMenuItem *transformModelsItem_ = nullptr;
     wxMenuItem *moveToOriginItem_ = nullptr;
+    wxMenuItem *sectionItem_ = nullptr;
     std::thread unsupportedWorker_;
     std::thread supportGenerationWorker_;
     std::thread optimizationWorker_;

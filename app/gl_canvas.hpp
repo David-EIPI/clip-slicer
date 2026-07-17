@@ -14,6 +14,8 @@
 class DocumentFrame;
 class wxThreadEvent;
 
+enum class SectionAxis { X, Y, Z };
+
 class ModelCanvas final : public wxGLCanvas {
   public:
     ModelCanvas(wxWindow *parent, DocumentFrame &document);
@@ -23,7 +25,9 @@ class ModelCanvas final : public wxGLCanvas {
     void TranslateViewCenter(const stl_slicer::Vec3 &translation);
     void SelectionChanged();
     void SettingsChanged();
-    void SetInteractiveSlice(bool enabled);
+    void SetInteractiveSection(bool enabled,
+                               SectionAxis axis = SectionAxis::Z,
+                               bool autoRotate = false);
     bool InteractiveSlice() const {
         return interactiveSlice_;
     }
@@ -32,6 +36,9 @@ class ModelCanvas final : public wxGLCanvas {
     }
     double SliceArea() const {
         return sliceArea_;
+    }
+    SectionAxis SliceAxis() const {
+        return sectionAxis_;
     }
     bool InteractiveSliceRunning() const {
         return interactiveSliceRunning_;
@@ -60,6 +67,7 @@ class ModelCanvas final : public wxGLCanvas {
     void DrawOrientationVane();
     void UpdateInteractiveSlice();
     void BeginInteractiveSlice();
+    void AlignSectionView();
     void TransformSelected(const stl_slicer::Mat4 &transform);
 
     DocumentFrame &document_;
@@ -83,6 +91,8 @@ class ModelCanvas final : public wxGLCanvas {
     std::uint64_t interactiveSliceGeneration_ = 0;
     bool interactiveSliceRunning_ = false;
     bool interactiveSlicePending_ = false;
+    SectionAxis sectionAxis_ = SectionAxis::Z;
+    stl_slicer::Bounds3 sectionBounds_;
     double slicePosition_ = 0.0, sliceArea_ = 0.0;
     double yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
     double fieldOfView_ = 0.75;

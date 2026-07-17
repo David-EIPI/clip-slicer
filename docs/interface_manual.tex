@@ -56,17 +56,19 @@ arrow ends. The vane rotates with the camera to show the current view
 direction, but its screen position and size remain fixed so that it is always
 legible.
 
-\subsection{Slicing Plane}
+\subsection{Cross-section}
 
-The \emph{Plane} toolbar button or \emph{Slice > Interactive slicing} menu
-command enables the interactive slicing plane. The translucent plane spans the
-visible model bounds. Its upper face is pale blue and its lower face is orange,
-which distinguishes the two viewing directions.
+The \emph{Section} toolbar button or \emph{Slice > Section} menu command opens
+a dialog for choosing an X-, Y-, or Z-normal section plane and optionally
+aligning the camera for the best view. The translucent section plane spans the
+shared bounds of the selected models and can be moved along its normal with
+Alt+wheel.
 
 Moving the plane recalculates the intersection contours for selected models.
-A filled projection of those contours is drawn on the build platform, and the
-second status-bar field reports the plane height as \texttt{Z: 0.000}. When
-interactive slicing is disabled, the field displays \texttt{Z: --}.
+A filled, double-sided copy of those contours is drawn on a dedicated
+semi-transparent plane outside the selected models, and the second status-bar
+field reports the coordinate using the selected axis letter. Best-view
+alignment faces the display plane squarely and scales it to fit the viewport.
 
 \subsection{Unsupported Areas}
 
@@ -150,13 +152,17 @@ the application grows.
 
 The \emph{Slicing} tab defines the default layer thickness and first-layer
 offset. These values are used by model slicing, unsupported-area analysis,
-orientation optimization, and interactive slicing. They default to 0.1 and
+orientation optimization, and interactive cross-sections. They default to 0.1 and
 0.05 model units, respectively.
 
 The tab also contains the contour healing threshold. After initial
 segment connection, endpoints separated by no more than this distance can be
 joined to close a contour. The default is 0.01 model units. The setting is
-used by normal slicing, interactive slicing, and unsupported-area analysis.
+used by normal slicing, interactive cross-sections, and unsupported-area analysis.
+
+The \emph{Interface} tab contains the \emph{Cross-section display distance},
+which controls the gap between the selected-model bounding box and the
+dedicated cross-section display plane.
 
 The segmentation tolerance controls endpoint matching during initial slice
 segment connection. Its default is 0.01 model units. It is shared by the
@@ -300,10 +306,10 @@ operating system's user configuration directory.
             & Duplicate middle-button translation.
             & Duplicate middle-button translation for selected models. \\
         Alt+Mouse wheel
-            & \multicolumn{2}{Y@{}}{Move the interactive slicing plane. This
-              action is available while interactive slicing is enabled.} \\
+            & \multicolumn{2}{Y@{}}{Move the interactive section plane. This
+              action is available while Section mode is enabled.} \\
         Alt+Shift+Left drag
-            & \multicolumn{2}{Y@{}}{Duplicate interactive slicing-plane
+            & \multicolumn{2}{Y@{}}{Duplicate interactive section-plane
               movement for a mouse without a wheel.} \\
         \bottomrule
     \end{tabularx}

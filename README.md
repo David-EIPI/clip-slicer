@@ -143,8 +143,10 @@ The library API is divided into reusable data and processing components:
   duplicates middle drag.
 - Holding Shift with a mouse operation applies the corresponding rotation, translation, or scaling
   to selected models instead of the camera.
-- Interactive slicing adds a translucent plane; Alt+wheel moves it and updates the projected
-  contour and status-bar area. Alt+Shift+left drag provides the same control without a wheel.
+- Section mode supports planes normal to the X, Y, or Z axis. Alt+wheel moves the translucent
+  section plane and updates a filled, double-sided cross-section on a separate display plane
+  outside the selected models. The optional best-view mode faces and fits that plane to the
+  viewport. Alt+Shift+left drag provides the same section-position control without a wheel.
 
 `File > Open...` creates a new document, while `File > Open into document...` adds a model to the
 active document. Slice export merges every selected sliced model and stably orders their layers by
