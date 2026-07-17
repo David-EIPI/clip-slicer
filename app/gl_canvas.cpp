@@ -803,6 +803,13 @@ void ModelCanvas::DrawOverlays(const float *) {
     }
 }
 void ModelCanvas::SetInteractiveSection(bool enabled, SectionAxis axis, bool autoRotate) {
+    if (enabled && !interactiveSlice_) {
+        preSectionViewCenter_ = viewCenter_;
+        preSectionViewCenterSaved_ = true;
+    } else if (!enabled && interactiveSlice_ && preSectionViewCenterSaved_) {
+        viewCenter_ = preSectionViewCenter_;
+        preSectionViewCenterSaved_ = false;
+    }
     interactiveSlice_ = enabled;
     sectionAxis_ = axis;
     sectionBounds_ = document_.SelectedBounds();

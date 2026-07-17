@@ -101,5 +101,7 @@ class ModelCanvas final : public wxGLCanvas {
     double yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
     double fieldOfView_ = 0.75;
     stl_slicer::Vec3 viewCenter_;
+    stl_slicer::Vec3 preSectionViewCenter_;
+    bool preSectionViewCenterSaved_ = false;
     wxPoint lastMouse_;
 };
