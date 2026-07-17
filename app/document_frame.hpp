@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -111,6 +112,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     std::uint64_t modelRevision_ = 0;
     bool unsupportedAnalysisRunning_ = false;
     bool supportGenerationRunning_ = false;
+    std::string supportGenerationSummary_;
     std::array<SupportProgressState,
                static_cast<std::size_t>(SupportProgressStage::Count)>
         supportProgress_{};

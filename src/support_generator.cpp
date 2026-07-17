@@ -8,6 +8,7 @@
 #include <deque>
 #include <exception>
 #include <future>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -364,6 +365,16 @@ SupportGenerator::generate(const SupportGenerationInput &input,
 
     SupportPillarBuilder buildPillar = kernels_.buildPillar;
     std::shared_future<std::shared_ptr<const ExternalPillarSpace>> externalSpace;
+    struct DefaultBuilderState {
+        std::once_flag initializeExternal;
+        std::shared_ptr<const ExternalPillarBuilder> external;
+        std::once_flag initializeInternal;
+        std::shared_ptr<const InternalPillarBuilder> internal;
+        std::mutex failureMutex;
+        std::size_t internalFailures = 0;
+        double lowestFailureZ = std::numeric_limits<double>::infinity();
+    };
+    std::shared_ptr<DefaultBuilderState> defaultBuilderState;
     if (!buildPillar) {
         SupportTipBuilder tipBuilder(input.sourceModel, options_.tip, cancel);
         if (cancelled(cancel)) {
@@ -397,34 +408,51 @@ SupportGenerator::generate(const SupportGenerationInput &input,
                            return space;
                        })
                 .share();
-        struct PillarBuilderState {
-            std::once_flag initialize;
-            std::shared_ptr<const ExternalPillarBuilder> builder;
-        };
-        auto pillarBuilderState = std::make_shared<PillarBuilderState>();
+        defaultBuilderState = std::make_shared<DefaultBuilderState>();
         buildPillar = [tipBuilder = std::move(tipBuilder),
                        space = externalSpace,
-                       pillarBuilderState,
-                       options = options_.externalPillar](const SupportGenerationInput &,
-                                                          const SupportContactPoint &contact,
-                                                          const std::atomic<bool> *cancel) {
+                       state = defaultBuilderState,
+                       options = options_.externalPillar,
+                       tipOptions = options_.tip](const SupportGenerationInput &input,
+                                                  const SupportContactPoint &contact,
+                                                  const std::atomic<bool> *cancel) {
             SupportTipResult tip = tipBuilder.buildWithAttachment(contact.position, cancel);
             if (!tip.valid() || cancelled(cancel))
                 return TriangleMesh{};
-            std::call_once(pillarBuilderState->initialize, [&]() {
-                pillarBuilderState->builder =
+            std::call_once(state->initializeExternal, [&]() {
+                state->external =
                     std::make_shared<const ExternalPillarBuilder>(space.get(), options);
             });
-            TriangleMesh pillar =
-                pillarBuilderState->builder->build(
-                    tip.pillarAttachment, contact.position, cancel);
-            if (pillar.triangles().empty() || cancelled(cancel))
+            TriangleMesh pillar = state->external->build(
+                tip.pillarAttachment, contact.position, cancel);
+            if (cancelled(cancel))
                 return TriangleMesh{};
 
             TriangleMesh shell;
-            shell.setHeader("CLIP Slicer external support");
-            shell.reserve(tip.mesh.triangles().size() + pillar.triangles().size());
-            shell.append(std::move(pillar));
+            if (pillar.triangles().empty()) {
+                std::call_once(state->initializeInternal, [&]() {
+                    state->internal = std::make_shared<const InternalPillarBuilder>(
+                        input.slices, options, tipOptions, cancel);
+                });
+                InternalPillarResult internal = state->internal->build(
+                    tip.pillarAttachment, contact.position, cancel);
+                if (cancelled(cancel))
+                    return TriangleMesh{};
+                if (!internal.valid()) {
+                    std::lock_guard<std::mutex> lock(state->failureMutex);
+                    ++state->internalFailures;
+                    state->lowestFailureZ =
+                        std::min(state->lowestFailureZ, contact.position.z);
+                    return TriangleMesh{};
+                }
+                shell.setHeader("CLIP Slicer internal support");
+                shell.reserve(tip.mesh.triangles().size() + internal.mesh.triangles().size());
+                shell.append(std::move(internal.mesh));
+            } else {
+                shell.setHeader("CLIP Slicer external support");
+                shell.reserve(tip.mesh.triangles().size() + pillar.triangles().size());
+                shell.append(std::move(pillar));
+            }
             shell.append(std::move(tip.mesh));
             return shell;
         };
@@ -555,6 +583,11 @@ SupportGenerator::generate(const SupportGenerationInput &input,
                   true});
     result.cancelled = cancelled(cancel);
     result.processedLayerCount = shared.processedLayers;
+    if (defaultBuilderState) {
+        result.internalSupportFailureCount = defaultBuilderState->internalFailures;
+        if (result.internalSupportFailureCount > 0)
+            result.lowestInternalSupportFailureZ = defaultBuilderState->lowestFailureZ;
+    }
     result.contactPoints = std::move(shared.detectedContacts);
     result.supports = std::move(shared.supports);
     result.supports.setHeader("CLIP Slicer generated supports");

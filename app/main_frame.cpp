@@ -24,14 +24,11 @@ MainFrame::MainFrame()
     wxStatusBar *statusBar = CreateStatusBar(3);
     int buildWidth = 210;
     int sliceWidth = 90;
-    int optimizationWidth = 100;
     if (statusBar) {
         statusBar->GetTextExtent("0000.00 x 0000.00 x 0000.00", &buildWidth, nullptr);
         statusBar->GetTextExtent("Z: -000000000.000", &sliceWidth, nullptr);
-        statusBar->GetTextExtent(
-            "Generating supports... (000000 of 000000)", &optimizationWidth, nullptr);
     }
-    const int statusWidths[] = {buildWidth + 12, sliceWidth + 16, optimizationWidth + 16};
+    const int statusWidths[] = {buildWidth + 12, sliceWidth + 16, -1};
     const int statusStyles[] = {wxSB_SUNKEN, wxSB_SUNKEN, wxSB_SUNKEN};
     SetStatusWidths(3, statusWidths);
     if (statusBar)

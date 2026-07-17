@@ -57,6 +57,8 @@ struct SupportGenerationResult {
     TriangleMesh supports;
     std::vector<SupportContactPoint> contactPoints;
     std::size_t processedLayerCount = 0;
+    std::size_t internalSupportFailureCount = 0;
+    double lowestInternalSupportFailureZ = 0.0;
     bool cancelled = false;
 };
 

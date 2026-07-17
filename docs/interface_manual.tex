@@ -125,6 +125,9 @@ after the last worker for the current step has finished. Contact stages show
 calculated or processed contacts in the form \texttt{(10 of 1234)}. Before the
 final contact count is known, the total is estimated from unsupported area and
 the configured contact spacing.
+After generation, contacts for which neither an external nor internal support
+could be placed are summarized in the same field. The message includes the
+number of failures and the Z coordinate of the lowest failed upper contact.
 The \emph{Stop} toolbar button requests cooperative cancellation. Detection,
 optimization, and support-generation workers stop between slicing, analysis,
 or generation operations, and the controls return to their idle state after
@@ -234,8 +237,7 @@ obstructions without allowing unreachable tips to trigger an exhaustive cone
 scan. The two halves are joined through their stored predecessor links.
 Collinear centerline steps are merged before a continuously tapered polygonal
 pipe and cylindrical base are triangulated. Contacts for which no
-collision-free external route exists are left for the future internal pillar
-stage and do not emit incomplete geometry.
+collision-free external route exists are passed to the internal-pillar search.
 Direction changes in the centerline are replaced by tangent circular fillets
 where adjacent segments provide enough room. The base's vertical centerline
 and the contact tip's conical centerline participate in this smoothing, so the
@@ -246,6 +248,26 @@ terminal rather than shared centerline segments, their fillets may use nearly
 the full axis length when required by the transition angle. If either terminal
 axis is still too short, its bend radius is reduced to fit instead of leaving
 a sharp joint. Body bends retain the full local pillar radius.
+
+Internal supports connect an unsupported surface to a lower part of the model
+when no path to the build platform exists. Original layer polygons and a
+second set expanded by the maximum pillar radius plus model isolation are
+prepared once and shared by all workers. Starting at the upper tip attachment,
+the search advances vertically downward one source slice at a time. At each
+step it scans a downward cone, limited to the contact-tip height and minimum
+support angle, for original filled contours. The closest eligible contour edge
+becomes the lower contact point.
+
+The lower tip uses the same dimensions as the upper tip, with its narrow end
+on the model and wide end toward the pillar. Its axis is directed toward the
+vertical pillar and kept at or above the minimum support angle. Any remaining
+horizontal distance is joined at that same minimum angle before the route
+continues vertically to the upper attachment. The route is rejected if it
+crosses an expanded model contour or if the two tips leave insufficient room
+for a pillar. Accepted routes use the same tube and fillet mesher as external
+supports, but their tube radius is constant and equal to the wide
+radius of both contact-tip cones. Rejected internal attempts contribute to the
+failure count shown in the status bar.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

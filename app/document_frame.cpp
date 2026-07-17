@@ -63,6 +63,8 @@ struct SupportGenerationPayload {
     stl_slicer::TriangleMesh supports;
     std::size_t contactPointCount = 0;
     std::size_t processedLayerCount = 0;
+    std::size_t internalSupportFailureCount = 0;
+    double lowestInternalSupportFailureZ = 0.0;
     std::uint64_t modelRevision = 0;
     bool cancelled = false;
     std::string error;
@@ -630,6 +632,8 @@ void DocumentFrame::PublishStatus() {
                 optimizationProgress << " (" << stage.completed << " of " << stage.total << ')';
             break;
         }
+    } else {
+        optimizationProgress << supportGenerationSummary_;
     }
     parent->SetDocumentStatus(buildVolume.str(), slicePosition.str(), optimizationProgress.str());
 }
@@ -818,6 +822,7 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
     const std::uint64_t revision = modelRevision_;
     supportGenerationCancel_.store(false, std::memory_order_relaxed);
     supportGenerationRunning_ = true;
+    supportGenerationSummary_.clear();
     supportProgress_ = {};
     supportProgress_[static_cast<std::size_t>(SupportProgressStage::Slicing)].started = true;
     canvas_->ClearUnsupportedVisualization();
@@ -916,6 +921,10 @@ void DocumentFrame::OnGenerateSupports(wxCommandEvent &) {
                         payload->supports = std::move(generated.supports);
                         payload->contactPointCount = generated.contactPoints.size();
                         payload->processedLayerCount = generated.processedLayerCount;
+                        payload->internalSupportFailureCount =
+                            generated.internalSupportFailureCount;
+                        payload->lowestInternalSupportFailureZ =
+                            generated.lowestInternalSupportFailureZ;
                         payload->cancelled = generated.cancelled;
                     }
                 } else {
@@ -974,12 +983,23 @@ void DocumentFrame::OnSupportGenerationFinished(wxThreadEvent &event) {
     }
     if (payload->cancelled || payload->modelRevision != modelRevision_)
         return;
+    if (payload->internalSupportFailureCount > 0) {
+        supportGenerationSummary_ =
+            wxString::Format("%llu internal supports could not be placed. Lowest is at Z=%.2f.",
+                             static_cast<unsigned long long>(
+                                 payload->internalSupportFailureCount),
+                             payload->lowestInternalSupportFailureZ)
+                .ToStdString();
+    } else {
+        supportGenerationSummary_.clear();
+    }
+    UpdateStatus();
     if (payload->supports.triangles().empty()) {
         const wxString message =
             payload->contactPointCount == 0
                 ? "No support contact points were detected."
                 : wxString::Format("%llu support contact points were detected.\n"
-                                   "No complete external support paths were generated.",
+                                   "No complete support paths were generated.",
                                    static_cast<unsigned long long>(payload->contactPointCount));
         wxMessageBox(message, "Generate supports", wxOK | wxICON_INFORMATION, this);
         return;

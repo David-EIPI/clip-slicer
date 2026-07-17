@@ -2,6 +2,7 @@
 
 #include "stl_slicer/model.hpp"
 #include "stl_slicer/slice.hpp"
+#include "stl_slicer/support_tip.hpp"
 #include <atomic>
 #include <cstddef>
 #include <memory>
@@ -54,6 +55,30 @@ class ExternalPillarBuilder {
     std::shared_ptr<const ExternalPillarSpace> space_;
     ExternalPillarOptions options_;
     std::vector<Vec3> unitCircle_;
+};
+
+struct InternalPillarResult {
+    TriangleMesh mesh;
+    Vec3 baseContact;
+
+    bool valid() const noexcept {
+        return !mesh.triangles().empty();
+    }
+};
+
+class InternalPillarBuilder {
+  public:
+    InternalPillarBuilder(std::shared_ptr<const SliceData> slices,
+                          ExternalPillarOptions pillarOptions = {},
+                          SupportTipOptions tipOptions = {},
+                          const std::atomic<bool> *cancel = nullptr);
+    InternalPillarResult build(const Vec3 &topAttachment,
+                               const Vec3 &topContact,
+                               const std::atomic<bool> *cancel = nullptr) const;
+
+  private:
+    struct Impl;
+    std::shared_ptr<const Impl> impl_;
 };
 
 } // namespace stl_slicer

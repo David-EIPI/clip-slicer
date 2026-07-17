@@ -64,6 +64,7 @@ Vec3 rotateAroundAxis(const Vec3 &value, const Vec3 &axis, double angle) {
 }
 
 std::vector<Vec3> smoothCenterline(const std::vector<Vec3> &route,
+                                   const Vec3 &lowerGuide,
                                    const Vec3 *tipCenter,
                                    const ExternalPillarOptions &options) {
     if (route.size() < 2)
@@ -78,7 +79,7 @@ std::vector<Vec3> smoothCenterline(const std::vector<Vec3> &route,
 
     std::vector<Vec3> extended;
     extended.reserve(route.size() + 2);
-    extended.push_back({route.front().x, route.front().y, 0.0});
+    extended.push_back(lowerGuide);
     extended.insert(extended.end(), route.begin(), route.end());
     if (tipCenter && length(subtract(*tipCenter, route.back())) > 1e-12)
         extended.push_back(*tipCenter);
@@ -156,6 +157,87 @@ void addTriangle(TriangleMesh &mesh, const Vec3 &first, const Vec3 &second, cons
     triangle.vertices = {first, second, third};
     triangle.normal = normalized(cross(subtract(second, first), subtract(third, first)));
     mesh.addTriangle(std::move(triangle));
+}
+
+bool appendPillarTube(TriangleMesh &mesh,
+                      std::vector<Vec3> centers,
+                      const Vec3 &lowerGuide,
+                      const Vec3 *upperGuide,
+                      const ExternalPillarOptions &options,
+                      const std::vector<Vec3> &unitCircle,
+                      const std::atomic<bool> *cancel) {
+    centers = smoothCenterline(centers, lowerGuide, upperGuide, options);
+    if (centers.size() < 2)
+        return false;
+
+    std::vector<double> distances(centers.size(), 0.0);
+    for (std::size_t index = 1; index < centers.size(); ++index)
+        distances[index] =
+            distances[index - 1] + length(subtract(centers[index], centers[index - 1]));
+    if (distances.back() <= 1e-12)
+        return false;
+
+    const std::size_t pointCount = options.circumferencePoints;
+    std::vector<Vec3> rings(centers.size() * pointCount);
+    Vec3 previousFirstDirection;
+    for (std::size_t centerIndex = 0; centerIndex < centers.size(); ++centerIndex) {
+        if (cancelled(cancel))
+            return false;
+        Vec3 tangent;
+        if (centerIndex == 0)
+            tangent = subtract(centers[1], centers[0]);
+        else if (centerIndex + 1 == centers.size())
+            tangent = subtract(centers.back(), centers[centers.size() - 2]);
+        else
+            tangent = subtract(centers[centerIndex + 1], centers[centerIndex - 1]);
+        tangent = normalized(tangent);
+        Vec3 firstDirection;
+        if (centerIndex > 0) {
+            firstDirection = normalized(subtract(
+                previousFirstDirection,
+                multiply(tangent, dot(previousFirstDirection, tangent))));
+        }
+        if (length(firstDirection) <= 1e-12) {
+            const Vec3 helper =
+                std::abs(tangent.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
+            firstDirection = normalized(cross(helper, tangent));
+        }
+        previousFirstDirection = firstDirection;
+        const Vec3 secondDirection = normalized(cross(tangent, firstDirection));
+        const double fraction = distances[centerIndex] / distances.back();
+        const double radius =
+            options.bottomRadius + (options.topRadius - options.bottomRadius) * fraction;
+        for (std::size_t point = 0; point < pointCount; ++point) {
+            const Vec3 radial = add(multiply(firstDirection, unitCircle[point].x),
+                                    multiply(secondDirection, unitCircle[point].y));
+            rings[centerIndex * pointCount + point] =
+                add(centers[centerIndex], multiply(radial, radius));
+        }
+    }
+
+    for (std::size_t ring = 0; ring + 1 < centers.size(); ++ring) {
+        for (std::size_t point = 0; point < pointCount; ++point) {
+            const std::size_t next = (point + 1) % pointCount;
+            addTriangle(mesh,
+                        rings[ring * pointCount + point],
+                        rings[ring * pointCount + next],
+                        rings[(ring + 1) * pointCount + next]);
+            addTriangle(mesh,
+                        rings[ring * pointCount + point],
+                        rings[(ring + 1) * pointCount + next],
+                        rings[(ring + 1) * pointCount + point]);
+        }
+    }
+    for (std::size_t point = 0; point < pointCount; ++point) {
+        const std::size_t next = (point + 1) % pointCount;
+        addTriangle(mesh, centers.front(), rings[next], rings[point]);
+        const std::size_t finalRing = (centers.size() - 1) * pointCount;
+        addTriangle(mesh,
+                    centers.back(),
+                    rings[finalRing + point],
+                    rings[finalRing + next]);
+    }
+    return true;
 }
 
 void validateOptions(const ExternalPillarOptions &options) {
@@ -853,55 +935,7 @@ TriangleMesh ExternalPillarBuilder::buildImpl(const Vec3 &attachment,
     std::vector<Vec3> centers = space_->route(attachment, cancel);
     if (centers.size() < 2 || cancelled(cancel))
         return result;
-    centers = smoothCenterline(centers, tipCenter, options_);
-    if (centers.size() < 2)
-        return result;
-
-    std::vector<double> distances(centers.size(), 0.0);
-    for (std::size_t index = 1; index < centers.size(); ++index)
-        distances[index] =
-            distances[index - 1] + length(subtract(centers[index], centers[index - 1]));
-    if (distances.back() <= 1e-12)
-        return result;
-
     const std::size_t pointCount = options_.circumferencePoints;
-    std::vector<Vec3> rings(centers.size() * pointCount);
-    Vec3 previousFirstDirection;
-    for (std::size_t centerIndex = 0; centerIndex < centers.size(); ++centerIndex) {
-        if (cancelled(cancel))
-            return {};
-        Vec3 tangent;
-        if (centerIndex == 0)
-            tangent = subtract(centers[1], centers[0]);
-        else if (centerIndex + 1 == centers.size())
-            tangent = subtract(centers.back(), centers[centers.size() - 2]);
-        else
-            tangent = subtract(centers[centerIndex + 1], centers[centerIndex - 1]);
-        tangent = normalized(tangent);
-        Vec3 firstDirection;
-        if (centerIndex > 0) {
-            firstDirection = normalized(subtract(
-                previousFirstDirection,
-                multiply(tangent, dot(previousFirstDirection, tangent))));
-        }
-        if (length(firstDirection) <= 1e-12) {
-            const Vec3 helper =
-                std::abs(tangent.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
-            firstDirection = normalized(cross(helper, tangent));
-        }
-        previousFirstDirection = firstDirection;
-        const Vec3 secondDirection = normalized(cross(tangent, firstDirection));
-        const double fraction = distances[centerIndex] / distances.back();
-        const double radius =
-            options_.bottomRadius + (options_.topRadius - options_.bottomRadius) * fraction;
-        for (std::size_t point = 0; point < pointCount; ++point) {
-            const Vec3 radial = add(multiply(firstDirection, unitCircle_[point].x),
-                                    multiply(secondDirection, unitCircle_[point].y));
-            rings[centerIndex * pointCount + point] =
-                add(centers[centerIndex], multiply(radial, radius));
-        }
-    }
-
     result.setHeader("CLIP Slicer external support pillar");
     const Vec3 baseBottom{centers.front().x, centers.front().y, 0.0};
     const Vec3 baseTop{centers.front().x, centers.front().y, options_.baseHeight};
@@ -917,7 +951,7 @@ TriangleMesh ExternalPillarBuilder::buildImpl(const Vec3 &attachment,
         baseTopRing.push_back(add(baseTop, radial));
     }
 
-    result.reserve((6 + 2 * (centers.size() - 1)) * pointCount);
+    result.reserve(8 * pointCount);
     for (std::size_t point = 0; point < pointCount; ++point) {
         const std::size_t next = (point + 1) % pointCount;
         addTriangle(result, baseBottomRing[point], baseTopRing[next], baseTopRing[point]);
@@ -925,29 +959,311 @@ TriangleMesh ExternalPillarBuilder::buildImpl(const Vec3 &attachment,
         addTriangle(result, baseBottom, baseBottomRing[next], baseBottomRing[point]);
         addTriangle(result, baseTop, baseTopRing[point], baseTopRing[next]);
     }
-    for (std::size_t ring = 0; ring + 1 < centers.size(); ++ring) {
+    if (!appendPillarTube(
+            result, std::move(centers), baseBottom, tipCenter, options_, unitCircle_, cancel))
+        return {};
+    return result;
+}
+
+struct InternalPillarBuilder::Impl {
+    struct Layer {
+        double z = 0.0;
+        Paths64 original;
+        Paths64 expanded;
+    };
+
+    struct BoundaryPoint {
+        Vec3 point;
+        double distance = std::numeric_limits<double>::infinity();
+        bool valid = false;
+    };
+
+    Impl(std::shared_ptr<const SliceData> sourceSlices,
+         ExternalPillarOptions pillarOptions,
+         SupportTipOptions contactTipOptions,
+         const std::atomic<bool> *cancel)
+        : slices(std::move(sourceSlices)),
+          pillar(pillarOptions),
+          tip(contactTipOptions) {
+        validateOptions(pillar);
+        if (!slices)
+            throw std::invalid_argument("Internal pillar generation requires model slices");
+        if (!std::isfinite(tip.topRadius) || tip.topRadius <= 0.0 ||
+            !std::isfinite(tip.bottomRadius) || tip.bottomRadius <= 0.0 ||
+            !std::isfinite(tip.height) || tip.height <= 0.0 ||
+            tip.circumferencePoints < 3 || tip.circumferencePoints > 1024)
+            throw std::invalid_argument("Internal support tip dimensions are invalid");
+
+        const double angle = pillar.minimumSupportAngleDegrees * pi / 180.0;
+        tangentMinimumAngle = std::tan(angle);
+        cosineMinimumAngle = std::cos(angle);
+        internalTube = pillar;
+        internalTube.bottomRadius = tip.bottomRadius;
+        internalTube.topRadius = tip.bottomRadius;
+        buildCircle(pillar.circumferencePoints, pillarCircle);
+        buildCircle(tip.circumferencePoints, tipCircle);
+
+        const double clearance = tip.bottomRadius + pillar.modelIsolation;
+        layers.reserve(slices->layers.size());
+        for (const SliceLayer &slice : slices->layers) {
+            if (cancelled(cancel))
+                return;
+            Layer layer;
+            layer.z = slice.z;
+            layer.original = slice_polygon::layerPolygons(slice);
+            if (!layer.original.empty()) {
+                layer.expanded = Clipper2Lib::InflatePaths(
+                    layer.original,
+                    clearance * slice_polygon::coordinateScale,
+                    JoinType::Round,
+                    EndType::Polygon,
+                    2.0,
+                    offsetArcTolerance);
+            }
+            layers.push_back(std::move(layer));
+        }
+        complete = true;
+    }
+
+    static void buildCircle(std::size_t pointCount, std::vector<Vec3> &circle) {
+        circle.reserve(pointCount);
         for (std::size_t point = 0; point < pointCount; ++point) {
-            const std::size_t next = (point + 1) % pointCount;
-            addTriangle(result,
-                        rings[ring * pointCount + point],
-                        rings[ring * pointCount + next],
-                        rings[(ring + 1) * pointCount + next]);
-            addTriangle(result,
-                        rings[ring * pointCount + point],
-                        rings[(ring + 1) * pointCount + next],
-                        rings[(ring + 1) * pointCount + point]);
+            const double angle =
+                2.0 * pi * static_cast<double>(point) / static_cast<double>(pointCount);
+            circle.push_back({std::cos(angle), std::sin(angle), 0.0});
         }
     }
-    for (std::size_t point = 0; point < pointCount; ++point) {
-        const std::size_t next = (point + 1) % pointCount;
-        addTriangle(result, centers.front(), rings[next], rings[point]);
-        const std::size_t finalRing = (centers.size() - 1) * pointCount;
-        addTriangle(result,
-                    centers.back(),
-                    rings[finalRing + point],
-                    rings[finalRing + next]);
+
+    static Vec2 closestPointOnSegment(double x,
+                                      double y,
+                                      double firstX,
+                                      double firstY,
+                                      double secondX,
+                                      double secondY) {
+        const double dx = secondX - firstX;
+        const double dy = secondY - firstY;
+        const double denominator = dx * dx + dy * dy;
+        const double parameter = denominator > 1e-18
+                                     ? std::clamp(((x - firstX) * dx + (y - firstY) * dy) /
+                                                      denominator,
+                                                  0.0,
+                                                  1.0)
+                                     : 0.0;
+        return {firstX + parameter * dx, firstY + parameter * dy};
     }
-    return result;
+
+    BoundaryPoint nearestBoundary(const Layer &layer, double x, double y) const {
+        BoundaryPoint result;
+        for (const Path64 &polygon : layer.original) {
+            for (std::size_t index = 0; index < polygon.size(); ++index) {
+                const Point64 &first = polygon[index];
+                const Point64 &second = polygon[(index + 1) % polygon.size()];
+                const double firstX =
+                    static_cast<double>(first.x) / slice_polygon::coordinateScale;
+                const double firstY =
+                    static_cast<double>(first.y) / slice_polygon::coordinateScale;
+                const double secondX =
+                    static_cast<double>(second.x) / slice_polygon::coordinateScale;
+                const double secondY =
+                    static_cast<double>(second.y) / slice_polygon::coordinateScale;
+                const Vec2 point =
+                    closestPointOnSegment(x, y, firstX, firstY, secondX, secondY);
+                const double distance = std::hypot(point.x - x, point.y - y);
+                if (distance < result.distance) {
+                    result.point = {point.x, point.y, layer.z};
+                    result.distance = distance;
+                    result.valid = true;
+                }
+            }
+        }
+        return result;
+    }
+
+    BoundaryPoint findContact(double x, double y, double endpointZ) const {
+        BoundaryPoint result;
+        const double minimumZ = endpointZ - tip.height;
+        for (auto iterator = layers.rbegin(); iterator != layers.rend(); ++iterator) {
+            if (iterator->z >= endpointZ - 1e-12)
+                continue;
+            if (iterator->z < minimumZ - 1e-12)
+                break;
+            if (iterator->original.empty())
+                continue;
+            const double verticalDistance = endpointZ - iterator->z;
+            const double coneRadius = verticalDistance / tangentMinimumAngle;
+            BoundaryPoint candidate = nearestBoundary(*iterator, x, y);
+            if (!candidate.valid || candidate.distance > coneRadius + 1e-9)
+                continue;
+            if (!result.valid || candidate.distance < result.distance - 1e-9 ||
+                (std::abs(candidate.distance - result.distance) <= 1e-9 &&
+                 candidate.point.z > result.point.z))
+                result = candidate;
+        }
+        return result;
+    }
+
+    bool routeClear(const std::vector<Vec3> &route) const {
+        if (route.size() < 2)
+            return false;
+        std::size_t segment = 0;
+        for (const Layer &layer : layers) {
+            if (layer.z <= route.front().z + 1e-9 ||
+                layer.z >= route.back().z - 1e-9 || layer.expanded.empty())
+                continue;
+            while (segment + 1 < route.size() && route[segment + 1].z < layer.z - 1e-9)
+                ++segment;
+            if (segment + 1 >= route.size())
+                break;
+            const double dz = route[segment + 1].z - route[segment].z;
+            if (dz <= 1e-12)
+                return false;
+            const double fraction = (layer.z - route[segment].z) / dz;
+            const Vec3 point =
+                add(route[segment], multiply(subtract(route[segment + 1], route[segment]),
+                                             fraction));
+            if (polygonsContain(layer.expanded,
+                                {slice_polygon::scaledCoordinate(point.x),
+                                 slice_polygon::scaledCoordinate(point.y)}))
+                return false;
+        }
+        return true;
+    }
+
+    TriangleMesh buildContactTip(const Vec3 &contact,
+                                 const Vec3 &attachment,
+                                 const std::atomic<bool> *cancel) const {
+        TriangleMesh result;
+        const Vec3 axis = normalized(subtract(attachment, contact));
+        if (length(axis) <= 1e-12)
+            return result;
+        const Vec3 helper =
+            std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
+        const Vec3 firstDirection = normalized(cross(helper, axis));
+        const Vec3 secondDirection = normalized(cross(axis, firstDirection));
+        std::vector<Vec3> contactRing(tip.circumferencePoints);
+        std::vector<Vec3> attachmentRing(tip.circumferencePoints);
+        for (std::size_t point = 0; point < tip.circumferencePoints; ++point) {
+            const Vec3 radial = add(multiply(firstDirection, tipCircle[point].x),
+                                    multiply(secondDirection, tipCircle[point].y));
+            contactRing[point] = add(contact, multiply(radial, tip.topRadius));
+            attachmentRing[point] = add(attachment, multiply(radial, tip.bottomRadius));
+        }
+        result.reserve(tip.circumferencePoints * 4);
+        for (std::size_t point = 0; point < tip.circumferencePoints; ++point) {
+            if (cancelled(cancel))
+                return {};
+            const std::size_t next = (point + 1) % tip.circumferencePoints;
+            addTriangle(result, contactRing[point], contactRing[next], attachmentRing[next]);
+            addTriangle(result, contactRing[point], attachmentRing[next], attachmentRing[point]);
+            addTriangle(result, contact, contactRing[next], contactRing[point]);
+            addTriangle(result, attachment, attachmentRing[point], attachmentRing[next]);
+        }
+        return result;
+    }
+
+    InternalPillarResult makeSupport(const BoundaryPoint &candidate,
+                                     const Vec3 &topAttachment,
+                                     const Vec3 &topContact,
+                                     const std::atomic<bool> *cancel) const {
+        InternalPillarResult result;
+        const double dx = topAttachment.x - candidate.point.x;
+        const double dy = topAttachment.y - candidate.point.y;
+        const double horizontalDistance = std::hypot(dx, dy);
+        const double horizontalTipLength =
+            std::min(horizontalDistance, tip.height * cosineMinimumAngle);
+        const double horizontalScale =
+            horizontalDistance > 1e-12 ? horizontalTipLength / horizontalDistance : 0.0;
+        const double verticalTipLength =
+            std::sqrt(std::max(0.0, tip.height * tip.height -
+                                        horizontalTipLength * horizontalTipLength));
+        const Vec3 baseAttachment{candidate.point.x + dx * horizontalScale,
+                                  candidate.point.y + dy * horizontalScale,
+                                  candidate.point.z + verticalTipLength};
+        const double remainingHorizontal = horizontalDistance - horizontalTipLength;
+        const Vec3 connection{topAttachment.x,
+                              topAttachment.y,
+                              baseAttachment.z + remainingHorizontal * tangentMinimumAngle};
+        if (connection.z >= topAttachment.z - 1e-9 ||
+            length(subtract(topAttachment, baseAttachment)) < tip.bottomRadius * 2.0)
+            return result;
+
+        std::vector<Vec3> route;
+        route.reserve(3);
+        route.push_back(baseAttachment);
+        if (length(subtract(connection, baseAttachment)) > 1e-9)
+            route.push_back(connection);
+        route.push_back(topAttachment);
+        if (!routeClear(route) || cancelled(cancel))
+            return result;
+
+        TriangleMesh baseTip = buildContactTip(candidate.point, baseAttachment, cancel);
+        if (baseTip.triangles().empty() || cancelled(cancel))
+            return result;
+        result.mesh.setHeader("CLIP Slicer internal support");
+        result.mesh.append(std::move(baseTip));
+        if (!appendPillarTube(result.mesh,
+                              std::move(route),
+                              candidate.point,
+                              &topContact,
+                              internalTube,
+                              pillarCircle,
+                              cancel))
+            return {};
+        result.baseContact = candidate.point;
+        return result;
+    }
+
+    InternalPillarResult build(const Vec3 &topAttachment,
+                               const Vec3 &topContact,
+                               const std::atomic<bool> *cancel) const {
+        if (!complete || layers.empty() || cancelled(cancel) ||
+            topAttachment.z <= layers.front().z)
+            return {};
+        for (auto endpoint = layers.rbegin(); endpoint != layers.rend(); ++endpoint) {
+            if (cancelled(cancel))
+                return {};
+            if (endpoint->z >= topAttachment.z - 1e-9)
+                continue;
+            const BoundaryPoint candidate =
+                findContact(topAttachment.x, topAttachment.y, endpoint->z);
+            if (candidate.valid) {
+                InternalPillarResult result =
+                    makeSupport(candidate, topAttachment, topContact, cancel);
+                if (result.valid())
+                    return result;
+            }
+            if (!endpoint->expanded.empty() &&
+                polygonsContain(endpoint->expanded,
+                                {slice_polygon::scaledCoordinate(topAttachment.x),
+                                 slice_polygon::scaledCoordinate(topAttachment.y)}))
+                return {};
+        }
+        return {};
+    }
+
+    std::shared_ptr<const SliceData> slices;
+    ExternalPillarOptions pillar;
+    ExternalPillarOptions internalTube;
+    SupportTipOptions tip;
+    std::vector<Layer> layers;
+    std::vector<Vec3> pillarCircle;
+    std::vector<Vec3> tipCircle;
+    double tangentMinimumAngle = 0.0;
+    double cosineMinimumAngle = 0.0;
+    bool complete = false;
+};
+
+InternalPillarBuilder::InternalPillarBuilder(std::shared_ptr<const SliceData> slices,
+                                             ExternalPillarOptions pillarOptions,
+                                             SupportTipOptions tipOptions,
+                                             const std::atomic<bool> *cancel)
+    : impl_(std::make_shared<Impl>(
+          std::move(slices), pillarOptions, tipOptions, cancel)) {}
+
+InternalPillarResult InternalPillarBuilder::build(const Vec3 &topAttachment,
+                                                  const Vec3 &topContact,
+                                                  const std::atomic<bool> *cancel) const {
+    return impl_->build(topAttachment, topContact, cancel);
 }
 
 } // namespace stl_slicer

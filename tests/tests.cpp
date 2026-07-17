@@ -818,6 +818,144 @@ void testSupportTipGeneration() {
             "support tip was aimed downward into the solid body");
 }
 
+void testInternalPillarGeneration() {
+    auto slices = std::make_shared<SliceData>();
+    slices->thickness = 0.1;
+    for (std::size_t index = 1; index <= 40; ++index) {
+        const double z = static_cast<double>(index) * 0.1;
+        SliceLayer layer;
+        layer.z = z;
+        if (z <= 1.0 + 1e-12)
+            layer.paths.push_back(square(-2.0, -2.0, 2.0, 2.0));
+        slices->layers.push_back(std::move(layer));
+    }
+
+    ExternalPillarOptions pillar;
+    pillar.latticeCellSize = 0.5;
+    pillar.minimumSupportAngleDegrees = 30.0;
+    pillar.bottomRadius = 0.3;
+    pillar.topRadius = 0.2;
+    pillar.modelIsolation = 0.0;
+    pillar.circumferencePoints = 8;
+    const SupportTipOptions tip{0.1, 0.3, 2.0, 8, 30.0};
+    const InternalPillarBuilder builder(slices, pillar, tip);
+    const InternalPillarResult support =
+        builder.build({0.0, 0.0, 4.0}, {0.0, 0.0, 6.0});
+    require(support.valid(), "internal pillar did not reach an underlying model contour");
+    require(std::abs(support.baseContact.z - 1.0) < 0.11,
+            "internal pillar selected an unexpected lower contact layer");
+    require(support.mesh.bounds().min.z > 0.0 && support.mesh.bounds().max.z >= 4.0,
+            "internal pillar did not span both contact-tip attachments");
+    bool matchedUpperTipRadius = false;
+    for (const Triangle &triangle : support.mesh.triangles()) {
+        for (const Vec3 &vertex : triangle.vertices) {
+            if (std::abs(vertex.z - 4.0) < 1e-9 &&
+                std::abs(std::hypot(vertex.x, vertex.y) - tip.bottomRadius) < 1e-9)
+                matchedUpperTipRadius = true;
+        }
+    }
+    require(matchedUpperTipRadius,
+            "internal pillar radius did not match the upper tip's wide radius");
+
+    auto crowdedSlices = std::make_shared<SliceData>();
+    crowdedSlices->thickness = 0.1;
+    for (std::size_t index = 1; index <= 40; ++index) {
+        const double z = static_cast<double>(index) * 0.1;
+        SliceLayer layer;
+        layer.z = z;
+        if (z >= 3.8 - 1e-12)
+            layer.paths.push_back(square(-0.1, -0.1, 0.1, 0.1));
+        crowdedSlices->layers.push_back(std::move(layer));
+    }
+    require(!InternalPillarBuilder(crowdedSlices, pillar, tip)
+                 .build({0.0, 0.0, 4.0}, {0.0, 0.0, 6.0})
+                 .valid(),
+            "internal pillar was placed without room between its contact tips");
+
+    std::atomic<bool> cancel{true};
+    require(!builder.build({0.0, 0.0, 4.0}, {0.0, 0.0, 6.0}, &cancel).valid(),
+            "internal pillar generation ignored cancellation");
+
+    auto enclosedSlices = std::make_shared<SliceData>();
+    auto unsupported = std::make_shared<SliceData>();
+    enclosedSlices->thickness = 0.1;
+    unsupported->thickness = 0.1;
+    for (std::size_t index = 1; index <= 60; ++index) {
+        const double z = static_cast<double>(index) * 0.1;
+        SliceLayer layer;
+        layer.z = z;
+        if (z <= 1.0 + 1e-12) {
+            layer.paths = {square(-5.0, -5.0, 5.0, 5.0),
+                           internalSquare(-0.1, -0.1, 0.1, 0.1)};
+        } else if (z <= 5.0 + 1e-12) {
+            layer.paths = {square(-5.0, -5.0, 5.0, 5.0),
+                           internalSquare(-1.0, -1.0, 1.0, 1.0)};
+        } else if (index == 60) {
+            layer.paths = {square(-0.5, -0.5, 0.5, 0.5)};
+        }
+        enclosedSlices->layers.push_back(layer);
+        unsupported->layers.push_back({z, index == 60 ? layer.paths : std::vector<SlicePath>{}});
+    }
+
+    auto source = std::make_shared<TriangleMesh>();
+    addBox(*source, -0.5, -0.5, 6.0, 0.5, 0.5, 6.2);
+    require(SupportTipBuilder(source, tip).buildWithAttachment({0.0, 0.0, 6.0}).valid(),
+            "internal-fallback fixture did not produce a valid upper tip");
+
+    SupportGeneratorOptions generatorOptions;
+    generatorOptions.workerCount = 2;
+    generatorOptions.supportSpacing = 1.0;
+    generatorOptions.tip = tip;
+    generatorOptions.externalPillar = pillar;
+    generatorOptions.externalPillar.baseRadius = 1.0;
+    SupportGenerationKernels kernels;
+    kernels.detectContactPoints = [](const SupportGenerationInput &,
+                                     std::size_t layerIndex,
+                                     const std::atomic<bool> *) {
+        return std::vector<SupportContactPoint>{{{0.0, 0.0, 6.0}, layerIndex}};
+    };
+    const SupportGenerationResult fallback =
+        SupportGenerator(generatorOptions, std::move(kernels))
+            .generate({source, enclosedSlices, unsupported});
+    require(!fallback.supports.triangles().empty(),
+            "support generator did not fall back to an internal pillar");
+    require(fallback.supports.bounds().min.z > 0.0,
+            "internal fallback unexpectedly emitted a platform base");
+    require(fallback.internalSupportFailureCount == 0,
+            "successful internal support was recorded as a failure");
+
+    auto trappedSlices = std::make_shared<SliceData>();
+    auto trappedUnsupported = std::make_shared<SliceData>();
+    trappedSlices->thickness = 0.1;
+    trappedUnsupported->thickness = 0.1;
+    for (std::size_t index = 1; index <= 60; ++index) {
+        const double z = static_cast<double>(index) * 0.1;
+        SliceLayer layer;
+        layer.z = z;
+        if (index < 60)
+            layer.paths = {square(-0.1, -0.1, 0.1, 0.1)};
+        else
+            layer.paths = {square(-0.5, -0.5, 0.5, 0.5)};
+        trappedSlices->layers.push_back(layer);
+        trappedUnsupported->layers.push_back(
+            {z, index == 60 ? layer.paths : std::vector<SlicePath>{}});
+    }
+    SupportGenerationKernels trappedKernels;
+    trappedKernels.detectContactPoints = [](const SupportGenerationInput &,
+                                            std::size_t layerIndex,
+                                            const std::atomic<bool> *) {
+        return std::vector<SupportContactPoint>{{{0.0, 0.0, 6.0}, layerIndex}};
+    };
+    const SupportGenerationResult trapped =
+        SupportGenerator(generatorOptions, std::move(trappedKernels))
+            .generate({source, trappedSlices, trappedUnsupported});
+    require(trapped.supports.triangles().empty(),
+            "internal support crossed a solid column beneath its upper tip");
+    require(trapped.internalSupportFailureCount == 1 &&
+                std::abs(trapped.lowestInternalSupportFailureZ - 6.0) < 1e-9,
+            "internal support failure statistics were not recorded");
+}
+
 } // namespace
 
 int main() {
@@ -840,6 +978,7 @@ int main() {
         testSupportContactPlacement();
         testExternalPillarGeneration();
         testSupportTipGeneration();
+        testInternalPillarGeneration();
         std::cout << "All tests passed\n";
         return 0;
     } catch (const std::exception &error) {
