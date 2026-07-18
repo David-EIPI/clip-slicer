@@ -45,7 +45,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OpenPath(const wxString &path);
     void InvalidateUnsupportedAnalysis();
     void SettingsChanged();
-    void InteractiveSliceStateChanged();
+    void InteractiveSlicePositionChanged();
     double LayerThickness() const;
     double FirstLayerOffset() const;
     double ContourHealingThreshold() const;

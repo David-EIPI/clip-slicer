@@ -457,8 +457,7 @@ void DocumentFrame::SettingsChanged() {
     InvalidateUnsupportedAnalysis();
     canvas_->SettingsChanged();
 }
-void DocumentFrame::InteractiveSliceStateChanged() {
-    UpdateCommandState();
+void DocumentFrame::InteractiveSlicePositionChanged() {
     UpdateSectionControls();
 }
 void DocumentFrame::UpdateSectionControls() {
@@ -478,15 +477,23 @@ void DocumentFrame::UpdateSectionControls() {
         std::min(canvas_->MaximumSliceIndex(), maximumControlIndex));
     const int index =
         static_cast<int>(std::min(canvas_->SliceIndex(), maximumControlIndex));
-    sectionIndex_->SetRange(0, maximum);
-    sectionIndex_->SetValue(index);
-    sectionScroll_->SetScrollbar(index, 1, maximum + 1, 10, true);
+    if (sectionIndex_->GetMin() != 0 || sectionIndex_->GetMax() != maximum)
+        sectionIndex_->SetRange(0, maximum);
+    if (sectionIndex_->GetValue() != index)
+        sectionIndex_->SetValue(index);
+    if (sectionScroll_->GetRange() != maximum + 1 || sectionScroll_->GetThumbSize() != 1 ||
+        sectionScroll_->GetPageSize() != 10)
+        sectionScroll_->SetScrollbar(index, 1, maximum + 1, 10, true);
+    else if (sectionScroll_->GetThumbPosition() != index)
+        sectionScroll_->SetThumbPosition(index);
 }
 void DocumentFrame::OnSectionIndexChanged(wxSpinEvent &event) {
     canvas_->SetSliceIndex(static_cast<std::size_t>(std::max(0, event.GetValue())));
 }
 void DocumentFrame::OnSectionScroll(wxScrollEvent &event) {
     canvas_->SetSliceIndex(static_cast<std::size_t>(std::max(0, event.GetPosition())));
+    if (event.GetEventType() == wxEVT_SCROLL_THUMBTRACK)
+        canvas_->Update();
 }
 void DocumentFrame::OnSectionScrollKey(wxKeyEvent &event) {
     int change = 0;
@@ -626,8 +633,7 @@ void DocumentFrame::UpdateCommandState() {
     if (toolbar_)
         toolbar_->EnableTool(IdStopOptimization,
                              optimizationRunning_ || unsupportedAnalysisRunning_ ||
-                                 supportGenerationRunning_ ||
-                                 (canvas_ && canvas_->InteractiveSliceRunning()));
+                                 supportGenerationRunning_);
 }
 void DocumentFrame::OnListSelection(wxCommandEvent &) {
     for (std::size_t i = 0; i < models_.size(); ++i)
@@ -1406,8 +1412,6 @@ void DocumentFrame::OnStopOptimization(wxCommandEvent &) {
         supportGenerationCancel_.store(true, std::memory_order_relaxed);
     if (optimizationRunning_)
         optimizationCancel_.store(true, std::memory_order_relaxed);
-    if (canvas_)
-        canvas_->CancelInteractiveSlice();
 }
 
 void DocumentFrame::OnOrientationOptimizationEvent(wxThreadEvent &event) {

@@ -11,19 +11,8 @@
 #include <vector>
 #include <wx/dcclient.h>
 #include <wx/msgdlg.h>
-#include <wx/thread.h>
 
 namespace {
-constexpr int interactiveSliceEventId = wxID_HIGHEST + 500;
-
-struct InteractiveSlicePayload {
-    std::vector<stl_slicer::SliceLayer> layers;
-    double area = 0.0;
-    std::uint64_t generation = 0;
-    bool cancelled = false;
-    std::string error;
-};
-
 using Matrix = std::array<float, 16>;
 Matrix identity() {
     return {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -188,7 +177,6 @@ ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     Bind(wxEVT_PAINT, &ModelCanvas::OnPaint, this);
     Bind(wxEVT_SIZE, &ModelCanvas::OnSize, this);
-    Bind(wxEVT_THREAD, &ModelCanvas::OnInteractiveSliceFinished, this, interactiveSliceEventId);
     for (const auto event : {wxEVT_MOTION,
                              wxEVT_LEFT_DOWN,
                              wxEVT_LEFT_UP,
@@ -200,11 +188,6 @@ ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
         Bind(event, &ModelCanvas::OnMouse, this);
 }
 ModelCanvas::~ModelCanvas() {
-    closing_.store(true, std::memory_order_relaxed);
-    interactiveSliceCancel_.store(true, std::memory_order_relaxed);
-    if (interactiveSliceWorker_.joinable())
-        interactiveSliceWorker_.join();
-    DeletePendingEvents();
     if (context_) {
         SetCurrent(*context_);
         for (auto &entry : buffers_) {
@@ -872,7 +855,7 @@ void ModelCanvas::SetSliceIndex(std::size_t index) {
     slicePosition_ = axisCoordinate(sectionBounds_.min, sectionAxis_) +
                      document_.FirstLayerOffset() +
                      static_cast<double>(sliceIndex_) * document_.LayerThickness();
-    UpdateInteractiveSlice(true);
+    UpdateInteractiveSlice();
 }
 void ModelCanvas::AlignSectionView() {
     if (!sectionBounds_.valid())
@@ -906,36 +889,20 @@ void ModelCanvas::AlignSectionView() {
     distance_ = 1.08 * std::max(halfHeight, halfWidth / aspect) /
                 std::tan(fieldOfView_ * 0.5);
 }
-void ModelCanvas::UpdateInteractiveSlice(bool preserveRunningPreview) {
+void ModelCanvas::UpdateInteractiveSlice() {
     if (interactiveSlice_) {
         sectionBounds_ = document_.SelectedBounds();
         if (sectionBounds_.valid())
             UpdateSectionSliceRange(false);
     }
-    if (!preserveRunningPreview)
-        ++interactiveSliceGeneration_;
-    // Keep displaying the last completed section while its replacement is calculated. The
-    // worker payload acts as a back buffer and is swapped in only when it is complete.
     if (!interactiveSlice_ || !sectionBounds_.valid()) {
         interactiveLayers_.clear();
         sliceArea_ = 0.0;
-    }
-    document_.UpdateStatus();
-    Refresh();
-    document_.InteractiveSliceStateChanged();
-    if (interactiveSliceRunning_) {
-        interactiveSlicePending_ = interactiveSlice_;
-        // Position-only changes keep the current calculation alive so it can be shown as an
-        // intermediate preview. The newest position is coalesced into the pending calculation.
-        if (!preserveRunningPreview)
-            interactiveSliceCancel_.store(true, std::memory_order_relaxed);
+        document_.UpdateStatus();
+        document_.InteractiveSlicePositionChanged();
+        Refresh();
         return;
     }
-    BeginInteractiveSlice();
-}
-void ModelCanvas::BeginInteractiveSlice() {
-    if (!interactiveSlice_)
-        return;
 
     std::vector<std::shared_ptr<const stl_slicer::TriangleMesh>> meshes;
     for (const auto &model : document_.Models()) {
@@ -958,69 +925,28 @@ void ModelCanvas::BeginInteractiveSlice() {
                                             document_.SegmentationTolerance(),
                                             document_.ContourHealingThreshold(),
                                             document_.FirstLayerOffset()};
-    const double position = slicePosition_;
-    const std::uint64_t generation = interactiveSliceGeneration_;
-    interactiveSliceCancel_.store(false, std::memory_order_relaxed);
-    interactiveSliceRunning_ = true;
-    document_.InteractiveSliceStateChanged();
-    interactiveSliceWorker_ =
-        std::thread([this, meshes = std::move(meshes), options, position, generation]() {
-            auto payload = std::make_shared<InteractiveSlicePayload>();
-            payload->generation = generation;
-            try {
-                for (const auto &mesh : meshes) {
-                    if (interactiveSliceCancel_.load(std::memory_order_relaxed))
-                        break;
-                    payload->layers.push_back(stl_slicer::Slicer{options}.sliceAt(
-                        *mesh, position, &interactiveSliceCancel_));
-                    for (const auto &path : payload->layers.back().paths)
-                        for (std::size_t index = 0; index + 1 < path.points.size(); ++index)
-                            payload->area += (path.points[index].x * path.points[index + 1].y -
-                                              path.points[index + 1].x * path.points[index].y) /
-                                             2.0;
-                }
-            } catch (const std::exception &error) {
-                payload->error = error.what();
-            }
-            payload->cancelled = interactiveSliceCancel_.load(std::memory_order_relaxed);
-            if (closing_.load(std::memory_order_relaxed))
-                return;
-            auto *event = new wxThreadEvent(wxEVT_THREAD, interactiveSliceEventId);
-            event->SetPayload(std::move(payload));
-            wxQueueEvent(this, event);
-        });
-}
-void ModelCanvas::CancelInteractiveSlice() {
-    if (!interactiveSliceRunning_)
-        return;
-    ++interactiveSliceGeneration_;
-    interactiveSlicePending_ = false;
-    interactiveSliceCancel_.store(true, std::memory_order_relaxed);
-}
-void ModelCanvas::OnInteractiveSliceFinished(wxThreadEvent &event) {
-    const auto payload = event.GetPayload<std::shared_ptr<InteractiveSlicePayload>>();
-    if (interactiveSliceWorker_.joinable())
-        interactiveSliceWorker_.join();
-    interactiveSliceRunning_ = false;
-    interactiveSliceCancel_.store(false, std::memory_order_relaxed);
-
-    if (!payload->error.empty()) {
-        const wxString message = wxString::FromUTF8(payload->error);
-        wxLogError("Cross-section: %s", message.c_str());
+    std::vector<stl_slicer::SliceLayer> layers;
+    layers.reserve(meshes.size());
+    double area = 0.0;
+    try {
+        const stl_slicer::Slicer slicer{options};
+        for (const auto &mesh : meshes) {
+            layers.push_back(slicer.sliceAt(*mesh, slicePosition_));
+            for (const auto &path : layers.back().paths)
+                for (std::size_t index = 0; index + 1 < path.points.size(); ++index)
+                    area += (path.points[index].x * path.points[index + 1].y -
+                             path.points[index + 1].x * path.points[index].y) /
+                            2.0;
+        }
+        // Swap the complete result in one operation so drawing never observes a partial slice.
+        interactiveLayers_ = std::move(layers);
+        sliceArea_ = std::abs(area);
+    } catch (const std::exception &error) {
+        wxLogError("Cross-section: %s", wxString::FromUTF8(error.what()).c_str());
     }
-    if (!payload->cancelled && payload->generation == interactiveSliceGeneration_) {
-        interactiveLayers_ = std::move(payload->layers);
-        sliceArea_ = std::abs(payload->area);
-        document_.UpdateStatus();
-        Refresh();
-    }
-
-    if (interactiveSlicePending_) {
-        interactiveSlicePending_ = false;
-        BeginInteractiveSlice();
-    } else {
-        document_.InteractiveSliceStateChanged();
-    }
+    document_.UpdateStatus();
+    document_.InteractiveSlicePositionChanged();
+    Refresh();
 }
 void ModelCanvas::TransformSelected(const stl_slicer::Mat4 &t) {
     for (auto &m : document_.Models())
@@ -1055,7 +981,7 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
         slicePosition_ = axisCoordinate(sectionBounds_.min, sectionAxis_) +
                          document_.FirstLayerOffset() +
                          static_cast<double>(sliceIndex_) * document_.LayerThickness();
-        UpdateInteractiveSlice(true);
+        UpdateInteractiveSlice();
     };
     const auto scaleTarget = [&](double steps) {
         if (transformModels) {

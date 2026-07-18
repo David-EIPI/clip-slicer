@@ -381,10 +381,12 @@ SliceLayer Slicer::sliceAt(const TriangleMesh &mesh,
     SliceLayer layer;
     layer.z = z;
     std::vector<Segment> segments;
-    for (std::size_t i = 0; i < mesh.triangles().size(); ++i) {
+    const auto &triangles = mesh.triangles();
+    const std::size_t triangleCount = triangles.size();
+    for (std::size_t i = 0; i < triangleCount; ++i) {
         if (cancel && (i & 255U) == 0 && cancel->load(std::memory_order_relaxed))
             return layer;
-        const auto &triangle = mesh.triangles()[i];
+        const auto &triangle = triangles[i];
         if (triangle.minZ >= z || triangle.maxZ < z)
             continue;
         Segment segment;

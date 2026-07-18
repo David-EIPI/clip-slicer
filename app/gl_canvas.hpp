@@ -4,15 +4,11 @@
 #include "slice_visualization.hpp"
 #include "stl_slicer/scene_model.hpp"
 #include "stl_slicer/slice.hpp"
-#include <atomic>
-#include <cstdint>
 #include <memory>
-#include <thread>
 #include <unordered_map>
 #include <wx/glcanvas.h>
 
 class DocumentFrame;
-class wxThreadEvent;
 
 enum class SectionAxis { X, Y, Z };
 enum class SectionClipping { None, Above, Below };
@@ -49,10 +45,6 @@ class ModelCanvas final : public wxGLCanvas {
     SectionAxis SliceAxis() const {
         return sectionAxis_;
     }
-    bool InteractiveSliceRunning() const {
-        return interactiveSliceRunning_;
-    }
-    void CancelInteractiveSlice();
     void SetUnsupportedVisualization(VisualizationMesh visualization);
     void ClearUnsupportedVisualization();
 
@@ -67,15 +59,13 @@ class ModelCanvas final : public wxGLCanvas {
     void OnPaint(wxPaintEvent &event);
     void OnSize(wxSizeEvent &event);
     void OnMouse(wxMouseEvent &event);
-    void OnInteractiveSliceFinished(wxThreadEvent &event);
     void InitializeGl();
     void DrawWorldAxes();
     void DrawModels(const float *viewProjection);
     void DrawUnsupportedVisualization();
     void DrawOverlays(const float *viewProjection);
     void DrawOrientationVane();
-    void UpdateInteractiveSlice(bool preserveRunningPreview = false);
-    void BeginInteractiveSlice();
+    void UpdateInteractiveSlice();
     void AlignSectionView();
     void UpdateSectionSliceRange(bool initializeIndex);
     void TransformSelected(const stl_slicer::Mat4 &transform);
@@ -96,12 +86,6 @@ class ModelCanvas final : public wxGLCanvas {
     bool unsupportedVisualizationDirty_ = false;
     bool initialized_ = false, interactiveSlice_ = false;
     bool openGlErrorReported_ = false;
-    std::thread interactiveSliceWorker_;
-    std::atomic<bool> interactiveSliceCancel_{false};
-    std::atomic<bool> closing_{false};
-    std::uint64_t interactiveSliceGeneration_ = 0;
-    bool interactiveSliceRunning_ = false;
-    bool interactiveSlicePending_ = false;
     SectionAxis sectionAxis_ = SectionAxis::Z;
     SectionClipping sectionClipping_ = SectionClipping::None;
     stl_slicer::Bounds3 sectionBounds_;
