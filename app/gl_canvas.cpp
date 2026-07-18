@@ -872,7 +872,7 @@ void ModelCanvas::SetSliceIndex(std::size_t index) {
     slicePosition_ = axisCoordinate(sectionBounds_.min, sectionAxis_) +
                      document_.FirstLayerOffset() +
                      static_cast<double>(sliceIndex_) * document_.LayerThickness();
-    UpdateInteractiveSlice();
+    UpdateInteractiveSlice(true);
 }
 void ModelCanvas::AlignSectionView() {
     if (!sectionBounds_.valid())
@@ -906,13 +906,14 @@ void ModelCanvas::AlignSectionView() {
     distance_ = 1.08 * std::max(halfHeight, halfWidth / aspect) /
                 std::tan(fieldOfView_ * 0.5);
 }
-void ModelCanvas::UpdateInteractiveSlice() {
+void ModelCanvas::UpdateInteractiveSlice(bool preserveRunningPreview) {
     if (interactiveSlice_) {
         sectionBounds_ = document_.SelectedBounds();
         if (sectionBounds_.valid())
             UpdateSectionSliceRange(false);
     }
-    ++interactiveSliceGeneration_;
+    if (!preserveRunningPreview)
+        ++interactiveSliceGeneration_;
     // Keep displaying the last completed section while its replacement is calculated. The
     // worker payload acts as a back buffer and is swapped in only when it is complete.
     if (!interactiveSlice_ || !sectionBounds_.valid()) {
@@ -924,7 +925,10 @@ void ModelCanvas::UpdateInteractiveSlice() {
     document_.InteractiveSliceStateChanged();
     if (interactiveSliceRunning_) {
         interactiveSlicePending_ = interactiveSlice_;
-        interactiveSliceCancel_.store(true, std::memory_order_relaxed);
+        // Position-only changes keep the current calculation alive so it can be shown as an
+        // intermediate preview. The newest position is coalesced into the pending calculation.
+        if (!preserveRunningPreview)
+            interactiveSliceCancel_.store(true, std::memory_order_relaxed);
         return;
     }
     BeginInteractiveSlice();
@@ -1051,7 +1055,7 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
         slicePosition_ = axisCoordinate(sectionBounds_.min, sectionAxis_) +
                          document_.FirstLayerOffset() +
                          static_cast<double>(sliceIndex_) * document_.LayerThickness();
-        UpdateInteractiveSlice();
+        UpdateInteractiveSlice(true);
     };
     const auto scaleTarget = [&](double steps) {
         if (transformModels) {

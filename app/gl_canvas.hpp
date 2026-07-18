@@ -74,7 +74,7 @@ class ModelCanvas final : public wxGLCanvas {
     void DrawUnsupportedVisualization();
     void DrawOverlays(const float *viewProjection);
     void DrawOrientationVane();
-    void UpdateInteractiveSlice();
+    void UpdateInteractiveSlice(bool preserveRunningPreview = false);
     void BeginInteractiveSlice();
     void AlignSectionView();
     void UpdateSectionSliceRange(bool initializeIndex);

@@ -152,9 +152,9 @@ The library API is divided into reusable data and processing components:
   sequence. Alt+Shift+left drag provides the same section-position control without a wheel. A
   horizontal scrollbar above the view and a slice-index spin box to its right provide direct
   positioning. With the scrollbar focused, Up/Down move one slice and Page Up/Page Down move ten
-  slices. Model
-  visibility does not hide the build platform, section plane, projection plane, or projected
-  contours.
+  slices. Cross-section previews update continuously while the scrollbar thumb is dragged.
+  Model visibility does not hide the build platform, section plane, projection plane, or
+  projected contours.
 
 `File > Open...` creates a new document, while `File > Open into document...` adds a model to the
 active document. Slice export merges every selected sliced model and stably orders their layers by

@@ -310,14 +310,20 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                    wxID_ANY,
                                    {},
                                    wxDefaultPosition,
-                                   FromDIP(wxSize(78, -1)),
+                                   FromDIP(wxSize(96, -1)),
                                    wxSP_ARROW_KEYS | wxTE_PROCESS_ENTER,
                                    0,
                                    0,
                                    0);
+    wxSize sectionIndexSize = sectionIndex_->GetBestSize();
+    sectionIndexSize.x = std::max(sectionIndexSize.x, FromDIP(96));
+    sectionIndex_->SetMinSize(sectionIndexSize);
     sectionIndex_->SetToolTip("Section slice index");
     sectionSizer->Add(sectionScroll_, 1, wxALIGN_CENTER_VERTICAL);
-    sectionSizer->Add(sectionIndex_, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(6));
+    sectionSizer->Add(sectionIndex_,
+                      0,
+                      wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT,
+                      FromDIP(6));
     sectionControls_->SetSizer(sectionSizer);
     viewSizer->Add(sectionControls_, 0, wxEXPAND | wxALL, FromDIP(4));
     viewSizer->Add(canvas_, 1, wxEXPAND);
