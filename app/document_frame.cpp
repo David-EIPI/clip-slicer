@@ -298,11 +298,14 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     modelList_ =
         new wxCheckListBox(split, wxID_ANY, wxDefaultPosition, wxDefaultSize, {}, wxLB_EXTENDED);
     auto *viewArea = new wxPanel(split);
-    auto *viewSizer = new wxBoxSizer(wxHORIZONTAL);
+    auto *viewSizer = new wxBoxSizer(wxVERTICAL);
     canvas_ = new ModelCanvas(viewArea, *this);
-    viewSizer->Add(canvas_, 1, wxEXPAND);
     sectionControls_ = new wxPanel(viewArea);
-    auto *sectionSizer = new wxBoxSizer(wxVERTICAL);
+    auto *sectionSizer = new wxBoxSizer(wxHORIZONTAL);
+    sectionScroll_ = new wxScrollBar(
+        sectionControls_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxSB_HORIZONTAL);
+    sectionScroll_->SetToolTip(
+        "Section slice index (Up/Down: 1 slice, Page Up/Page Down: 10 slices)");
     sectionIndex_ = new wxSpinCtrl(sectionControls_,
                                    wxID_ANY,
                                    {},
@@ -313,14 +316,11 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                    0,
                                    0);
     sectionIndex_->SetToolTip("Section slice index");
-    sectionScroll_ = new wxScrollBar(
-        sectionControls_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxSB_VERTICAL);
-    sectionScroll_->SetToolTip(
-        "Section slice index (Up/Down: 1 slice, Page Up/Page Down: 10 slices)");
-    sectionSizer->Add(sectionIndex_, 0, wxEXPAND | wxBOTTOM, FromDIP(4));
-    sectionSizer->Add(sectionScroll_, 1, wxEXPAND);
+    sectionSizer->Add(sectionScroll_, 1, wxALIGN_CENTER_VERTICAL);
+    sectionSizer->Add(sectionIndex_, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, FromDIP(6));
     sectionControls_->SetSizer(sectionSizer);
     viewSizer->Add(sectionControls_, 0, wxEXPAND | wxALL, FromDIP(4));
+    viewSizer->Add(canvas_, 1, wxEXPAND);
     viewArea->SetSizer(viewSizer);
     sectionControls_->Hide();
     split->SplitVertically(modelList_, viewArea, 220);
@@ -378,6 +378,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     sectionScroll_->Bind(wxEVT_SCROLL_THUMBTRACK, &DocumentFrame::OnSectionScroll, this);
     sectionScroll_->Bind(wxEVT_SCROLL_THUMBRELEASE, &DocumentFrame::OnSectionScroll, this);
     sectionScroll_->Bind(wxEVT_SCROLL_CHANGED, &DocumentFrame::OnSectionScroll, this);
+    sectionScroll_->Bind(wxEVT_CHAR_HOOK, &DocumentFrame::OnSectionScrollKey, this);
     UpdateStatus();
     UpdateCommandState();
 }
@@ -480,6 +481,30 @@ void DocumentFrame::OnSectionIndexChanged(wxSpinEvent &event) {
 }
 void DocumentFrame::OnSectionScroll(wxScrollEvent &event) {
     canvas_->SetSliceIndex(static_cast<std::size_t>(std::max(0, event.GetPosition())));
+}
+void DocumentFrame::OnSectionScrollKey(wxKeyEvent &event) {
+    int change = 0;
+    switch (event.GetKeyCode()) {
+    case WXK_UP:
+        change = -1;
+        break;
+    case WXK_DOWN:
+        change = 1;
+        break;
+    case WXK_PAGEUP:
+        change = -10;
+        break;
+    case WXK_PAGEDOWN:
+        change = 10;
+        break;
+    default:
+        event.Skip();
+        return;
+    }
+    const long long index = std::clamp(static_cast<long long>(canvas_->SliceIndex()) + change,
+                                       0LL,
+                                       static_cast<long long>(canvas_->MaximumSliceIndex()));
+    canvas_->SetSliceIndex(static_cast<std::size_t>(index));
 }
 double DocumentFrame::LayerThickness() const {
     return static_cast<MainFrame *>(GetMDIParent())->Settings().layerThickness;

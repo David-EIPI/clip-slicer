@@ -16,6 +16,7 @@ class ModelCanvas;
 class wxActivateEvent;
 class wxCloseEvent;
 class wxDPIChangedEvent;
+class wxKeyEvent;
 class wxMenuItem;
 class wxPanel;
 class wxScrollBar;
@@ -66,6 +67,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnInteractiveSlice(wxCommandEvent &);
     void OnSectionIndexChanged(wxSpinEvent &event);
     void OnSectionScroll(wxScrollEvent &event);
+    void OnSectionScrollKey(wxKeyEvent &event);
     void OnDetectUnsupported(wxCommandEvent &);
     void OnGenerateSupports(wxCommandEvent &);
     void OnSupportGenerationProgress(wxThreadEvent &event);

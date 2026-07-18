@@ -150,8 +150,9 @@ The library API is divided into reusable data and processing components:
   geometry while leaving the section display intact. Section positions snap to the configured
   first-layer offset and layer-thickness
   sequence. Alt+Shift+left drag provides the same section-position control without a wheel. A
-  slice-index spin box and vertical scrollbar beside the view provide direct positioning; with
-  the scrollbar focused, Up/Down move one slice and Page Up/Page Down move ten slices. Model
+  horizontal scrollbar above the view and a slice-index spin box to its right provide direct
+  positioning. With the scrollbar focused, Up/Down move one slice and Page Up/Page Down move ten
+  slices. Model
   visibility does not hide the build platform, section plane, projection plane, or projected
   contours.
 
