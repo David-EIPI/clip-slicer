@@ -697,6 +697,26 @@ void testExternalPillarGeneration() {
     require(isolatedSpace.route({0.0, 0.0, 3.0}).empty(),
             "model isolation did not enlarge the pillar clearance envelope");
 
+    auto tallObstructedSlices = std::make_shared<SliceData>();
+    for (std::size_t index = 0; index < 60; ++index) {
+        const double z = 0.05 + static_cast<double>(index) * 0.1;
+        tallObstructedSlices->layers.push_back({z, {square(-1.0, -1.0, 1.0, 1.0)}});
+    }
+    ExternalPillarSpace isolatedTipSpace(
+        tallObstructedSlices, obstructionBounds, 6.0, isolatedOptions);
+    require(isolatedTipSpace.route({2.0, 0.0, 5.5}).empty(),
+            "strict route escaped through the model isolation envelope");
+    const std::vector<Vec3> isolatedTipRoute =
+        isolatedTipSpace.routeFromTip({2.0, 0.0, 5.5});
+    require(!isolatedTipRoute.empty(),
+            "contact-tip connector could not emerge through the isolation envelope");
+    const bool reachedIsolatedSpace =
+        std::any_of(isolatedTipRoute.begin(), isolatedTipRoute.end(), [](const Vec3 &point) {
+            return std::abs(point.x) > 2.0 || std::abs(point.y) > 2.0;
+        });
+    require(reachedIsolatedSpace,
+            "contact-tip connector did not join the isolated external support space");
+
     std::atomic<bool> cancel{true};
     ExternalPillarSpace cancelledSpace(emptySlices, bounds, 3.0, options, &cancel);
     require(!cancelledSpace.valid() && cancelledSpace.route({0.0, 0.0, 3.0}).empty(),

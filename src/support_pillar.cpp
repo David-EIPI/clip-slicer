@@ -281,6 +281,8 @@ struct ClearanceLayer {
     double z = 0.0;
     Paths64 polygons;
     BitGrid blocked;
+    Paths64 transitionPolygons;
+    BitGrid transitionBlocked;
 };
 
 struct GridOffset {
@@ -375,13 +377,13 @@ struct ExternalPillarSpace::Impl {
         return options.bottomRadius + (options.topRadius - options.bottomRadius) * fraction;
     }
 
-    Paths64 expandedLayer(const SliceLayer &layer, double radius) const {
+    Paths64 expandedLayer(const SliceLayer &layer, double radius, double isolation) const {
         const Paths64 polygons = slice_polygon::layerPolygons(layer);
         if (polygons.empty())
             return {};
         const double gridGuard = options.latticeCellSize * std::sqrt(2.0) * 0.5;
         return Clipper2Lib::InflatePaths(polygons,
-                                         (radius + options.modelIsolation + gridGuard) *
+                                         (radius + isolation + gridGuard) *
                                              slice_polygon::coordinateScale,
                                          JoinType::Round,
                                          EndType::Polygon,
@@ -434,8 +436,13 @@ struct ExternalPillarSpace::Impl {
                 continue;
             ClearanceLayer clearance;
             clearance.z = layer.z;
-            clearance.polygons = expandedLayer(layer, clearanceRadius(layer.z));
+            const double radius = clearanceRadius(layer.z);
+            clearance.polygons = expandedLayer(layer, radius, options.modelIsolation);
             clearance.blocked = rasterize(clearance.polygons);
+            if (options.modelIsolation > 0.0) {
+                clearance.transitionPolygons = expandedLayer(layer, radius, 0.0);
+                clearance.transitionBlocked = rasterize(clearance.transitionPolygons);
+            }
             clearanceLayers.push_back(std::move(clearance));
         }
     }
@@ -528,7 +535,8 @@ struct ExternalPillarSpace::Impl {
                 return;
             if (layer.z < 0.0 || layer.z > options.baseHeight + 1e-12)
                 continue;
-            const BitGrid layerBlocked = rasterize(expandedLayer(layer, options.baseRadius));
+            const BitGrid layerBlocked =
+                rasterize(expandedLayer(layer, options.baseRadius, options.modelIsolation));
             for (std::size_t word = 0; word < blocked.words.size(); ++word)
                 blocked.words[word] |= layerBlocked.words[word];
         }
@@ -597,7 +605,9 @@ struct ExternalPillarSpace::Impl {
         }
     }
 
-    bool exactSegmentClear(const Vec3 &first, const Vec3 &second) const {
+    bool exactSegmentClear(const Vec3 &first,
+                           const Vec3 &second,
+                           bool tipTransition) const {
         if (second.z <= first.z)
             return false;
         auto layer = std::upper_bound(
@@ -610,7 +620,9 @@ struct ExternalPillarSpace::Impl {
             const Vec3 point = add(first, multiply(subtract(second, first), fraction));
             const Point64 scaled{slice_polygon::scaledCoordinate(point.x),
                                  slice_polygon::scaledCoordinate(point.y)};
-            if (polygonsContain(layer->polygons, scaled))
+            const Paths64 &polygons =
+                tipTransition ? layer->transitionPolygons : layer->polygons;
+            if (polygonsContain(polygons, scaled))
                 return false;
         }
         return true;
@@ -640,7 +652,8 @@ struct ExternalPillarSpace::Impl {
                           std::size_t targetX,
                           std::size_t targetY,
                           double sourceZ,
-                          double targetZ) const {
+                          double targetZ,
+                          bool tipTransition) const {
         auto layer = std::upper_bound(
             clearanceLayers.begin(),
             clearanceLayers.end(),
@@ -654,15 +667,18 @@ struct ExternalPillarSpace::Impl {
             const long long y = std::llround(
                 static_cast<double>(sourceY) +
                 (static_cast<double>(targetY) - static_cast<double>(sourceY)) * fraction);
+            const BitGrid &blocked = tipTransition ? layer->transitionBlocked : layer->blocked;
             if (x < 0 || y < 0 || x >= static_cast<long long>(width) ||
                 y >= static_cast<long long>(height) ||
-                layer->blocked.test(static_cast<std::size_t>(x), static_cast<std::size_t>(y)))
+                blocked.test(static_cast<std::size_t>(x), static_cast<std::size_t>(y)))
                 return false;
         }
         return true;
     }
 
-    std::vector<Vec3> route(const Vec3 &attachment, const std::atomic<bool> *cancel) const {
+    std::vector<Vec3> routeUsingClearance(const Vec3 &attachment,
+                                          bool tipTransition,
+                                          const std::atomic<bool> *cancel) const {
         if (!complete || cancelled(cancel) || attachment.z <= options.baseHeight)
             return {};
         const double tangent = std::tan(options.minimumSupportAngleDegrees * pi / 180.0);
@@ -714,7 +730,7 @@ struct ExternalPillarSpace::Impl {
                     const double horizontalDistance =
                         std::hypot(point.x - attachment.x, point.y - attachment.y);
                     if (horizontalDistance > horizontalLimit + 1e-12 ||
-                        !exactSegmentClear(point, attachment))
+                        !exactSegmentClear(point, attachment, tipTransition))
                         continue;
                     nodes.push_back({level,
                                      static_cast<std::size_t>(x),
@@ -789,7 +805,8 @@ struct ExternalPillarSpace::Impl {
                                           node.x,
                                           node.y,
                                           sourceZ,
-                                          targetZ))
+                                          targetZ,
+                                          tipTransition))
                         continue;
                     nodes.push_back({connectorLevel - 1,
                                      static_cast<std::size_t>(x),
@@ -866,6 +883,20 @@ struct ExternalPillarSpace::Impl {
         return simplifyRoute(std::move(route), cancel);
     }
 
+    std::vector<Vec3> route(const Vec3 &attachment,
+                            bool allowTipTransition,
+                            const std::atomic<bool> *cancel) const {
+        std::vector<Vec3> result = routeUsingClearance(attachment, false, cancel);
+        if (!result.empty() || !allowTipTransition || options.modelIsolation <= 0.0 ||
+            cancelled(cancel))
+            return result;
+
+        // A contact tip necessarily begins inside the requested isolation envelope.
+        // Let its connector cross that envelope with physical pillar clearance, then
+        // join the globally reachable lattice where full model isolation is enforced.
+        return routeUsingClearance(attachment, true, cancel);
+    }
+
     std::shared_ptr<const SliceData> slices;
     Bounds3 bounds;
     ExternalPillarOptions options;
@@ -895,7 +926,13 @@ ExternalPillarSpace::ExternalPillarSpace(std::shared_ptr<const SliceData> slices
 
 std::vector<Vec3> ExternalPillarSpace::route(const Vec3 &attachment,
                                              const std::atomic<bool> *cancel) const {
-    return impl_->route(attachment, cancel);
+    return impl_->route(attachment, false, cancel);
+}
+
+std::vector<Vec3> ExternalPillarSpace::routeFromTip(
+    const Vec3 &attachment,
+    const std::atomic<bool> *cancel) const {
+    return impl_->route(attachment, true, cancel);
 }
 
 bool ExternalPillarSpace::valid() const noexcept {
@@ -932,7 +969,8 @@ TriangleMesh ExternalPillarBuilder::buildImpl(const Vec3 &attachment,
                                               const Vec3 *tipCenter,
                                               const std::atomic<bool> *cancel) const {
     TriangleMesh result;
-    std::vector<Vec3> centers = space_->route(attachment, cancel);
+    std::vector<Vec3> centers = tipCenter ? space_->routeFromTip(attachment, cancel)
+                                          : space_->route(attachment, cancel);
     if (centers.size() < 2 || cancelled(cancel))
         return result;
     const std::size_t pointCount = options_.circumferencePoints;

@@ -31,6 +31,8 @@ class ExternalPillarSpace {
 
     std::vector<Vec3> route(const Vec3 &attachment,
                             const std::atomic<bool> *cancel = nullptr) const;
+    std::vector<Vec3> routeFromTip(const Vec3 &attachment,
+                                   const std::atomic<bool> *cancel = nullptr) const;
     bool valid() const noexcept;
 
   private:
