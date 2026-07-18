@@ -13,6 +13,7 @@
 #include "stl_slicer/support_generator.hpp"
 #include "stl_slicer/unsupported_area.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -45,6 +46,7 @@ enum {
     IdSlice,
     IdInteractive,
     IdDetectUnsupported,
+    IdUnsupportedAnalysisProgress,
     IdGenerateSupports,
     IdSupportGenerationProgress,
     IdOptimizeOrientation,
@@ -64,6 +66,12 @@ struct UnsupportedAnalysisPayload {
     std::uint64_t modelRevision = 0;
     bool cancelled = false;
     std::string error;
+};
+
+struct UnsupportedAnalysisProgressPayload {
+    std::size_t completed = 0;
+    std::size_t total = 0;
+    std::uint64_t modelRevision = 0;
 };
 
 struct SupportGenerationPayload {
@@ -381,6 +389,10 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnInteractiveSlice, this, IdInteractive);
     Bind(wxEVT_MENU, &DocumentFrame::OnDetectUnsupported, this, IdDetectUnsupported);
     Bind(wxEVT_THREAD, &DocumentFrame::OnUnsupportedAnalysisFinished, this, IdDetectUnsupported);
+    Bind(wxEVT_THREAD,
+         &DocumentFrame::OnUnsupportedAnalysisProgress,
+         this,
+         IdUnsupportedAnalysisProgress);
     Bind(wxEVT_MENU, &DocumentFrame::OnGenerateSupports, this, IdGenerateSupports);
     Bind(wxEVT_THREAD, &DocumentFrame::OnSupportGenerationFinished, this, IdGenerateSupports);
     Bind(wxEVT_THREAD,
@@ -863,6 +875,11 @@ void DocumentFrame::PublishStatus() {
                 optimizationProgress << " (" << stage.completed << " of " << stage.total << ')';
             break;
         }
+    } else if (unsupportedAnalysisRunning_) {
+        if (unsupportedProgressVisible_)
+            optimizationProgress << "Detecting unsupported: slice "
+                                 << unsupportedProgressCompleted_ << " of "
+                                 << unsupportedProgressTotal_;
     } else {
         optimizationProgress << supportGenerationSummary_;
     }
@@ -1062,7 +1079,11 @@ void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
     canvas_->ClearUnsupportedVisualization();
     unsupportedAnalysisCancel_.store(false, std::memory_order_relaxed);
     unsupportedAnalysisRunning_ = true;
+    unsupportedProgressVisible_ = false;
+    unsupportedProgressCompleted_ = 0;
+    unsupportedProgressTotal_ = 0;
     UpdateCommandState();
+    UpdateStatus();
     const std::uint64_t revision = modelRevision_;
     const double healingThreshold = ContourHealingThreshold();
     const double segmentationTolerance = SegmentationTolerance();
@@ -1081,6 +1102,8 @@ void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
                                       overhangCoefficient]() mutable {
         auto payload = std::make_shared<UnsupportedAnalysisPayload>();
         payload->modelRevision = revision;
+        const auto started = std::chrono::steady_clock::now();
+        auto lastProgress = started;
         try {
             stl_slicer::TriangleMesh combined = combinedTransformedMesh(snapshots);
             const stl_slicer::SliceData slices = stl_slicer::Slicer{
@@ -1091,7 +1114,29 @@ void DocumentFrame::OnDetectUnsupported(wxCommandEvent &) {
             if (!unsupportedAnalysisCancel_.load(std::memory_order_relaxed)) {
                 stl_slicer::UnsupportedAreaResult unsupported = stl_slicer::UnsupportedAreaAnalyzer{
                     {criticalAngleDegrees,
-                     overhangCoefficient}}.analyze(slices, &unsupportedAnalysisCancel_);
+                     overhangCoefficient}}
+                    .analyze(
+                        slices,
+                        &unsupportedAnalysisCancel_,
+                        [this, revision, started, &lastProgress](std::size_t completed,
+                                                                std::size_t total) {
+                            const auto now = std::chrono::steady_clock::now();
+                            if (now - started < std::chrono::seconds(1) ||
+                                now - lastProgress < std::chrono::seconds(1))
+                                return;
+                            lastProgress = now;
+                            if (closing_.load(std::memory_order_relaxed))
+                                return;
+                            auto progress =
+                                std::make_shared<UnsupportedAnalysisProgressPayload>();
+                            progress->completed = completed;
+                            progress->total = total;
+                            progress->modelRevision = revision;
+                            auto *event = new wxThreadEvent(wxEVT_THREAD,
+                                                            IdUnsupportedAnalysisProgress);
+                            event->SetPayload(std::move(progress));
+                            wxQueueEvent(this, event);
+                        });
                 if (!unsupportedAnalysisCancel_.load(std::memory_order_relaxed)) {
                     payload->totalArea = unsupported.totalArea;
                     payload->visualization = BuildUnsupportedSurfaces(unsupported.unsupported);
@@ -1317,7 +1362,11 @@ void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
         unsupportedWorker_.join();
     unsupportedAnalysisRunning_ = false;
     unsupportedAnalysisCancel_.store(false, std::memory_order_relaxed);
+    unsupportedProgressVisible_ = false;
+    unsupportedProgressCompleted_ = 0;
+    unsupportedProgressTotal_ = 0;
     UpdateCommandState();
+    UpdateStatus();
 
     const auto payload = event.GetPayload<std::shared_ptr<UnsupportedAnalysisPayload>>();
     if (!payload->error.empty()) {
@@ -1327,6 +1376,17 @@ void DocumentFrame::OnUnsupportedAnalysisFinished(wxThreadEvent &event) {
     if (payload->cancelled || payload->modelRevision != modelRevision_)
         return;
     canvas_->SetUnsupportedVisualization(std::move(payload->visualization));
+}
+
+void DocumentFrame::OnUnsupportedAnalysisProgress(wxThreadEvent &event) {
+    const auto payload =
+        event.GetPayload<std::shared_ptr<UnsupportedAnalysisProgressPayload>>();
+    if (!unsupportedAnalysisRunning_ || payload->modelRevision != modelRevision_)
+        return;
+    unsupportedProgressVisible_ = true;
+    unsupportedProgressCompleted_ = payload->completed;
+    unsupportedProgressTotal_ = payload->total;
+    UpdateStatus();
 }
 
 void DocumentFrame::OnOptimizeOrientation(wxCommandEvent &) {

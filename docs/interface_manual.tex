@@ -191,6 +191,9 @@ the support search radius is
 \(\alpha\) is the critical angle. Increasing the coefficient permits more
 horizontal displacement between successive layers before an area is marked
 unsupported.
+When unsupported-area detection takes longer than one second, the status bar
+reports the completed slice and total slice count. The report is updated at
+most once per second to avoid slowing the analysis with GUI traffic.
 
 The optimization-attempt setting controls the number of local searches per
 model and defaults to 10. The worker-thread setting controls both the maximum

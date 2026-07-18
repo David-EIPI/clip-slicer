@@ -349,7 +349,20 @@ void testUnsupportedAreas() {
     slices.layers = {{0.05, {square(0, 0, 10, 10)}},
                      {0.15, {square(0, 0, 12, 10), square(20, 20, 21, 21)}}};
 
-    const UnsupportedAreaResult result = UnsupportedAreaAnalyzer{{45.0}}.analyze(slices);
+    std::size_t progressCalls = 0;
+    std::size_t completedLayers = 0;
+    std::size_t totalLayers = 0;
+    const UnsupportedAreaResult result = UnsupportedAreaAnalyzer{{45.0}}.analyze(
+        slices,
+        nullptr,
+        [&](std::size_t completed, std::size_t total) {
+            ++progressCalls;
+            completedLayers = completed;
+            totalLayers = total;
+        });
+    require(progressCalls == slices.layers.size() && completedLayers == slices.layers.size() &&
+                totalLayers == slices.layers.size(),
+            "unsupported analysis progress was not reported per layer");
     require(result.unsupported.layers.size() == 2, "unsupported layer count");
     require(result.unsupported.layers.front().paths.empty(), "first layer must be supported");
     require(!result.unsupported.layers.back().paths.empty(), "overhang was not detected");

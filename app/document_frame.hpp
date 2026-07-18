@@ -73,6 +73,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnSupportGenerationProgress(wxThreadEvent &event);
     void OnSupportGenerationFinished(wxThreadEvent &event);
     void OnUnsupportedAnalysisFinished(wxThreadEvent &event);
+    void OnUnsupportedAnalysisProgress(wxThreadEvent &event);
     void OnOptimizeOrientation(wxCommandEvent &);
     void OnStopOptimization(wxCommandEvent &);
     void OnOrientationOptimizationEvent(wxThreadEvent &event);
@@ -131,6 +132,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     std::atomic<bool> closing_{false};
     std::uint64_t modelRevision_ = 0;
     bool unsupportedAnalysisRunning_ = false;
+    bool unsupportedProgressVisible_ = false;
+    std::size_t unsupportedProgressCompleted_ = 0;
+    std::size_t unsupportedProgressTotal_ = 0;
     bool supportGenerationRunning_ = false;
     std::string supportGenerationSummary_;
     std::array<SupportProgressState,

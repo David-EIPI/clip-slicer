@@ -83,7 +83,8 @@ UnsupportedAreaAnalyzer::UnsupportedAreaAnalyzer(UnsupportedAreaOptions options)
 }
 
 UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices,
-                                                       const std::atomic<bool> *cancel) const {
+                                                       const std::atomic<bool> *cancel,
+                                                       UnsupportedAreaProgressCallback progress) const {
     UnsupportedAreaResult result;
     result.unsupported.sourceBounds = slices.sourceBounds;
     result.unsupported.thickness = slices.thickness;
@@ -122,6 +123,8 @@ UnsupportedAreaResult UnsupportedAreaAnalyzer::analyze(const SliceData &slices,
         result.totalArea +=
             std::abs(Clipper2Lib::Area(unsupported)) / (coordinateScale * coordinateScale);
         previousLayer = complete;
+        if (progress)
+            progress(layerIndex + 1, slices.layers.size());
     }
     return result;
 }
