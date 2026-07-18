@@ -156,6 +156,7 @@ if(STL_SLICER_BUILD_GUI)
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
         pkg_check_modules(GLU REQUIRED IMPORTED_TARGET glu)
+        pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
     endif()
 
     add_executable(clip-slicer WIN32
@@ -191,7 +192,8 @@ if(STL_SLICER_BUILD_GUI)
             stl_slicer_lib
             ${wxWidgets_LIBRARIES}
             PkgConfig::EPOXY
-            PkgConfig::GLU)
+            PkgConfig::GLU
+            PkgConfig::GTK3)
     endif()
 
     target_compile_features(clip-slicer PRIVATE cxx_std_17)
