@@ -48,11 +48,5 @@ under CC BY-SA 4.0 as well.
 
 ## Other third-party material
 
-- `STL_(file_format)` is a saved Wikipedia reference and remains governed by
-  the CC BY-SA 4.0 terms and attribution information contained in that file.
-- `cli_format.html` is a saved external CLI-format reference. It is not covered
-  by the project license grants; its source URL is recorded in the file. Its
-  redistribution terms have not been identified and should be confirmed, or
-  the saved copy removed, before a public source release.
 - wxWidgets, Clipper2, and any other third-party dependencies retain their own
   licenses. Nothing in this repository relicenses those components.

@@ -7,8 +7,10 @@ slice inspection and support generation. It grew out of my experience with
 models that developed printing artifacts because of defects in STL geometry or
 insufficient support.
 
-CLIP Slicer currently accepts 3D models in STL format and exports slices in
-Common Layer Interface (CLI) format. Before export, the Section tool can inspect
+CLIP Slicer currently accepts 3D models in
+[STL format](https://en.wikipedia.org/wiki/STL_(file_format)) and exports slices
+in [Common Layer Interface (CLI) format](https://www.hmilch.net/downloads/cli_format.html).
+Before export, the Section tool can inspect
 the contours produced at the configured layer thickness and first-layer offset.
 Z-axis sections correspond to the layers produced by normal slicing; X- and
 Y-axis sections are inspection views and are not exported as layers.
