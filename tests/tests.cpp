@@ -240,10 +240,10 @@ void testReversedSharedEdgeInterpolation() {
     mesh.addTriangle(
         {{}, {high, low, {42.5410041809082, 30.404010772705078, -12.948999404907227}}, 0});
 
-    const auto data = Slicer{{0.350999450683594, 1e-12, 1e-12}}.slice(mesh);
-    require(data.layers.size() == 1, "shared-edge interpolation layer");
-    require(data.layers[0].paths.size() == 1, "reversed shared-edge points identical");
-    require(data.layers[0].paths[0].points.size() == 3,
+    const double sliceZ = low.z + 0.350999450683594;
+    const auto layer = Slicer{{0.350999450683594, 1e-12, 1e-12}}.sliceAt(mesh, sliceZ);
+    require(layer.paths.size() == 1, "reversed shared-edge points identical");
+    require(layer.paths[0].points.size() == 3,
             "shared-edge segments connected without healing tolerance");
 }
 
@@ -295,6 +295,15 @@ void testSingleAndOffsetSlices() {
     const auto offset = Slicer{{0.25, 1e-7, 0.01, 0.125}}.slice(cube);
     require(offset.layers.size() == 4 && std::abs(offset.layers.front().z - 0.125) < 1e-12,
             "custom first-layer offset");
+
+    TriangleMesh elevated;
+    addBox(elevated, 0, 0, 10.04, 1, 1, 10.31);
+    const auto platformAligned = Slicer{{0.1, 1e-7, 0.01, 0.05}}.slice(elevated);
+    require(platformAligned.layers.size() == 3 &&
+                std::abs(platformAligned.layers[0].z - 10.05) < 1e-12 &&
+                std::abs(platformAligned.layers[1].z - 10.15) < 1e-12 &&
+                std::abs(platformAligned.layers[2].z - 10.25) < 1e-12,
+            "elevated model did not use the build-platform layer grid");
 }
 
 void testMergeSlices() {

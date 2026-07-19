@@ -4,6 +4,7 @@
 #include "gl_canvas.hpp"
 #include "document_frame.hpp"
 #include "slice_visualization.hpp"
+#include "stl_slicer/layer_grid.hpp"
 #include "stl_slicer/slicer.hpp"
 #include <algorithm>
 #include <array>
@@ -812,11 +813,15 @@ void ModelCanvas::SetInteractiveSection(bool enabled,
                                         bool autoRotate,
                                         SectionClipping clipping) {
     if (enabled && !interactiveSlice_) {
-        preSectionViewCenter_ = viewCenter_;
-        preSectionViewCenterSaved_ = true;
-    } else if (!enabled && interactiveSlice_ && preSectionViewCenterSaved_) {
-        viewCenter_ = preSectionViewCenter_;
-        preSectionViewCenterSaved_ = false;
+        preSectionView_ = {yaw_, pitch_, distance_, fieldOfView_, viewCenter_};
+        preSectionViewSaved_ = true;
+    } else if (!enabled && interactiveSlice_ && preSectionViewSaved_) {
+        yaw_ = preSectionView_.yaw;
+        pitch_ = preSectionView_.pitch;
+        distance_ = preSectionView_.distance;
+        fieldOfView_ = preSectionView_.fieldOfView;
+        viewCenter_ = preSectionView_.center;
+        preSectionViewSaved_ = false;
     }
     interactiveSlice_ = enabled;
     sectionAxis_ = axis;
@@ -835,17 +840,34 @@ void ModelCanvas::UpdateSectionSliceRange(bool initializeIndex) {
     if (!sectionBounds_.valid())
         return;
     const double thickness = document_.LayerThickness();
-    const double firstOffset = document_.FirstLayerOffset();
-    const double minimum = axisCoordinate(sectionBounds_.min, sectionAxis_);
     const double maximum = axisCoordinate(sectionBounds_.max, sectionAxis_);
-    const double available = std::max(0.0, maximum - minimum - firstOffset);
+    const double firstPosition = FirstSectionPosition();
+    const double available = std::max(0.0, maximum - firstPosition);
     maximumSliceIndex_ =
         static_cast<std::size_t>(std::floor(available / thickness + 1e-9));
-    if (initializeIndex)
+    if (initializeIndex) {
         sliceIndex_ = maximumSliceIndex_ / 2;
-    else
-        sliceIndex_ = std::min(sliceIndex_, maximumSliceIndex_);
-    slicePosition_ = minimum + firstOffset + static_cast<double>(sliceIndex_) * thickness;
+    } else {
+        const double relativeIndex = (slicePosition_ - firstPosition) / thickness;
+        const long long nearestIndex = static_cast<long long>(std::llround(relativeIndex));
+        sliceIndex_ = static_cast<std::size_t>(
+            std::clamp(nearestIndex, 0LL, static_cast<long long>(maximumSliceIndex_)));
+    }
+    slicePosition_ = SectionPosition(sliceIndex_);
+}
+double ModelCanvas::FirstSectionPosition() const {
+    const double minimum = axisCoordinate(sectionBounds_.min, sectionAxis_);
+    const double firstOffset = document_.FirstLayerOffset();
+    if (sectionAxis_ != SectionAxis::Z)
+        return minimum + firstOffset;
+
+    // Z sections share the printer's global layer grid rather than inheriting
+    // small bounding-box errors from generated or transformed geometry.
+    return stl_slicer::firstBuildLayerAbove(
+        minimum, document_.LayerThickness(), firstOffset);
+}
+double ModelCanvas::SectionPosition(std::size_t index) const {
+    return FirstSectionPosition() + static_cast<double>(index) * document_.LayerThickness();
 }
 void ModelCanvas::SetSliceIndex(std::size_t index) {
     if (!interactiveSlice_ || !sectionBounds_.valid())
@@ -855,9 +877,7 @@ void ModelCanvas::SetSliceIndex(std::size_t index) {
         return;
     sliceIndex_ = index;
     sliceStepAccumulator_ = 0.0;
-    slicePosition_ = axisCoordinate(sectionBounds_.min, sectionAxis_) +
-                     document_.FirstLayerOffset() +
-                     static_cast<double>(sliceIndex_) * document_.LayerThickness();
+    slicePosition_ = SectionPosition(sliceIndex_);
     UpdateInteractiveSlice();
 }
 void ModelCanvas::AlignSectionView() {
@@ -981,9 +1001,7 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
         if (newIndex == static_cast<long long>(sliceIndex_))
             return;
         sliceIndex_ = static_cast<std::size_t>(newIndex);
-        slicePosition_ = axisCoordinate(sectionBounds_.min, sectionAxis_) +
-                         document_.FirstLayerOffset() +
-                         static_cast<double>(sliceIndex_) * document_.LayerThickness();
+        slicePosition_ = SectionPosition(sliceIndex_);
         UpdateInteractiveSlice();
     };
     const auto scaleTarget = [&](double steps) {

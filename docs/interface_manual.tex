@@ -71,8 +71,10 @@ or hide selected model geometry \emph{Above} or \emph{Below} the moving plane.
 The translucent section plane spans the
 shared bounds of the selected models and can be moved along its normal with
 Alt+wheel. Plane positions follow the configured slicing sequence: the first
-position is the selected-bounds minimum plus the first-layer offset, and each
-subsequent position advances by one layer thickness. While Section mode is
+position for the Z axis is aligned to the global build-layer grid defined by
+the first-layer offset and layer thickness. X- and Y-axis sections start at
+the selected-bounds minimum plus the first-layer offset. Each subsequent
+position advances by one layer thickness. While Section mode is
 active, a horizontal scrollbar above the view and a spin box to its right show
 and control the slice index. Moving the thumb right increases the index, and
 the projected cross-section updates continuously while the thumb is dragged.
@@ -168,8 +170,9 @@ The \emph{File > Settings} command opens the application settings dialog.
 Settings are grouped into tabs so that additional categories can be added as
 the application grows.
 
-The \emph{Slicing} tab defines the default layer thickness and first-layer
-offset. These values are used by model slicing, unsupported-area analysis,
+The \emph{Slicing} tab defines the default layer thickness and absolute
+first-layer offset above the build platform. These values define the shared
+layer grid used by model slicing, unsupported-area analysis,
 orientation optimization, and interactive cross-sections. They default to 0.1 and
 0.05 model units, respectively.
 

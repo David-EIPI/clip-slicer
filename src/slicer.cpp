@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "stl_slicer/slicer.hpp"
+#include "stl_slicer/layer_grid.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -440,12 +441,13 @@ SliceData Slicer::slice(const TriangleMesh &mesh, const std::atomic<bool> *cance
 
     const double firstOffset =
         options_.firstLayerOffset >= 0.0 ? options_.firstLayerOffset : options_.layerThickness;
+    const double firstZ =
+        firstBuildLayerAbove(mesh.bounds().min.z, options_.layerThickness, firstOffset);
     // Calculate z from an integer layer index to avoid accumulated floating-point drift.
     for (std::size_t index = 0;; ++index) {
         if (cancel && cancel->load(std::memory_order_relaxed))
             break;
-        const double z = mesh.bounds().min.z + firstOffset +
-                         static_cast<double>(index) * options_.layerThickness;
+        const double z = firstZ + static_cast<double>(index) * options_.layerThickness;
         if (z > mesh.bounds().max.z + options_.joinTolerance)
             break;
         SliceLayer layer;

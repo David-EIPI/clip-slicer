@@ -200,9 +200,10 @@ The library API is divided into reusable data and processing components:
   section plane and updates a filled, double-sided cross-section on a separate display plane
   outside the selected models. The optional best-view mode faces and fits that plane to the
   viewport. Optional Above or Below clipping hides the corresponding side of selected model
-  geometry while leaving the section display intact. Section positions snap to the configured
-  first-layer offset and layer-thickness
-  sequence. Alt+Shift+left drag provides the same section-position control without a wheel. A
+  geometry while leaving the section display intact. Z section positions snap to the global
+  build-layer sequence defined by the configured first-layer offset and layer thickness; X and Y
+  sections use the corresponding selected-bounds minimum as their origin. Alt+Shift+left drag
+  provides the same section-position control without a wheel. A
   horizontal scrollbar above the view and a slice-index spin box to its right provide direct
   positioning. With the scrollbar focused, Up/Down move one slice and Page Up/Page Down move ten
   slices. Cross-section previews update continuously while the scrollbar thumb is dragged.

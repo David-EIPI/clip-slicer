@@ -52,6 +52,14 @@ class ModelCanvas final : public wxGLCanvas {
     void ClearUnsupportedVisualization();
 
   private:
+    struct ViewState {
+        double yaw = 0.0;
+        double pitch = 0.0;
+        double distance = 0.0;
+        double fieldOfView = 0.0;
+        stl_slicer::Vec3 center;
+    };
+
     struct Buffer {
         GLuint id = 0;
         GLsizei count = 0;
@@ -71,6 +79,8 @@ class ModelCanvas final : public wxGLCanvas {
     void UpdateInteractiveSlice();
     void AlignSectionView();
     void UpdateSectionSliceRange(bool initializeIndex);
+    double FirstSectionPosition() const;
+    double SectionPosition(std::size_t index) const;
     void TransformSelected(const stl_slicer::Mat4 &transform);
 
     DocumentFrame &document_;
@@ -99,7 +109,7 @@ class ModelCanvas final : public wxGLCanvas {
     double yaw_ = 0.55, pitch_ = -0.45, distance_ = 300.0;
     double fieldOfView_ = 0.75;
     stl_slicer::Vec3 viewCenter_;
-    stl_slicer::Vec3 preSectionViewCenter_;
-    bool preSectionViewCenterSaved_ = false;
+    ViewState preSectionView_;
+    bool preSectionViewSaved_ = false;
     wxPoint lastMouse_;
 };
