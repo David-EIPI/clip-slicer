@@ -6,6 +6,8 @@ endif()
 
 project(stl_slicer VERSION 0.1.0 LANGUAGES CXX)
 
+include(GNUInstallDirs)
+
 set(STL_SLICER_CLIPPER2_SOURCE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/Clipper2-Clipper2_2.0.1_DLLs/CPP"
     CACHE PATH "Local Clipper2 C++ source tree")
@@ -68,6 +70,10 @@ add_library(stl_slicer_lib
 target_include_directories(stl_slicer_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(stl_slicer_lib PUBLIC Clipper2::Clipper2)
 target_compile_features(stl_slicer_lib PUBLIC cxx_std_17)
+set_target_properties(stl_slicer_lib PROPERTIES
+    OUTPUT_NAME stl_slicer
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR})
 if(MSVC)
     target_compile_options(stl_slicer_lib PRIVATE /W4)
 else()
@@ -86,6 +92,12 @@ endif()
 
 add_executable(stl-slicer src/main.cpp)
 target_link_libraries(stl-slicer PRIVATE stl_slicer_lib)
+
+install(TARGETS stl_slicer_lib
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS stl-slicer RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(STL_SLICER_BUILD_GUI)
     set(STL_SLICER_WINDOWS_WX_SOURCE_DIR
@@ -202,6 +214,7 @@ if(STL_SLICER_BUILD_GUI)
     else()
         target_compile_options(clip-slicer PRIVATE -Wall -Wextra -Wpedantic)
     endif()
+    install(TARGETS clip-slicer RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 if(STL_SLICER_BUILD_TESTS)

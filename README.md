@@ -1,11 +1,36 @@
-# STL Slicer
+# CLIP Slicer
 
-A dependency-free C++17 library and command-line program that reads binary STL triangle meshes,
-intersects them with horizontal planes, connects the segments into contours, and writes Common
-Layer Interface (CLI) files.
+CLIP Slicer is a model-preparation tool for 3D printing, with an emphasis on
+slice inspection and support generation. It grew out of my experience with
+models that developed printing artifacts because of defects in STL geometry or
+insufficient support.
 
-The repository also contains **CLIP Slicer**, a wxWidgets MDI desktop application for loading,
-viewing, transforming, slicing, and exporting STL and CLI models.
+CLIP Slicer currently accepts 3D models in STL format and exports slices in
+Common Layer Interface (CLI) format. Before export, the Section tool can inspect
+the contours produced at the configured layer thickness and first-layer offset.
+Z-axis sections correspond to the layers produced by normal slicing; X- and
+Y-axis sections are inspection views and are not exported as layers.
+
+Support generation consists of three main tools:
+
+- **Detect** visualizes areas with insufficient support.
+- **Optimize** searches for a model orientation that minimizes the total area of
+  unsupported surfaces.
+- **Generate** produces support structures that connect unsupported surfaces to
+  the build platform.
+
+The core application code is structured as a reusable C++17 library that can be
+integrated into other projects. A small command-line slicer is also provided for
+batch processing.
+
+The following screenshots show the model view and generated supports:
+
+![Main window with loaded model](images/screenshot-model.png)
+
+![Generated supports](images/screenshot-supports.png)
+
+The model shown is the traditional [Bust of Sappho](https://www.thingiverse.com/thing:14565)
+from Thingiverse (thing 14565).
 
 ## Build and test
 
@@ -54,6 +79,29 @@ If wxWidgets, OpenGL, GLU, or libepoxy development packages are not installed, k
 If the host uses `ccache` with an unavailable cache directory, prefix these commands with
 `CCACHE_DISABLE=1`.
 
+#### Fedora and other RPM-based distributions
+
+An RPM spec is provided in `packaging/rpm/clip-slicer.spec`. On Fedora, install
+its build dependencies with:
+
+```sh
+sudo dnf install rpm-build rpmdevtools cmake gcc-c++ ninja-build \
+  polyclipping2-devel wxGTK-devel gtk3-devel libepoxy-devel mesa-libGLU-devel
+```
+
+To build from a versioned checkout, create the source archive expected by the
+spec and run `rpmbuild`:
+
+```sh
+rpmdev-setuptree
+git archive --format=tar.gz --prefix=clip-slicer-0.1.0/ \
+  --output="$HOME/rpmbuild/SOURCES/v0.1.0.tar.gz" HEAD
+rpmbuild -ba packaging/rpm/clip-slicer.spec
+```
+
+The build produces `clip-slicer-libs`, containing the shared slicing library,
+and `clip-slicer`, containing both the GUI and command-line applications.
+
 ### Windows cross-build
 
 For a Windows cross-build using the MSVC-targeted Clang environment described by
@@ -100,9 +148,9 @@ c++ -std=c++17 -O3 -march=native -fopt-info-vec-all=vectorization.txt \
 ## Use
 
 ```sh
-./build/stl-slicer model.stl layers.cli 0.1
-./build/stl-slicer --ascii --tolerance 0.00001 model.stl layers.cli 0.1
-./build/stl-slicer --healing-threshold 0.01 model.stl layers.cli 0.1
+./build-cli/stl-slicer model.stl layers.cli 0.1
+./build-cli/stl-slicer --ascii --tolerance 0.00001 model.stl layers.cli 0.1
+./build-cli/stl-slicer --healing-threshold 0.01 model.stl layers.cli 0.1
 ```
 
 The layer thickness defaults to 0.1 mm. Binary CLI output using PolyLine Long commands is the
@@ -181,6 +229,13 @@ The slicer assumes a clean, watertight triangle mesh for closed output. Endpoint
 bridge small numeric discrepancies, but this version does not repair holes, self-intersections,
 overlapping shells, or non-manifold geometry.
 
-Sliced-model rendering currently builds the vertical prism facets. Robust triangulation of concave
-top/bottom surfaces, contour editing tools, settings persistence, and cross-layer exposed-surface
-optimization remain planned geometry/editor work.
+Sliced-model rendering includes vertical walls and tessellated top and bottom
+caps, including concave contours and holes. Contour editing and comprehensive
+mesh-repair tools remain planned geometry/editor work.
+
+## Note on provenance
+
+Except for this disclosure, the brief introduction, and the screenshots, the
+code, documentation, and artwork in this project were created entirely through
+vibe coding with OpenAI's ChatGPT 5.6 model. The project is part of my learning
+experience with AI agents and production-oriented software development.
