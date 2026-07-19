@@ -598,43 +598,95 @@ SupportGenerator::generate(const SupportGenerationInput &input,
                        tipOptions = options_.tip](const SupportGenerationInput &input,
                                                   const SupportContactPoint &contact,
                                                   const std::atomic<bool> *cancel) {
-            SupportTipResult tip = tipBuilder->buildWithAttachment(contact.position, cancel);
-            if (!tip.valid() || cancelled(cancel))
-                return TriangleMesh{};
+            const std::shared_ptr<const ExternalPillarSpace> externalSpace = space.get();
             std::call_once(state->initializeExternal, [&]() {
                 state->external =
-                    std::make_shared<const ExternalPillarBuilder>(space.get(), options);
+                    std::make_shared<const ExternalPillarBuilder>(externalSpace, options);
             });
-            TriangleMesh pillar = state->external->build(
+
+            const auto buildExternal = [&](SupportTipResult &candidate) {
+                TriangleMesh shell;
+                if (!candidate.valid())
+                    return shell;
+                TriangleMesh pillar = state->external->build(
+                    candidate.pillarAttachment, contact.position, cancel);
+                if (cancelled(cancel))
+                    return TriangleMesh{};
+                if (pillar.triangles().empty())
+                    return shell;
+                shell.setHeader("CLIP Slicer external support");
+                shell.reserve(candidate.mesh.triangles().size() + pillar.triangles().size());
+                shell.append(std::move(pillar));
+                shell.append(std::move(candidate.mesh));
+                return shell;
+            };
+
+            SupportTipResult tip = tipBuilder->buildWithAttachment(contact.position, cancel);
+            TriangleMesh shell = buildExternal(tip);
+            if (!shell.triangles().empty() || cancelled(cancel))
+                return shell;
+
+            Vec3 preferredDirection;
+            bool hasPreferredDirection = false;
+            if (tip.valid()) {
+                preferredDirection = {tip.pillarAttachment.x - contact.position.x,
+                                      tip.pillarAttachment.y - contact.position.y,
+                                      tip.pillarAttachment.z - contact.position.z};
+                const double preferredLength =
+                    std::sqrt(preferredDirection.x * preferredDirection.x +
+                              preferredDirection.y * preferredDirection.y +
+                              preferredDirection.z * preferredDirection.z);
+                if (preferredLength > 1e-12) {
+                    preferredDirection.x /= preferredLength;
+                    preferredDirection.y /= preferredLength;
+                    preferredDirection.z /= preferredLength;
+                    hasPreferredDirection = true;
+                }
+            }
+
+            constexpr std::size_t maximumFallbackDirections = 64;
+            const std::vector<Vec3> directions = externalSpace->reachableTipDirections(
+                contact.position, tipOptions.height, maximumFallbackDirections, cancel);
+            for (const Vec3 &direction : directions) {
+                if (cancelled(cancel))
+                    return TriangleMesh{};
+                if (hasPreferredDirection) {
+                    const double alignment = preferredDirection.x * direction.x +
+                                             preferredDirection.y * direction.y +
+                                             preferredDirection.z * direction.z;
+                    if (alignment > 1.0 - 1e-6)
+                        continue;
+                }
+                SupportTipResult candidate =
+                    tipBuilder->buildWithAxis(contact.position, direction, cancel);
+                if (!candidate.valid())
+                    continue;
+                shell = buildExternal(candidate);
+                if (!shell.triangles().empty())
+                    return shell;
+                if (!tip.valid())
+                    tip = std::move(candidate);
+            }
+
+            if (!tip.valid() || cancelled(cancel))
+                return TriangleMesh{};
+            std::call_once(state->initializeInternal, [&]() {
+                state->internal = std::make_shared<const InternalPillarBuilder>(
+                    input.slices, options, tipOptions, cancel);
+            });
+            InternalPillarResult internal = state->internal->build(
                 tip.pillarAttachment, contact.position, cancel);
             if (cancelled(cancel))
                 return TriangleMesh{};
-
-            TriangleMesh shell;
-            if (pillar.triangles().empty()) {
-                std::call_once(state->initializeInternal, [&]() {
-                    state->internal = std::make_shared<const InternalPillarBuilder>(
-                        input.slices, options, tipOptions, cancel);
-                });
-                InternalPillarResult internal = state->internal->build(
-                    tip.pillarAttachment, contact.position, cancel);
-                if (cancelled(cancel))
-                    return TriangleMesh{};
-                if (!internal.valid()) {
-                    std::lock_guard<std::mutex> lock(state->failureMutex);
-                    ++state->internalFailures;
-                    state->lowestFailureZ =
-                        std::min(state->lowestFailureZ, contact.position.z);
-                    return TriangleMesh{};
-                }
-                shell.setHeader("CLIP Slicer internal support");
-                shell.reserve(tip.mesh.triangles().size() + internal.mesh.triangles().size());
-                shell.append(std::move(internal.mesh));
-            } else {
-                shell.setHeader("CLIP Slicer external support");
-                shell.reserve(tip.mesh.triangles().size() + pillar.triangles().size());
-                shell.append(std::move(pillar));
+            if (!internal.valid()) {
+                std::lock_guard<std::mutex> lock(state->failureMutex);
+                ++state->internalFailures;
+                state->lowestFailureZ = std::min(state->lowestFailureZ, contact.position.z);
+                return TriangleMesh{};
             }
+            shell.setHeader("CLIP Slicer internal support");
+            shell.reserve(tip.mesh.triangles().size() + internal.mesh.triangles().size());
+            shell.append(std::move(internal.mesh));
             shell.append(std::move(tip.mesh));
             return shell;
         };

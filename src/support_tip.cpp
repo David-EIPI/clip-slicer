@@ -15,6 +15,10 @@ constexpr std::size_t leafTriangleCount = 16;
 
 struct BuildCancelled {};
 
+bool cancelled(const std::atomic<bool> *cancel) {
+    return cancel && cancel->load(std::memory_order_relaxed);
+}
+
 Vec3 subtract(const Vec3 &first, const Vec3 &second) {
     return {first.x - second.x, first.y - second.y, first.z - second.z};
 }
@@ -428,6 +432,53 @@ struct SupportTipBuilder::Impl {
         return coneIsOutside(contact, axis);
     }
 
+    bool fallbackAxis(Vec3 &axis, const Vec3 &contact) const {
+        axis = normalized(axis);
+        const double horizontalLength = std::hypot(axis.x, axis.y);
+        const double buildAngle = std::atan2(-axis.z, horizontalLength);
+        if (squaredLength(axis) <= 1e-15 || axis.z > tolerance ||
+            buildAngle + tolerance < minimumAxisAngle)
+            return false;
+        return coneIsOutside(contact, axis);
+    }
+
+    SupportTipResult makeTip(const Vec3 &contact,
+                             const Vec3 &axis,
+                             const std::atomic<bool> *cancel) const {
+        SupportTipResult result;
+        const Vec3 bottomCenter = add(contact, multiply(axis, options.height));
+        result.pillarAttachment = bottomCenter;
+        const Vec3 helper =
+            std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
+        const Vec3 firstRadiusDirection = normalized(cross(helper, axis));
+        const Vec3 secondRadiusDirection = normalized(cross(axis, firstRadiusDirection));
+        const std::size_t pointCount = options.circumferencePoints;
+
+        std::vector<Vec3> topRing;
+        std::vector<Vec3> bottomRing;
+        topRing.reserve(pointCount);
+        bottomRing.reserve(pointCount);
+        for (std::size_t index = 0; index < pointCount; ++index) {
+            const Vec3 radial = add(multiply(firstRadiusDirection, unitCircle[index].x),
+                                    multiply(secondRadiusDirection, unitCircle[index].y));
+            topRing.push_back(add(contact, multiply(radial, options.topRadius)));
+            bottomRing.push_back(add(bottomCenter, multiply(radial, options.bottomRadius)));
+        }
+
+        result.mesh.setHeader("CLIP Slicer support contact tip");
+        result.mesh.reserve(pointCount * 4);
+        for (std::size_t index = 0; index < pointCount; ++index) {
+            if (cancelled(cancel))
+                return {};
+            const std::size_t next = (index + 1) % pointCount;
+            addTriangle(result.mesh, topRing[index], topRing[next], bottomRing[next]);
+            addTriangle(result.mesh, topRing[index], bottomRing[next], bottomRing[index]);
+            addTriangle(result.mesh, contact, topRing[next], topRing[index]);
+            addTriangle(result.mesh, bottomCenter, bottomRing[index], bottomRing[next]);
+        }
+        return result;
+    }
+
     std::shared_ptr<const TriangleMesh> sourceModel;
     SupportTipOptions options;
     std::vector<std::size_t> triangleIndices;
@@ -451,43 +502,24 @@ TriangleMesh SupportTipBuilder::build(const Vec3 &contactPoint,
 
 SupportTipResult SupportTipBuilder::buildWithAttachment(const Vec3 &contactPoint,
                                                         const std::atomic<bool> *cancel) const {
-    SupportTipResult result;
     if (cancel && cancel->load(std::memory_order_relaxed))
-        return result;
+        return {};
 
     Vec3 axis;
     if (!impl_->tipAxis(contactPoint, axis))
-        return result;
-    const Vec3 bottomCenter = add(contactPoint, multiply(axis, impl_->options.height));
-    result.pillarAttachment = bottomCenter;
-    const Vec3 helper = std::abs(axis.z) < 0.9 ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
-    const Vec3 firstRadiusDirection = normalized(cross(helper, axis));
-    const Vec3 secondRadiusDirection = normalized(cross(axis, firstRadiusDirection));
-    const std::size_t pointCount = impl_->options.circumferencePoints;
+        return {};
+    return impl_->makeTip(contactPoint, axis, cancel);
+}
 
-    std::vector<Vec3> topRing;
-    std::vector<Vec3> bottomRing;
-    topRing.reserve(pointCount);
-    bottomRing.reserve(pointCount);
-    for (std::size_t index = 0; index < pointCount; ++index) {
-        const Vec3 radial = add(multiply(firstRadiusDirection, impl_->unitCircle[index].x),
-                                multiply(secondRadiusDirection, impl_->unitCircle[index].y));
-        topRing.push_back(add(contactPoint, multiply(radial, impl_->options.topRadius)));
-        bottomRing.push_back(add(bottomCenter, multiply(radial, impl_->options.bottomRadius)));
-    }
-
-    result.mesh.setHeader("CLIP Slicer support contact tip");
-    result.mesh.reserve(pointCount * 4);
-    for (std::size_t index = 0; index < pointCount; ++index) {
-        if (cancel && cancel->load(std::memory_order_relaxed))
-            return {};
-        const std::size_t next = (index + 1) % pointCount;
-        addTriangle(result.mesh, topRing[index], topRing[next], bottomRing[next]);
-        addTriangle(result.mesh, topRing[index], bottomRing[next], bottomRing[index]);
-        addTriangle(result.mesh, contactPoint, topRing[next], topRing[index]);
-        addTriangle(result.mesh, bottomCenter, bottomRing[index], bottomRing[next]);
-    }
-    return result;
+SupportTipResult SupportTipBuilder::buildWithAxis(const Vec3 &contactPoint,
+                                                  const Vec3 &requestedAxis,
+                                                  const std::atomic<bool> *cancel) const {
+    if (cancelled(cancel))
+        return {};
+    Vec3 axis = requestedAxis;
+    if (!impl_->fallbackAxis(axis, contactPoint))
+        return {};
+    return impl_->makeTip(contactPoint, axis, cancel);
 }
 
 } // namespace stl_slicer

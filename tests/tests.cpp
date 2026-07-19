@@ -715,6 +715,17 @@ void testExternalPillarGeneration() {
     const std::vector<Vec3> straightRoute = emptySpace->route({0.0, 0.0, 3.0});
     require(straightRoute.size() == 2,
             "unobstructed external pillar retained redundant lattice points");
+    const std::vector<Vec3> reachableDirections =
+        emptySpace->reachableTipDirections({0.0, 0.0, 3.0}, 1.0, 8);
+    require(!reachableDirections.empty() && reachableDirections.size() <= 8,
+            "reachable support lattice did not provide bounded tip directions");
+    for (const Vec3 &direction : reachableDirections) {
+        const double magnitude = std::sqrt(direction.x * direction.x +
+                                           direction.y * direction.y +
+                                           direction.z * direction.z);
+        require(std::abs(magnitude - 1.0) < 1e-12 && direction.z < 0.0,
+                "reachable support cell produced an invalid tip direction");
+    }
     require(std::abs(straightRoute.front().z - options.baseHeight) < 1e-12 &&
                 std::abs(straightRoute.back().z - 3.0) < 1e-12,
             "external pillar route has incorrect endpoints");
@@ -885,6 +896,14 @@ void testSupportTipGeneration() {
                 std::abs(tipWithAttachment.pillarAttachment.x - expectedBottomCenter.x) < 1e-9 &&
                 std::abs(tipWithAttachment.pillarAttachment.z - expectedBottomCenter.z) < 1e-9,
             "support tip did not expose its pillar attachment center");
+    require(SupportTipBuilder(source, options)
+                .buildWithAxis({0.0, 0.0, 10.0}, {1.0, 0.0, -1.0})
+                .valid(),
+            "support tip rejected a collision-free explicit fallback axis");
+    require(!SupportTipBuilder(source, options)
+                 .buildWithAxis({0.0, 0.0, 10.0}, {1.0, 0.0, 1.0})
+                 .valid(),
+            "support tip accepted an upward explicit fallback axis");
 
     std::atomic<bool> cancel{true};
     require(SupportTipBuilder(source, options).build({0.0, 0.0, 10.0}, &cancel).triangles().empty(),
@@ -910,6 +929,8 @@ void testSupportTipGeneration() {
             "support tip was rejected on an outward-facing side");
     require(closedBuilder.build({0.5, 0.5, 1.0}).triangles().empty(),
             "support tip was aimed downward into the solid body");
+    require(!closedBuilder.buildWithAxis({0.5, 0.5, 1.0}, {0.0, 0.0, -1.0}).valid(),
+            "explicit fallback axis allowed a support tip through the solid body");
 }
 
 void testInternalPillarGeneration() {
@@ -1043,11 +1064,11 @@ void testInternalPillarGeneration() {
     const SupportGenerationResult trapped =
         SupportGenerator(generatorOptions, std::move(trappedKernels))
             .generate({source, trappedSlices, trappedUnsupported});
-    require(trapped.supports.triangles().empty(),
-            "internal support crossed a solid column beneath its upper tip");
-    require(trapped.internalSupportFailureCount == 1 &&
-                std::abs(trapped.lowestInternalSupportFailureZ - 6.0) < 1e-9,
-            "internal support failure statistics were not recorded");
+    require(!trapped.supports.triangles().empty() &&
+                std::abs(trapped.supports.bounds().min.z) < 1e-12,
+            "fallback tip orientation did not route an external support around a solid column");
+    require(trapped.internalSupportFailureCount == 0,
+            "successful fallback external support was recorded as an internal failure");
 }
 
 } // namespace

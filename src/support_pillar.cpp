@@ -897,6 +897,104 @@ struct ExternalPillarSpace::Impl {
         return routeUsingClearance(attachment, true, cancel);
     }
 
+    std::vector<Vec3> reachableTipDirections(const Vec3 &contact,
+                                             double tipLength,
+                                             std::size_t maximumCount,
+                                             const std::atomic<bool> *cancel) const {
+        if (!complete || cancelled(cancel) || !std::isfinite(tipLength) || tipLength <= 0.0 ||
+            maximumCount == 0 || contact.z <= options.baseHeight)
+            return {};
+
+        struct Candidate {
+            Vec3 direction;
+            double distance = 0.0;
+        };
+        std::vector<Candidate> candidates;
+        const double minimumZ = std::max(options.baseHeight, contact.z - tipLength);
+        const double maximumZ = contact.z - 1e-12;
+        const long long firstLevel = std::max<long long>(
+            0,
+            static_cast<long long>(std::ceil((minimumZ - options.baseHeight) /
+                                             options.latticeCellSize)));
+        const long long finalLevel = std::min<long long>(
+            static_cast<long long>(levelCount) - 1,
+            static_cast<long long>(std::floor((maximumZ - options.baseHeight) /
+                                              options.latticeCellSize)));
+        const double maximumDistanceSquared = tipLength * tipLength * (1.0 + 1e-12);
+        for (long long level = firstLevel; level <= finalLevel; ++level) {
+            if (cancelled(cancel))
+                return {};
+            const double z = levelZ(static_cast<std::size_t>(level));
+            const double vertical = contact.z - z;
+            const double horizontalLimit =
+                std::sqrt(std::max(0.0, tipLength * tipLength - vertical * vertical));
+            const long long minimumX = std::max<long long>(
+                0,
+                static_cast<long long>(std::ceil((contact.x - horizontalLimit - originX) /
+                                                 options.latticeCellSize)));
+            const long long maximumX = std::min<long long>(
+                static_cast<long long>(width) - 1,
+                static_cast<long long>(std::floor((contact.x + horizontalLimit - originX) /
+                                                  options.latticeCellSize)));
+            const long long minimumY = std::max<long long>(
+                0,
+                static_cast<long long>(std::ceil((contact.y - horizontalLimit - originY) /
+                                                 options.latticeCellSize)));
+            const long long maximumY = std::min<long long>(
+                static_cast<long long>(height) - 1,
+                static_cast<long long>(std::floor((contact.y + horizontalLimit - originY) /
+                                                  options.latticeCellSize)));
+            for (long long y = minimumY; y <= maximumY; ++y) {
+                for (long long x = minimumX; x <= maximumX; ++x) {
+                    const std::size_t index = static_cast<std::size_t>(level) * cellCountPerLevel +
+                                              static_cast<std::size_t>(y) * width +
+                                              static_cast<std::size_t>(x);
+                    if (predecessor(index) == 0)
+                        continue;
+                    const Vec3 cell{originX + static_cast<double>(x) * options.latticeCellSize,
+                                    originY + static_cast<double>(y) * options.latticeCellSize,
+                                    z};
+                    const Vec3 offset = subtract(cell, contact);
+                    const double distanceSquared = dot(offset, offset);
+                    if (distanceSquared <= 1e-18 || distanceSquared > maximumDistanceSquared)
+                        continue;
+                    const double distance = std::sqrt(distanceSquared);
+                    const Vec3 direction = multiply(offset, 1.0 / distance);
+                    const double attachmentZ = contact.z + direction.z * tipLength;
+                    if (attachmentZ <= options.baseHeight + 1e-12)
+                        continue;
+                    candidates.push_back({direction, distance});
+                }
+            }
+        }
+
+        std::sort(candidates.begin(),
+                  candidates.end(),
+                  [](const Candidate &first, const Candidate &second) {
+                      if (first.distance != second.distance)
+                          return first.distance < second.distance;
+                      if (first.direction.z != second.direction.z)
+                          return first.direction.z < second.direction.z;
+                      if (first.direction.y != second.direction.y)
+                          return first.direction.y < second.direction.y;
+                      return first.direction.x < second.direction.x;
+                  });
+        std::vector<Vec3> result;
+        result.reserve(std::min(maximumCount, candidates.size()));
+        for (const Candidate &candidate : candidates) {
+            const bool duplicate =
+                std::any_of(result.begin(), result.end(), [&](const Vec3 &direction) {
+                    return dot(direction, candidate.direction) > 1.0 - 1e-6;
+                });
+            if (duplicate)
+                continue;
+            result.push_back(candidate.direction);
+            if (result.size() == maximumCount)
+                break;
+        }
+        return result;
+    }
+
     std::shared_ptr<const SliceData> slices;
     Bounds3 bounds;
     ExternalPillarOptions options;
@@ -933,6 +1031,14 @@ std::vector<Vec3> ExternalPillarSpace::routeFromTip(
     const Vec3 &attachment,
     const std::atomic<bool> *cancel) const {
     return impl_->route(attachment, true, cancel);
+}
+
+std::vector<Vec3> ExternalPillarSpace::reachableTipDirections(
+    const Vec3 &contact,
+    double tipLength,
+    std::size_t maximumCount,
+    const std::atomic<bool> *cancel) const {
+    return impl_->reachableTipDirections(contact, tipLength, maximumCount, cancel);
 }
 
 bool ExternalPillarSpace::valid() const noexcept {

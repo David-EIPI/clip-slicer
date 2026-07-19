@@ -33,6 +33,11 @@ class ExternalPillarSpace {
                             const std::atomic<bool> *cancel = nullptr) const;
     std::vector<Vec3> routeFromTip(const Vec3 &attachment,
                                    const std::atomic<bool> *cancel = nullptr) const;
+    std::vector<Vec3> reachableTipDirections(
+        const Vec3 &contact,
+        double tipLength,
+        std::size_t maximumCount,
+        const std::atomic<bool> *cancel = nullptr) const;
     bool valid() const noexcept;
 
   private:

@@ -32,6 +32,9 @@ class SupportTipBuilder {
     TriangleMesh build(const Vec3 &contactPoint, const std::atomic<bool> *cancel = nullptr) const;
     SupportTipResult buildWithAttachment(const Vec3 &contactPoint,
                                          const std::atomic<bool> *cancel = nullptr) const;
+    SupportTipResult buildWithAxis(const Vec3 &contactPoint,
+                                   const Vec3 &axis,
+                                   const std::atomic<bool> *cancel = nullptr) const;
 
   private:
     struct Impl;
