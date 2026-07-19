@@ -31,7 +31,6 @@ batch processing.
 The following screenshots show the model view and generated supports:
 
 ![Main window with loaded model](images/screenshot-model.png)
-
 ![Generated supports](images/screenshot-supports.png)
 
 The model shown is the traditional [Bust of Sappho](https://www.thingiverse.com/thing:14565)
