@@ -625,6 +625,39 @@ void testSupportContactPlacement() {
     }
     require(contactsHole, "source-matching void perimeter did not receive contacts");
 
+    const auto diamond = [](double centerX, double centerY, double radius) {
+        return SlicePath{PathType::External,
+                         {{centerX, centerY - radius},
+                          {centerX + radius, centerY},
+                          {centerX, centerY + radius},
+                          {centerX - radius, centerY},
+                          {centerX, centerY - radius}}};
+    };
+    slices->layers = {{1.0, {square(0, 0, 10, 10)}}};
+    unsupported->layers = {
+        {1.0, {diamond(2.0, 2.0, 0.1), diamond(2.5, 2.0, 0.1)}}};
+    const SupportGenerationResult orphanedIslands = generateContacts({1, 2.0});
+    std::array<bool, 2> islandHasContact{};
+    std::array<bool, 2> islandHasCenteredContact{};
+    for (const SupportContactPoint &contact : orphanedIslands.contactPoints) {
+        const double firstDistance = std::hypot(contact.position.x - 2.0,
+                                                contact.position.y - 2.0);
+        const double secondDistance = std::hypot(contact.position.x - 2.5,
+                                                 contact.position.y - 2.0);
+        islandHasContact[0] = islandHasContact[0] || firstDistance <= 0.1 + 1e-9;
+        islandHasContact[1] = islandHasContact[1] || secondDistance <= 0.1 + 1e-9;
+        islandHasCenteredContact[0] =
+            islandHasCenteredContact[0] || firstDistance < 1e-9;
+        islandHasCenteredContact[1] =
+            islandHasCenteredContact[1] || secondDistance < 1e-9;
+    }
+    require(islandHasContact[0] && islandHasContact[1],
+            "closely spaced unsupported islands did not each receive a contact");
+    require(orphanedIslands.contactPoints.size() == 2,
+            "orphaned-island fallback produced redundant contact points");
+    require(islandHasCenteredContact[0] && islandHasCenteredContact[1],
+            "orphaned-island contacts were not placed at their centers");
+
     bool invalidSpacingRejected = false;
     try {
         (void)SupportGenerator{{1, 0.0}};

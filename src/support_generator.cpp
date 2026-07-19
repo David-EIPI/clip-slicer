@@ -169,6 +169,81 @@ bool componentContains(const PolyPath64 &component, const Point64 &point) {
     return true;
 }
 
+Vec2 componentCenter(const PolyPath64 &component) {
+    const Clipper2Lib::Rect64 bounds = Clipper2Lib::GetBounds(component.Polygon());
+    const long double boundsCenterX =
+        (static_cast<long double>(bounds.left) + bounds.right) * 0.5L;
+    const long double boundsCenterY =
+        (static_cast<long double>(bounds.top) + bounds.bottom) * 0.5L;
+
+    std::vector<const Path64 *> boundaries{&component.Polygon()};
+    for (const auto &child : component)
+        if (child->IsHole())
+            boundaries.push_back(&child->Polygon());
+
+    long double areaSum = 0.0L;
+    long double centerXSum = 0.0L;
+    long double centerYSum = 0.0L;
+    for (const Path64 *boundary : boundaries) {
+        for (std::size_t index = 0; index < boundary->size(); ++index) {
+            const Point64 &first = (*boundary)[index];
+            const Point64 &second = (*boundary)[(index + 1) % boundary->size()];
+            const long double cross = static_cast<long double>(first.x) * second.y -
+                                      static_cast<long double>(second.x) * first.y;
+            areaSum += cross;
+            centerXSum += (static_cast<long double>(first.x) + second.x) * cross;
+            centerYSum += (static_cast<long double>(first.y) + second.y) * cross;
+        }
+    }
+    if (std::abs(areaSum) > 1e-18L) {
+        const long double centerX = centerXSum / (3.0L * areaSum);
+        const long double centerY = centerYSum / (3.0L * areaSum);
+        const Point64 scaled{static_cast<std::int64_t>(std::llround(centerX)),
+                             static_cast<std::int64_t>(std::llround(centerY))};
+        if (componentContains(component, scaled))
+            return {static_cast<double>(centerX / slice_polygon::coordinateScale),
+                    static_cast<double>(centerY / slice_polygon::coordinateScale)};
+    }
+
+    std::vector<long double> crossings;
+    for (const Path64 *boundary : boundaries) {
+        for (std::size_t index = 0; index < boundary->size(); ++index) {
+            const Point64 &first = (*boundary)[index];
+            const Point64 &second = (*boundary)[(index + 1) % boundary->size()];
+            if ((first.y <= boundsCenterY && second.y > boundsCenterY) ||
+                (second.y <= boundsCenterY && first.y > boundsCenterY)) {
+                const long double fraction =
+                    (boundsCenterY - first.y) /
+                    (static_cast<long double>(second.y) - first.y);
+                crossings.push_back(static_cast<long double>(first.x) +
+                                    (static_cast<long double>(second.x) - first.x) * fraction);
+            }
+        }
+    }
+    std::sort(crossings.begin(), crossings.end());
+    long double selectedX = boundsCenterX;
+    long double selectedDistance = std::numeric_limits<long double>::infinity();
+    bool selected = false;
+    for (std::size_t index = 0; index + 1 < crossings.size(); index += 2) {
+        if (crossings[index + 1] <= crossings[index])
+            continue;
+        const long double centerX = (crossings[index] + crossings[index + 1]) * 0.5L;
+        const long double distance = std::abs(centerX - boundsCenterX);
+        if (distance < selectedDistance) {
+            selectedX = centerX;
+            selectedDistance = distance;
+            selected = true;
+        }
+    }
+    if (selected)
+        return {static_cast<double>(selectedX / slice_polygon::coordinateScale),
+                static_cast<double>(boundsCenterY / slice_polygon::coordinateScale)};
+
+    const Point64 &fallback = component.Polygon().front();
+    return {double(fallback.x) / slice_polygon::coordinateScale,
+            double(fallback.y) / slice_polygon::coordinateScale};
+}
+
 std::vector<LatticeNode>
 buildLattice(const PolyPath64 &component, double supportSpacing, const std::atomic<bool> *cancel) {
     const Clipper2Lib::Rect64 bounds = Clipper2Lib::GetBounds(component.Polygon());
@@ -288,9 +363,16 @@ std::vector<SupportContactPoint> detectContactPoints(const SupportGenerationInpu
             for (const std::vector<Vec2> &run : continuousRuns(*boundary, sourceSegments))
                 placeNodesAlongRun(nodes, run, supportSpacing);
 
-        for (const LatticeNode &node : nodes)
-            if (!node.remove)
+        const std::size_t firstComponentContact = contacts.size();
+        for (const LatticeNode &node : nodes) {
+            if (!node.remove) {
                 contacts.push_back({{node.point.x, node.point.y, sourceLayer.z}, layerIndex});
+            }
+        }
+        if (contacts.size() == firstComponentContact) {
+            const Vec2 center = componentCenter(*component);
+            contacts.push_back({{center.x, center.y, sourceLayer.z}, layerIndex});
+        }
     }
     return contacts;
 }
