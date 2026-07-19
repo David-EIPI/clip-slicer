@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 David Shirvanyants
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 #include "gl_canvas.hpp"
 #include "document_frame.hpp"
 #include "slice_visualization.hpp"

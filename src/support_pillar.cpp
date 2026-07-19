@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 David Shirvanyants
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 #include "stl_slicer/support_pillar.hpp"
 #include "slice_polygon_utils.hpp"
 #include <algorithm>

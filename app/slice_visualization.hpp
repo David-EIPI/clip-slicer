@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 David Shirvanyants
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 #pragma once
 
 #include "stl_slicer/scene_model.hpp"

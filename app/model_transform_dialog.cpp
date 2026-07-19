@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 David Shirvanyants
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 #include "model_transform_dialog.hpp"
 #include <wx/radiobox.h>
 #include <wx/sizer.h>

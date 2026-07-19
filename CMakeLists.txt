@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 David Shirvanyants
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 cmake_minimum_required(VERSION 3.12)
 
 if(POLICY CMP0091)
@@ -98,6 +101,10 @@ install(TARGETS stl_slicer_lib
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS stl-slicer RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES LICENSE.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/clip-slicer)
+install(DIRECTORY LICENSES
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/clip-slicer)
 
 if(STL_SLICER_BUILD_GUI)
     set(STL_SLICER_WINDOWS_WX_SOURCE_DIR

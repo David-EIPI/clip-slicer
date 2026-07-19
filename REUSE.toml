@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 David Shirvanyants
+# SPDX-License-Identifier: CC0-1.0
+
+version = 1
+
+[[annotations]]
+path = [".clang-format", ".gitignore", "docs/.gitignore"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 David Shirvanyants"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = "app/assets/*.png"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 David Shirvanyants"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = "images/*.png"
+precedence = "aggregate"
+SPDX-FileCopyrightText = [
+    "2011 LukeChilson (Bust of Sappho model)",
+    "2026 David Shirvanyants (screenshots)",
+]
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+[[annotations]]
+path = "STL_(file_format)"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Wikipedia contributors"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+[[annotations]]
+path = "cli_format.html"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Unknown (external CLI format reference)"
+SPDX-License-Identifier = "LicenseRef-Unknown"

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 David Shirvanyants
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
 

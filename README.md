@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+
 # CLIP Slicer
 
 CLIP Slicer is a model-preparation tool for 3D printing, with an emphasis on
@@ -23,6 +25,7 @@ The core application code is structured as a reusable C++17 library that can be
 integrated into other projects. A small command-line slicer is also provided for
 batch processing.
 
+<!-- RPM-EXCLUDE-BEGIN: screenshots are retained in the source README only. -->
 The following screenshots show the model view and generated supports:
 
 ![Main window with loaded model](images/screenshot-model.png)
@@ -31,6 +34,7 @@ The following screenshots show the model view and generated supports:
 
 The model shown is the traditional [Bust of Sappho](https://www.thingiverse.com/thing:14565)
 from Thingiverse (thing 14565).
+<!-- RPM-EXCLUDE-END -->
 
 ## Build and test
 
@@ -239,3 +243,12 @@ Except for this disclosure, the brief introduction, and the screenshots, the
 code, documentation, and artwork in this project were created entirely through
 vibe coding with OpenAI's ChatGPT 5.6 model. The project is part of my learning
 experience with AI agents and production-oriented software development.
+
+## Licensing
+
+The source code is available under the PolyForm Noncommercial License 1.0.0;
+commercial use requires separate explicit permission. Original documentation
+and original artwork are available under CC0 1.0. The example screenshots are
+excluded from CC0 because they incorporate a CC BY-SA 4.0 model and are
+distributed under CC BY-SA 4.0. See [LICENSE.md](LICENSE.md) for the precise
+scope, third-party attribution, license texts, and commercial-contact details.

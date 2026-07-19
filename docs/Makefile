@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 David Shirvanyants
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 .PHONY: all pdf
 
 all: pdf

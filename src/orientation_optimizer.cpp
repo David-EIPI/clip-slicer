@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 David Shirvanyants
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 #include "stl_slicer/orientation_optimizer.hpp"
 #include "stl_slicer/slicer.hpp"
 #include <algorithm>

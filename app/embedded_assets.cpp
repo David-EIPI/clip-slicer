@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 David Shirvanyants
+// SPDX-License-Identifier: CC0-1.0
+
 #include "embedded_assets.hpp"
 
 namespace clip_slicer::assets {
