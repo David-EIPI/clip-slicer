@@ -377,6 +377,94 @@ std::vector<SupportContactPoint> detectContactPoints(const SupportGenerationInpu
     return contacts;
 }
 
+void ensureSupportableIslandContacts(const SupportGenerationInput &input,
+                                     std::size_t layerIndex,
+                                     std::vector<SupportContactPoint> &contacts,
+                                     const SupportTipBuilder &tipBuilder,
+                                     const std::atomic<bool> *cancel) {
+    const Paths64 unsupportedPolygons =
+        slice_polygon::layerPolygons(input.unsupported->layers[layerIndex]);
+    if (unsupportedPolygons.empty())
+        return;
+
+    PolyTree64 tree;
+    Clipper2Lib::BooleanOp(
+        Clipper2Lib::ClipType::Union, FillRule::NonZero, unsupportedPolygons, {}, tree);
+    std::vector<const PolyPath64 *> components;
+    collectSolidComponents(tree, components);
+    const double z = input.slices->layers[layerIndex].z;
+
+    for (const PolyPath64 *component : components) {
+        if (cancelled(cancel))
+            return;
+        bool hasValidTip = false;
+        for (const SupportContactPoint &contact : contacts) {
+            const Point64 point{slice_polygon::scaledCoordinate(contact.position.x),
+                                slice_polygon::scaledCoordinate(contact.position.y)};
+            if (componentContains(*component, point) &&
+                tipBuilder.buildWithAttachment(contact.position, cancel).valid()) {
+                hasValidTip = true;
+                break;
+            }
+        }
+        if (hasValidTip)
+            continue;
+
+        const Vec2 center = componentCenter(*component);
+        const Clipper2Lib::Rect64 bounds = Clipper2Lib::GetBounds(component->Polygon());
+        struct Candidate {
+            Vec2 point;
+            double distance = 0.0;
+        };
+        std::vector<Candidate> candidates;
+        constexpr std::size_t divisions = 20;
+        candidates.reserve((divisions + 1) * (divisions + 1) + 1);
+        candidates.push_back({center, 0.0});
+        for (std::size_t yIndex = 0; yIndex <= divisions; ++yIndex) {
+            const long double y = static_cast<long double>(bounds.top) +
+                                  (static_cast<long double>(bounds.bottom) - bounds.top) * yIndex /
+                                      divisions;
+            for (std::size_t xIndex = 0; xIndex <= divisions; ++xIndex) {
+                const long double x =
+                    static_cast<long double>(bounds.left) +
+                    (static_cast<long double>(bounds.right) - bounds.left) * xIndex / divisions;
+                const Point64 scaled{static_cast<std::int64_t>(std::llround(x)),
+                                     static_cast<std::int64_t>(std::llround(y))};
+                if (!componentContains(*component, scaled))
+                    continue;
+                const Vec2 point{double(scaled.x) / slice_polygon::coordinateScale,
+                                 double(scaled.y) / slice_polygon::coordinateScale};
+                candidates.push_back({point, squaredDistance(point, center)});
+            }
+        }
+        std::sort(candidates.begin(),
+                  candidates.end(),
+                  [](const Candidate &first, const Candidate &second) {
+                      if (first.distance != second.distance)
+                          return first.distance < second.distance;
+                      if (first.point.y != second.point.y)
+                          return first.point.y < second.point.y;
+                      return first.point.x < second.point.x;
+                  });
+
+        for (const Candidate &candidate : candidates) {
+            if (cancelled(cancel))
+                return;
+            const bool duplicate =
+                std::any_of(contacts.begin(), contacts.end(), [&](const SupportContactPoint &point) {
+                    return samePoint(candidate.point, {point.position.x, point.position.y});
+                });
+            if (duplicate)
+                continue;
+            const Vec3 position{candidate.point.x, candidate.point.y, z};
+            if (!tipBuilder.buildWithAttachment(position, cancel).valid())
+                continue;
+            contacts.push_back({position, layerIndex});
+            break;
+        }
+    }
+}
+
 void validateInput(const SupportGenerationInput &input) {
     if (!input.sourceModel || !input.slices || !input.unsupported)
         throw std::invalid_argument(
@@ -397,13 +485,6 @@ SupportGenerator::SupportGenerator(SupportGeneratorOptions options,
         throw std::invalid_argument("Support generation requires at least one worker");
     if (!std::isfinite(options_.supportSpacing) || options_.supportSpacing <= 0.0)
         throw std::invalid_argument("Support spacing must be a positive finite value");
-    if (!kernels_.detectContactPoints)
-        kernels_.detectContactPoints =
-            [spacing = options_.supportSpacing](const SupportGenerationInput &input,
-                                                std::size_t layerIndex,
-                                                const std::atomic<bool> *cancel) {
-                return detectContactPoints(input, layerIndex, spacing, cancel);
-            };
 }
 
 SupportGenerationResult
@@ -445,6 +526,15 @@ SupportGenerator::generate(const SupportGenerationInput &input,
         return result;
     }
 
+    SupportContactDetector contactDetector = kernels_.detectContactPoints;
+    if (!contactDetector) {
+        contactDetector =
+            [spacing = options_.supportSpacing](const SupportGenerationInput &input,
+                                                std::size_t layerIndex,
+                                                const std::atomic<bool> *cancel) {
+                return detectContactPoints(input, layerIndex, spacing, cancel);
+            };
+    }
     SupportPillarBuilder buildPillar = kernels_.buildPillar;
     std::shared_future<std::shared_ptr<const ExternalPillarSpace>> externalSpace;
     struct DefaultBuilderState {
@@ -458,7 +548,8 @@ SupportGenerator::generate(const SupportGenerationInput &input,
     };
     std::shared_ptr<DefaultBuilderState> defaultBuilderState;
     if (!buildPillar) {
-        SupportTipBuilder tipBuilder(input.sourceModel, options_.tip, cancel);
+        auto tipBuilder =
+            std::make_shared<const SupportTipBuilder>(input.sourceModel, options_.tip, cancel);
         if (cancelled(cancel)) {
             result.cancelled = true;
             return result;
@@ -491,14 +582,23 @@ SupportGenerator::generate(const SupportGenerationInput &input,
                        })
                 .share();
         defaultBuilderState = std::make_shared<DefaultBuilderState>();
-        buildPillar = [tipBuilder = std::move(tipBuilder),
+        contactDetector = [detector = std::move(contactDetector),
+                           tipBuilder](const SupportGenerationInput &input,
+                                       std::size_t layerIndex,
+                                       const std::atomic<bool> *cancel) {
+            std::vector<SupportContactPoint> contacts = detector(input, layerIndex, cancel);
+            ensureSupportableIslandContacts(
+                input, layerIndex, contacts, *tipBuilder, cancel);
+            return contacts;
+        };
+        buildPillar = [tipBuilder,
                        space = externalSpace,
                        state = defaultBuilderState,
                        options = options_.externalPillar,
                        tipOptions = options_.tip](const SupportGenerationInput &input,
                                                   const SupportContactPoint &contact,
                                                   const std::atomic<bool> *cancel) {
-            SupportTipResult tip = tipBuilder.buildWithAttachment(contact.position, cancel);
+            SupportTipResult tip = tipBuilder->buildWithAttachment(contact.position, cancel);
             if (!tip.valid() || cancelled(cancel))
                 return TriangleMesh{};
             std::call_once(state->initializeExternal, [&]() {
@@ -590,7 +690,7 @@ SupportGenerator::generate(const SupportGenerationInput &input,
             try {
                 if (workKind == WorkKind::Layer) {
                     std::vector<SupportContactPoint> contacts =
-                        kernels_.detectContactPoints(input, layerIndex, cancel);
+                        contactDetector(input, layerIndex, cancel);
                     std::size_t detectedCount = 0;
                     bool detectionComplete = false;
                     {

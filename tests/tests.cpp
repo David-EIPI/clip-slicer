@@ -658,6 +658,34 @@ void testSupportContactPlacement() {
     require(islandHasCenteredContact[0] && islandHasCenteredContact[1],
             "orphaned-island contacts were not placed at their centers");
 
+    auto recoverySource = std::make_shared<TriangleMesh>();
+    addBox(*recoverySource, 0.0, 0.0, 0.0, 10.0, 10.0, 2.0);
+    auto recoverySlices = std::make_shared<SliceData>();
+    recoverySlices->layers = {{1.9, {square(0.0, 0.0, 10.0, 10.0)}}};
+    auto recoveryUnsupported = std::make_shared<SliceData>(*recoverySlices);
+    SupportGenerationKernels invalidCenterKernel;
+    invalidCenterKernel.detectContactPoints =
+        [](const SupportGenerationInput &, std::size_t layerIndex, const std::atomic<bool> *) {
+            return std::vector<SupportContactPoint>{{{5.0, 5.0, 1.9}, layerIndex}};
+        };
+    SupportGeneratorOptions recoveryOptions;
+    recoveryOptions.workerCount = 1;
+    recoveryOptions.externalPillar.modelIsolation = 0.0;
+    const SupportGenerationResult recovered =
+        SupportGenerator(recoveryOptions, std::move(invalidCenterKernel))
+            .generate({recoverySource, recoverySlices, recoveryUnsupported});
+    require(recovered.contactPoints.size() > 1,
+            "unsupported island did not recover from an unusable center contact");
+    const SupportTipBuilder recoveryTipBuilder(recoverySource, recoveryOptions.tip);
+    const bool hasSupportableRecovery =
+        std::any_of(recovered.contactPoints.begin() + 1,
+                    recovered.contactPoints.end(),
+                    [&](const SupportContactPoint &contact) {
+                        return recoveryTipBuilder.buildWithAttachment(contact.position).valid();
+                    });
+    require(hasSupportableRecovery,
+            "unsupported island recovery did not add a contact with a valid tip");
+
     bool invalidSpacingRejected = false;
     try {
         (void)SupportGenerator{{1, 0.0}};
