@@ -7,3 +7,5 @@
 /wxWidgets-3.2.11/
 *.cli
 *.stl
+/code*.sh
+/icons.md
