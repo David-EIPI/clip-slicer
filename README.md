@@ -109,8 +109,23 @@ and `clip-slicer`, containing both the GUI and command-line applications.
 
 ### Windows cross-build
 
-For a Windows cross-build using the MSVC-targeted Clang environment described by
-`msvc_test.sh`, use:
+Windows cross-compilation requires locally installed MSVC and Windows SDK
+headers and libraries. For the GUI build described here,
+[mstorsjo/msvc-wine](https://github.com/mstorsjo/msvc-wine) was installed first
+and used to download and configure those Microsoft components for Clang/LLD's
+MSVC-compatible mode. Installing the Microsoft toolchain requires accepting the
+applicable [Microsoft license](https://go.microsoft.com/fwlink/?LinkId=2086102).
+
+The `msvc-wine` setup scripts are licensed under the permissive ISC license,
+but that license does not cover the downloaded MSVC or Windows SDK files. The
+installed Microsoft toolchain is not redistributable and must not be added to
+this repository or binary packages. The resulting application binaries may be
+distributed subject to the applicable Microsoft runtime redistribution terms
+and the other licenses documented by this project.
+
+`build_windows.sh` expects `msvc-wine/msvcenv-native.sh` under the user's home
+directory and, by default, an installed toolchain under `my_msvc/` there. After
+installing those prerequisites, run:
 
 ```sh
 ./build_windows.sh
