@@ -155,6 +155,11 @@ bool triangleSegment(const Triangle &triangle, double z, Segment &result) {
     }
     if (pointCount != 2 || squaredDistance(points[0], points[1]) == 0.0)
         return false;
+    const Vec2 direction{points[1].x - points[0].x, points[1].y - points[0].y};
+    const Vec2 normalDirection{-triangle.normal.y, triangle.normal.x};
+    if (normalDirection.x * normalDirection.x + normalDirection.y * normalDirection.y > 1e-24 &&
+        direction.x * normalDirection.x + direction.y * normalDirection.y < 0.0)
+        std::swap(points[0], points[1]);
     result = {points[0], points[1]};
     return true;
 }
@@ -196,6 +201,7 @@ std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tol
         std::vector<Vec2> appended;
         appended.push_back(segments[nextSeed].a);
         appended.push_back(segments[nextSeed].b);
+        long long orientationScore = 1;
         alive[nextSeed] = false;
         --remaining;
 
@@ -214,6 +220,9 @@ std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tol
                 break;
             const Segment &segment = segments[match.segmentIndex];
             const Vec2 &other = match.segmentAtA ? segment.b : segment.a;
+            const bool followsSegmentOrientation =
+                match.pathAtFront ? !match.segmentAtA : match.segmentAtA;
+            orientationScore += followsSegmentOrientation ? 1 : -1;
             if (match.pathAtFront) {
                 prepended.push_back(other);
             } else {
@@ -233,6 +242,8 @@ std::vector<SlicePath> connectSegments(std::vector<Segment> segments, double tol
         path.points.reserve(prepended.size() + appended.size());
         path.points.insert(path.points.end(), prepended.rbegin(), prepended.rend());
         path.points.insert(path.points.end(), appended.begin(), appended.end());
+        if (orientationScore < 0)
+            std::reverse(path.points.begin(), path.points.end());
         paths.push_back(std::move(path));
     }
     return paths;
@@ -303,6 +314,7 @@ void classifyClosedPaths(std::vector<SlicePath> &paths) {
         double maxX = -std::numeric_limits<double>::infinity();
         double maxY = -std::numeric_limits<double>::infinity();
         std::size_t depth = 0;
+        std::size_t parent = std::numeric_limits<std::size_t>::max();
         bool closed = false;
     };
 
@@ -326,6 +338,7 @@ void classifyClosedPaths(std::vector<SlicePath> &paths) {
         if (!contour.closed)
             continue;
         const Vec2 sample = paths[i].points.front();
+        double parentArea = std::numeric_limits<double>::infinity();
         for (std::size_t j = 0; j < paths.size(); ++j) {
             if (i == j || !contours[j].closed)
                 continue;
@@ -335,15 +348,27 @@ void classifyClosedPaths(std::vector<SlicePath> &paths) {
             if (sample.x < contours[j].minX || sample.x > contours[j].maxX ||
                 sample.y < contours[j].minY || sample.y > contours[j].maxY)
                 continue;
-            if (pointInPolygon(sample, paths[j].points))
+            if (pointInPolygon(sample, paths[j].points)) {
                 ++contour.depth;
+                if (candidateArea < parentArea) {
+                    contour.parent = j;
+                    parentArea = candidateArea;
+                }
+            }
         }
     }
 
     for (std::size_t i = 0; i < paths.size(); ++i) {
         if (!contours[i].closed)
             continue;
-        const bool external = (contours[i].depth % 2) == 0;
+        std::size_t root = i;
+        while (contours[root].parent != std::numeric_limits<std::size_t>::max())
+            root = contours[root].parent;
+        // Surface winding distinguishes a cavity from a separate solid shell
+        // nested inside another shell. Geometry-only odd/even classification
+        // incorrectly turns overlapping support pillars into intermittent voids.
+        const bool external = std::signbit(contours[i].area) ==
+                              std::signbit(contours[root].area);
         paths[i].type = external ? PathType::External : PathType::Internal;
         const bool ccw = contours[i].area > 0.0;
         if (ccw != external)

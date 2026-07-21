@@ -30,20 +30,32 @@ void require(bool condition, const char *message) {
         throw std::runtime_error(message);
 }
 
-void addFace(TriangleMesh &mesh, Vec3 a, Vec3 b, Vec3 c, Vec3 d) {
-    mesh.addTriangle({{}, {a, b, c}, 0});
-    mesh.addTriangle({{}, {a, c, d}, 0});
+void addFace(TriangleMesh &mesh, Vec3 a, Vec3 b, Vec3 c, Vec3 d, bool inverted = false) {
+    if (inverted) {
+        mesh.addTriangle({{}, {a, c, b}, 0});
+        mesh.addTriangle({{}, {a, d, c}, 0});
+    } else {
+        mesh.addTriangle({{}, {a, b, c}, 0});
+        mesh.addTriangle({{}, {a, c, d}, 0});
+    }
 }
 
-void addBox(TriangleMesh &mesh, double x0, double y0, double z0, double x1, double y1, double z1) {
+void addBox(TriangleMesh &mesh,
+            double x0,
+            double y0,
+            double z0,
+            double x1,
+            double y1,
+            double z1,
+            bool inverted = false) {
     const Vec3 a{x0, y0, z0}, b{x1, y0, z0}, c{x1, y1, z0}, d{x0, y1, z0};
     const Vec3 e{x0, y0, z1}, f{x1, y0, z1}, g{x1, y1, z1}, h{x0, y1, z1};
-    addFace(mesh, a, d, c, b);
-    addFace(mesh, e, f, g, h);
-    addFace(mesh, a, b, f, e);
-    addFace(mesh, b, c, g, f);
-    addFace(mesh, c, d, h, g);
-    addFace(mesh, d, a, e, h);
+    addFace(mesh, a, d, c, b, inverted);
+    addFace(mesh, e, f, g, h, inverted);
+    addFace(mesh, a, b, f, e, inverted);
+    addFace(mesh, b, c, g, f, inverted);
+    addFace(mesh, c, d, h, g, inverted);
+    addFace(mesh, d, a, e, h, inverted);
 }
 
 double area(const SlicePath &path) {
@@ -156,7 +168,7 @@ void testSliceCancellation() {
 void testNestedContours() {
     TriangleMesh mesh;
     addBox(mesh, 0, 0, 0, 10, 10, 1);
-    addBox(mesh, 3, 3, 0, 7, 7, 1);
+    addBox(mesh, 3, 3, 0, 7, 7, 1, true);
     addBox(mesh, 4, 4, 0, 6, 6, 1);
     const auto data = Slicer{{0.5, 1e-7}}.slice(mesh);
     require(data.layers.front().paths.size() == 3, "nested path count");
@@ -176,6 +188,18 @@ void testNestedContours() {
                 data.layers.front().paths[1].type == PathType::Internal &&
                 data.layers.front().paths[2].type == PathType::External,
             "contours ordered from parent to descendant");
+}
+
+void testNestedSolidShells() {
+    TriangleMesh mesh;
+    addBox(mesh, 0, 0, 0, 2, 2, 1);
+    addBox(mesh, 0.1, 0.1, 0, 1.9, 1.9, 1);
+    const auto layer = Slicer{{0.5, 1e-7}}.sliceAt(mesh, 0.5);
+    require(layer.paths.size() == 2, "nested solid shell path count");
+    for (const SlicePath &path : layer.paths) {
+        require(path.type == PathType::External && area(path) > 0.0,
+                "same-winding nested solid shell became a void");
+    }
 }
 
 void testToleranceIndexedConnection() {
@@ -1092,6 +1116,7 @@ int main() {
         testCubeSlices();
         testSliceCancellation();
         testNestedContours();
+        testNestedSolidShells();
         testToleranceIndexedConnection();
         testTolerancePreservesShortEdges();
         testSmallGapHealing();
