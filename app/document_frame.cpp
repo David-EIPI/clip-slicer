@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "document_frame.hpp"
+#include "help_topics.hpp"
 #include "embedded_assets.hpp"
 #include "gl_canvas.hpp"
 #include "main_frame.hpp"
@@ -191,6 +192,7 @@ void AddDocumentTabCloseButton(DocumentFrame &document, const wxString &title) {
 class SliceDialog final : public wxDialog {
   public:
     SliceDialog(wxWindow *parent) : wxDialog(parent, wxID_ANY, "Slice models") {
+        clip_slicer::help::Assign(this, clip_slicer::help::sliceDialog);
         auto *root = new wxBoxSizer(wxVERTICAL);
         target = new wxRadioBox(this,
                                 wxID_ANY,
@@ -208,6 +210,7 @@ class SliceDialog final : public wxDialog {
 class SectionDialog final : public wxDialog {
   public:
     explicit SectionDialog(wxWindow *parent) : wxDialog(parent, wxID_ANY, "Cross-section") {
+        clip_slicer::help::Assign(this, clip_slicer::help::sectionDialog);
         auto *root = new wxBoxSizer(wxVERTICAL);
         axis = new wxRadioBox(this,
                               wxID_ANY,
@@ -259,6 +262,7 @@ class SectionDialog final : public wxDialog {
 
 DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     : wxMDIChildFrame(parent, wxID_ANY, title, wxDefaultPosition, {1000, 700}) {
+    clip_slicer::help::Assign(this, clip_slicer::help::documentWindow);
     BuildMenus();
     auto *root = new wxBoxSizer(wxVERTICAL);
     toolbar_ = new wxToolBar(
@@ -338,13 +342,16 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                        toolSize),
                       "Move selected models into the positive octant");
     toolbar_->Realize();
+    clip_slicer::help::Assign(toolbar_, clip_slicer::help::documentToolbar);
     root->Add(toolbar_, 0, wxEXPAND);
     auto *split = new wxSplitterWindow(this);
     modelList_ =
         new wxCheckListBox(split, wxID_ANY, wxDefaultPosition, wxDefaultSize, {}, wxLB_EXTENDED);
+    clip_slicer::help::Assign(modelList_, clip_slicer::help::modelList);
     auto *viewArea = new wxPanel(split);
     auto *viewSizer = new wxBoxSizer(wxVERTICAL);
     canvas_ = new ModelCanvas(viewArea, *this);
+    clip_slicer::help::Assign(canvas_, clip_slicer::help::viewport);
     sectionControls_ = new wxPanel(viewArea);
     auto *sectionSizer = new wxBoxSizer(wxHORIZONTAL);
     sectionScroll_ = new wxScrollBar(
@@ -370,6 +377,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                       wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT,
                       FromDIP(6));
     sectionControls_->SetSizer(sectionSizer);
+    clip_slicer::help::Assign(sectionControls_, clip_slicer::help::sectionControls);
     viewSizer->Add(sectionControls_, 0, wxEXPAND | wxALL, FromDIP(4));
     viewSizer->Add(canvas_, 1, wxEXPAND);
     viewArea->SetSizer(viewSizer);
@@ -481,11 +489,20 @@ void DocumentFrame::BuildMenus() {
     bar->Append(file, "&File");
     bar->Append(models, "&Models");
     bar->Append(slice, "&Slice");
+    auto *help = new wxMenu;
+    help->Append(wxID_HELP, "&Topics");
+    bar->Append(help, "&Help");
     SetMenuBar(bar);
     Bind(
         wxEVT_MENU, [this](wxCommandEvent &) { Close(); }, wxID_CLOSE);
     Bind(
         wxEVT_MENU, [this](wxCommandEvent &) { GetMDIParent()->Close(); }, wxID_EXIT);
+    Bind(wxEVT_MENU,
+         [this](wxCommandEvent &) {
+             static_cast<MainFrame *>(GetMDIParent())
+                 ->ShowHelpTopic(clip_slicer::help::manualTop);
+         },
+         wxID_HELP);
 }
 void DocumentFrame::AddModel(std::shared_ptr<stl_slicer::SceneModel> model) {
     InvalidateUnsupportedAnalysis();
@@ -616,6 +633,7 @@ void DocumentFrame::OnOpen(wxCommandEvent &) {
                    {},
                    "3D model files (*.stl;*.cli)|*.stl;*.cli",
                    wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR);
+    clip_slicer::help::Assign(&d, clip_slicer::help::openIntoDocumentDialog);
     if (d.ShowModal() == wxID_OK)
         OpenPath(d.GetPath());
 }
@@ -1009,6 +1027,7 @@ void DocumentFrame::OnExport(wxCommandEvent &) {
                    "model.cli",
                    "CLI files (*.cli)|*.cli",
                    wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxFD_CHANGE_DIR);
+    clip_slicer::help::Assign(&d, clip_slicer::help::exportSlicesDialog);
     if (d.ShowModal() == wxID_OK)
         try {
             stl_slicer::CliWriter{}.write(combined, d.GetPath().ToStdString());
@@ -1042,6 +1061,7 @@ void DocumentFrame::OnExportStl(wxCommandEvent &) {
                         "model.stl",
                         "STL files (*.stl)|*.stl",
                         wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxFD_CHANGE_DIR);
+    clip_slicer::help::Assign(&dialog, clip_slicer::help::exportStlDialog);
     if (dialog.ShowModal() == wxID_OK) {
         try {
             stl_slicer::BinaryStlWriter{}.write(combined, dialog.GetPath().ToStdString());

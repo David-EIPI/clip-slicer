@@ -6,7 +6,7 @@
 
 Name:           clip-slicer
 Version:        0.1.0
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        STL slicing and support-generation applications
 
 License:        PolyForm-Noncommercial-1.0.0 AND CC0-1.0
@@ -18,6 +18,7 @@ BuildRequires:  gcc-c++
 BuildRequires:  ninja-build
 BuildRequires:  polyclipping2-devel >= 2.0.1
 BuildRequires:  wxGTK-devel >= 3.2
+BuildRequires:  wxGTK-webview >= 3.2
 BuildRequires:  gtk3-devel
 BuildRequires:  libepoxy-devel
 BuildRequires:  mesa-libGLU-devel
@@ -73,6 +74,9 @@ sed -i '/<!-- RPM-EXCLUDE-BEGIN:/,/<!-- RPM-EXCLUDE-END -->/d' \
 %{_libdir}/libstl_slicer.so.%{version}
 
 %changelog
+* Tue Jul 21 2026 CLIP Slicer contributors <noreply@example.com> - 0.1.0-3
+- Add embedded context-sensitive HTML help through wxWebView.
+
 * Sun Jul 19 2026 CLIP Slicer contributors <noreply@example.com> - 0.1.0-2
 - Declare source, documentation, artwork, and screenshot licenses.
 - Omit repository screenshots and their references from the binary RPM.

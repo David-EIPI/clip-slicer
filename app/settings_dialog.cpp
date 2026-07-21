@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "settings_dialog.hpp"
+#include "help_topics.hpp"
 #include <algorithm>
 #include <wx/display.h>
 #include <wx/notebook.h>
@@ -13,6 +14,7 @@
 
 SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     : wxDialog(parent, wxID_ANY, "Settings") {
+    clip_slicer::help::Assign(this, clip_slicer::help::settingsDialog);
     const auto makePage = [](wxNotebook *notebook) {
         auto *page = new wxScrolledWindow(notebook, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                                           wxVSCROLL | wxTAB_TRAVERSAL);
@@ -85,6 +87,7 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     slicing->SetSizer(slicingSizer);
     slicing->FitInside();
     notebook->AddPage(slicing, "Slicing", true);
+    clip_slicer::help::Assign(slicing, clip_slicer::help::settingsSlicing);
 
     auto *analysis = makePage(notebook);
     auto *analysisSizer = new wxFlexGridSizer(2, 8, 10);
@@ -159,6 +162,7 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     analysis->SetSizer(analysisSizer);
     analysis->FitInside();
     notebook->AddPage(analysis, "Analysis");
+    clip_slicer::help::Assign(analysis, clip_slicer::help::settingsAnalysis);
 
     auto *supports = makePage(notebook);
     auto *supportsSizer = new wxBoxSizer(wxVERTICAL);
@@ -290,6 +294,7 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     supports->SetSizer(supportsSizer);
     supports->FitInside();
     notebook->AddPage(supports, "Generator");
+    clip_slicer::help::Assign(supports, clip_slicer::help::settingsGenerator);
 
     auto *interfacePage = makePage(notebook);
     auto *interfaceSizer = new wxFlexGridSizer(2, 8, 10);
@@ -314,6 +319,7 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
     interfacePage->SetSizer(interfaceSizer);
     interfacePage->FitInside();
     notebook->AddPage(interfacePage, "Interface");
+    clip_slicer::help::Assign(interfacePage, clip_slicer::help::settingsInterface);
 
     root->Add(notebook, 1, wxEXPAND | wxALL, 12);
     root->Add(

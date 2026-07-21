@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "model_transform_dialog.hpp"
+#include "help_topics.hpp"
 #include <wx/radiobox.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -30,6 +31,7 @@ AddTranslationInput(wxWindow *parent, wxFlexGridSizer *grid, const wxString &lab
 
 TransformDialog::TransformDialog(wxWindow *parent)
     : wxDialog(parent, wxID_ANY, "Transform selected models") {
+    clip_slicer::help::Assign(this, clip_slicer::help::transformDialog);
     auto *root = new wxBoxSizer(wxVERTICAL);
 
     auto *rotation = new wxStaticBoxSizer(wxVERTICAL, this, "Rotation");

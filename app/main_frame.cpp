@@ -3,6 +3,8 @@
 
 #include "main_frame.hpp"
 #include "document_frame.hpp"
+#include "help_topics.hpp"
+#include "help_window.hpp"
 #include "settings_dialog.hpp"
 #include <wx/filedlg.h>
 #include <wx/filename.h>
@@ -23,7 +25,11 @@ MainFrame::MainFrame()
     file->Append(wxID_EXIT, "E&xit");
     auto *bar = new wxMenuBar;
     bar->Append(file, "&File");
+    auto *help = new wxMenu;
+    help->Append(wxID_HELP, "&Topics");
+    bar->Append(help, "&Help");
     SetMenuBar(bar);
+    clip_slicer::help::Assign(this, clip_slicer::help::manualTop);
     wxStatusBar *statusBar = CreateStatusBar(3);
     int buildWidth = 210;
     int sliceWidth = 90;
@@ -39,6 +45,7 @@ MainFrame::MainFrame()
     ClearDocumentStatus();
     Bind(wxEVT_MENU, &MainFrame::OnOpen, this, IdOpen);
     Bind(wxEVT_MENU, &MainFrame::OnSettings, this, IdSettings);
+    Bind(wxEVT_MENU, &MainFrame::OnHelpTopics, this, wxID_HELP);
     Bind(wxEVT_MENU, &MainFrame::OnExit, this, wxID_EXIT);
 }
 void MainFrame::OnSettings(wxCommandEvent &) {
@@ -83,6 +90,14 @@ void MainFrame::ShowSettingsDialog() {
     if (auto *document = dynamic_cast<DocumentFrame *>(GetActiveChild()))
         document->SettingsChanged();
 }
+void MainFrame::OnHelpTopics(wxCommandEvent &) {
+    ShowHelpTopic(clip_slicer::help::manualTop);
+}
+void MainFrame::ShowHelpTopic(const wxString &topic) {
+    if (!helpWindow_)
+        helpWindow_ = new HelpWindow(this);
+    helpWindow_->ShowTopic(topic);
+}
 void MainFrame::OnOpen(wxCommandEvent &) {
     OpenDialog();
 }
@@ -93,6 +108,7 @@ void MainFrame::OpenDialog() {
                         {},
                         "3D model files (*.stl;*.cli)|*.stl;*.cli|STL files|*.stl|CLI files|*.cli",
                         wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR);
+    clip_slicer::help::Assign(&dialog, clip_slicer::help::openModelDialog);
     if (dialog.ShowModal() == wxID_OK)
         OpenFile(dialog.GetPath());
 }

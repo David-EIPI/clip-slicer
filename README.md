@@ -42,7 +42,8 @@ from Thingiverse (thing 14565).
 ### Linux
 
 The command-line target depends only on a C++17 compiler and CMake. The GUI target additionally
-requires development packages for wxWidgets 3.2, OpenGL, GLU, and libepoxy.
+requires development packages for wxWidgets 3.2 (including wxWebView), OpenGL,
+GLU, and libepoxy. On Linux, wxWebView uses the system WebKitGTK backend.
 
 Build the command-line slicer only:
 
@@ -76,9 +77,10 @@ Run the binaries:
 ./build-gui/stl-slicer
 ./build-gui/clip-slicer
 ./build-gui/clip-slicer model.stl
+./build-gui/clip-slicer --help-topics
 ```
 
-If wxWidgets, OpenGL, GLU, or libepoxy development packages are not installed, keep
+If wxWidgets with wxWebView, OpenGL, GLU, or libepoxy development packages are not installed, keep
 `-DSTL_SLICER_BUILD_GUI=OFF`.
 
 If the host uses `ccache` with an unavailable cache directory, prefix these commands with
@@ -91,7 +93,8 @@ its build dependencies with:
 
 ```sh
 sudo dnf install rpm-build rpmdevtools cmake gcc-c++ ninja-build \
-  polyclipping2-devel wxGTK-devel gtk3-devel libepoxy-devel mesa-libGLU-devel
+  polyclipping2-devel wxGTK-devel wxGTK-webview gtk3-devel \
+  libepoxy-devel mesa-libGLU-devel
 ```
 
 To build from a versioned checkout, create the source archive expected by the
@@ -150,8 +153,15 @@ make -C docs html
 
 The generated manuals are stored at `docs/build/main.pdf` and
 `docs/build/main.html`. The HTML target requires Pandoc and produces one
-self-contained file with an embedded stylesheet and offline MathML, making it
-suitable for later embedding in the application executable. Pandoc preserves
+self-contained file with an embedded stylesheet and offline MathML. The GUI
+loads a generated copy of this file directly from its executable. After
+changing the manual, refresh that embedded copy with:
+
+```sh
+make -C docs embedded
+```
+
+Pandoc preserves
 the TikZ figure captions but not the drawings; the diagrams currently remain
 available in the PDF manual only.
 

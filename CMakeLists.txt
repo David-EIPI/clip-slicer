@@ -131,7 +131,9 @@ if(STL_SLICER_BUILD_GUI)
             set(wxUSE_HELP OFF CACHE BOOL "" FORCE)
             set(wxUSE_MS_HTML_HELP OFF CACHE BOOL "" FORCE)
             set(wxUSE_WXHTML_HELP OFF CACHE BOOL "" FORCE)
-            set(wxUSE_WEBVIEW OFF CACHE BOOL "" FORCE)
+            set(wxUSE_WEBVIEW ON CACHE BOOL "" FORCE)
+            set(wxUSE_WEBVIEW_EDGE OFF CACHE BOOL "" FORCE)
+            set(wxUSE_WEBVIEW_IE ON CACHE BOOL "" FORCE)
             set(wxUSE_MEDIACTRL OFF CACHE BOOL "" FORCE)
             set(wxUSE_AUI OFF CACHE BOOL "" FORCE)
             set(wxUSE_RIBBON OFF CACHE BOOL "" FORCE)
@@ -170,7 +172,7 @@ if(STL_SLICER_BUILD_GUI)
                     "${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_gl.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_core.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxbase32${STL_SLICER_WINDOWS_WX_SUFFIX}.lib")
         endif()
     else()
-        find_package(wxWidgets 3.2 REQUIRED COMPONENTS core base gl)
+        find_package(wxWidgets 3.2 REQUIRED COMPONENTS core base gl webview)
         include(${wxWidgets_USE_FILE})
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
@@ -186,6 +188,8 @@ if(STL_SLICER_BUILD_GUI)
         app/settings_dialog.cpp
         app/model_transform_dialog.cpp
         app/embedded_assets.cpp
+        app/embedded_manual.cpp
+        app/help_window.cpp
         app/gl_api.cpp
         app/gl_canvas.cpp
         app/slice_visualization.cpp)
@@ -196,6 +200,7 @@ if(STL_SLICER_BUILD_GUI)
             target_link_libraries(clip-slicer PRIVATE
                 stl_slicer_lib
                 wx::gl
+                wx::webview
                 wx::core
                 wx::base)
         else()

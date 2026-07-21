@@ -2,11 +2,19 @@
 % SPDX-License-Identifier: CC0-1.0
 
 \chapter{Interface Manual}
+\label{interface-manual}
+
+\section{Document Window}
+\label{document-window}
 
 Each document contains a model list, a toolbar, and an OpenGL viewing area.
-The model list controls selection and visibility. Transformations made in the
-view affect only selected models when the Shift modifier is held; otherwise,
-the same basic gestures manipulate the camera.
+The document window is the normal workspace for one or more loaded models.
+Use the \hyperref[model-list]{model list} to select models and control their
+visibility, the \hyperref[document-toolbar]{toolbar} or
+\hyperref[document-menus]{menus} to start operations, and the viewport to
+inspect or transform geometry. Detailed gesture descriptions are collected
+under \hyperref[mouse-actions]{Mouse Actions}; keyboard access is summarized
+under \hyperref[keyboard-shortcuts]{Keyboard Shortcuts}.
 On Linux, each document tab has a close button beside its title. On Windows,
 documents retain the native MDI window controls supplied by the operating
 system.
@@ -16,6 +24,29 @@ for use by subsequent dialogs. The model viewport requires OpenGL 3.2 and GLSL
 1.50. If renderer initialization fails, the application reports the detected
 OpenGL environment and a sample of missing entry points to assist driver
 diagnosis.
+
+\subsection{Model List}
+\label{model-list}
+
+The model list controls selection and visibility. Its check boxes show or hide
+model geometry without deleting it. Commands and transformations apply to all
+selected entries, and a document can contain both source surface models and
+generated slice models.
+
+\section{Menu Commands}
+\label{document-menus}
+
+The \emph{File} menu opens a model in a new document or in the active document,
+exports selected slices as CLI, exports selected surface models as STL, opens
+Settings, and closes the document or application.
+\hypertarget{open-model-dialog}{}The \emph{Open} command uses the Open Model
+dialog and creates a new document.
+\hypertarget{open-into-document-dialog}{}The \emph{Open into document} dialog
+adds the chosen STL or CLI file to the active document.
+\hypertarget{export-slices-dialog}{}The \emph{Export Slices} dialog writes the
+selected sliced models to a CLI file.
+\hypertarget{export-stl-dialog}{}The \emph{Export STL} dialog writes selected
+surface models to a binary STL file.
 
 The \emph{Models} menu contains commands that act on every selected model.
 \emph{Delete selected} removes all selected models from the current document.
@@ -30,7 +61,29 @@ all selected models while translating their combined bounding box so that its
 minimum X, Y, and Z coordinates are all zero. The selected group therefore
 fits tightly in the positive octant and rests on the build plane.
 
+\hypertarget{transform-dialog}{}The \emph{Transform} dialog provides numeric
+rotation axis and angle, translation, and uniform scale controls.
+
+The \emph{Slice} menu contains commands for regular slicing, interactive
+cross-sections, unsupported-area detection, orientation optimization, and
+support generation. \hypertarget{slice-dialog}{}The \emph{Slice selected}
+dialog chooses whether generated slices remain in the same document or are
+placed in a new document. The \emph{Help} menu's \emph{Topics} command opens
+the top of this manual.
+
+\section{Toolbar Buttons}
+\label{document-toolbar}
+
+The toolbar provides the most frequently used menu commands. \emph{Export},
+\emph{Slice}, and \emph{Section} write or inspect layers. \emph{Hide},
+\emph{Show}, and \emph{Delete} affect selected list entries. \emph{Detect},
+\emph{Optimize}, and \emph{Generate} run the analysis and support workflows;
+\emph{Stop} cancels a running background workflow. \emph{Reset},
+\emph{Transform}, and \emph{Origin} change selected-model transformations.
+Buttons which cannot operate on the current selection are disabled.
+
 \section{Viewport Guides}
+\label{viewport}
 
 \subsection{Build Platform}
 
@@ -63,6 +116,7 @@ direction, but its screen position and size remain fixed so that it is always
 legible.
 
 \subsection{Cross-section}
+\label{section-dialog}
 
 The \emph{Section} toolbar button or \emph{Slice > Section} menu command opens
 a dialog for choosing an X-, Y-, or Z-normal section plane and optionally
@@ -80,6 +134,9 @@ and control the slice index. Moving the thumb right increases the index, and
 the projected cross-section updates continuously while the thumb is dragged.
 With the scrollbar focused, the Up and Down keys move by one slice
 and Page Up and Page Down move by ten slices.
+
+\hypertarget{section-controls}{}These two controls constitute the Section
+position controls and share the exact slice-index limits used by the plane.
 
 Moving the plane recalculates the intersection contours for selected models.
 A filled, double-sided copy of those contours is drawn on a dedicated
@@ -155,10 +212,14 @@ treated as source STL geometry. Intersecting input meshes are written without
 performing a geometric union.
 
 \section{Settings}
+\label{settings-dialog}
 
 The \emph{File > Settings} command opens the application settings dialog.
 Settings are grouped into tabs so that additional categories can be added as
 the application grows.
+
+\subsection{Slicing Tab}
+\label{settings-slicing}
 
 The \emph{Slicing} tab defines the default layer thickness and absolute
 first-layer offset above the build platform. These values define the shared
@@ -171,13 +232,12 @@ segment connection, endpoints separated by no more than this distance can be
 joined to close a contour. The default is 0.01 model units. The setting is
 used by normal slicing, interactive cross-sections, and unsupported-area analysis.
 
-The \emph{Interface} tab contains the \emph{Cross-section display distance},
-which controls the gap between the selected-model bounding box and the
-dedicated cross-section display plane.
-
 The segmentation tolerance controls endpoint matching during initial slice
 segment connection. Its default is 0.01 model units. It is shared by the
 same three slicing workflows.
+
+\subsection{Analysis Tab}
+\label{settings-analysis}
 
 The \emph{Analysis} tab controls unsupported-area detection. The critical
 angle defaults to 30 degrees. The overhang coefficient defaults to 1 and
@@ -197,6 +257,9 @@ number of optimization attempts evaluated concurrently and the support
 generation worker pool. It defaults to 4.
 Convergence tolerance is the minimum unsupported-area reduction accepted as
 an improving step and defaults to 0.1 square model units.
+
+\subsection{Generator Tab}
+\label{settings-generator}
 
 The \emph{Generator} tab contains support-generation parameters. Support spacing
 sets the nearest-neighbor distance of the hexagonal contact-point lattice and
@@ -226,10 +289,18 @@ The Generator settings control contact placement, tip construction, collision
 clearance, route resolution, and surface tessellation. Their use throughout
 the support pipeline is described in Chapter~\ref{chap:generate}.
 
+\subsection{Interface Tab}
+\label{settings-interface}
+
+The \emph{Interface} tab contains the \emph{Cross-section display distance},
+which controls the gap between the selected-model bounding box and the
+dedicated cross-section display plane.
+
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.
 
 \section{Mouse Actions}
+\label{mouse-actions}
 
 \begin{table}[htbp]
     \centering
@@ -268,6 +339,7 @@ operating system's user configuration directory.
 \end{table}
 
 \section{Keyboard Shortcuts}
+\label{keyboard-shortcuts}
 
 \begin{table}[htbp]
     \centering

@@ -12,7 +12,9 @@ class ClipSlicerApp final : public wxApp {
         wxImage::AddHandler(new wxPNGHandler);
         auto *frame = new MainFrame();
         frame->Show();
-        if (argc > 1)
+        if (argc > 1 && argv[1] == "--help-topics")
+            frame->ShowHelpTopic("manual-top");
+        else if (argc > 1)
             frame->OpenFile(argv[1]);
         return true;
     }

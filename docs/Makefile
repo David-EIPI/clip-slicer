@@ -4,13 +4,15 @@
 SOURCES := main.tex intro.tex interface_manual.tex detect_algorithm.tex \
 	optimize_algorithm.tex generate_algorithm.tex
 
-.PHONY: all pdf html
+.PHONY: all pdf html embedded
 
 all: pdf
 
 pdf: build/main.pdf
 
 html: build/main.html
+
+embedded: ../app/embedded_manual.inc
 
 build/main.pdf: $(SOURCES)
 	mkdir -p build
@@ -28,3 +30,6 @@ build/main.html: $(SOURCES) help.css
 		--embed-resources \
 		--metadata=lang:en-US \
 		--output=$@
+
+../app/embedded_manual.inc: build/main.html embed_html.cmake
+	cmake -DINPUT=$(CURDIR)/$< -DOUTPUT=$(abspath $@) -P embed_html.cmake

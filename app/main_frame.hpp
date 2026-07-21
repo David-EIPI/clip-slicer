@@ -11,6 +11,7 @@ class MainFrame final : public wxMDIParentFrame {
     void OpenDialog();
     void OpenFile(const wxString &path);
     void ShowSettingsDialog();
+    void ShowHelpTopic(const wxString &topic);
     const AppSettings &Settings() const {
         return settings_;
     }
@@ -22,7 +23,9 @@ class MainFrame final : public wxMDIParentFrame {
     void ClearDocumentStatus();
     void OnOpen(wxCommandEvent &);
     void OnSettings(wxCommandEvent &);
+    void OnHelpTopics(wxCommandEvent &);
     void OnExit(wxCommandEvent &);
 
     AppSettings settings_;
+    class HelpWindow *helpWindow_ = nullptr;
 };
