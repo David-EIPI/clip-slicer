@@ -200,9 +200,12 @@ class SliceDialog final : public wxDialog {
                                 wxDefaultPosition,
                                 wxDefaultSize,
                                 {"Same document", "New document"});
+        clip_slicer::help::Assign(target, clip_slicer::help::sliceOutput);
         root->Add(target, 0, wxEXPAND | wxLEFT | wxRIGHT, 12);
-        root->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 12);
+        root->Add(
+            CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxHELP), 0, wxEXPAND | wxALL, 12);
         SetSizerAndFit(root);
+        clip_slicer::help::Enable(this);
     }
     wxRadioBox *target;
 };
@@ -220,6 +223,7 @@ class SectionDialog final : public wxDialog {
                               {"X axis", "Y axis", "Z axis"},
                               1,
                               wxRA_SPECIFY_ROWS);
+        clip_slicer::help::Assign(axis, clip_slicer::help::sectionAxis);
         axis->SetSelection(2);
         root->Add(axis, 0, wxEXPAND | wxLEFT | wxRIGHT, 12);
         clipping = new wxRadioBox(this,
@@ -230,13 +234,17 @@ class SectionDialog final : public wxDialog {
                                   {"No", "Above", "Below"},
                                   1,
                                   wxRA_SPECIFY_ROWS);
+        clip_slicer::help::Assign(clipping, clip_slicer::help::sectionClipping);
         clipping->SetSelection(0);
         root->Add(clipping, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
         autoRotate = new wxCheckBox(this, wxID_ANY, "Auto rotate for best view");
+        clip_slicer::help::Assign(autoRotate, clip_slicer::help::sectionAutoRotate);
         autoRotate->SetValue(true);
         root->Add(autoRotate, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
-        root->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 12);
+        root->Add(
+            CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxHELP), 0, wxEXPAND | wxALL, 12);
         SetSizerAndFit(root);
+        clip_slicer::help::Enable(this);
     }
 
     SectionAxis SelectedAxis() const {
@@ -263,6 +271,7 @@ class SectionDialog final : public wxDialog {
 DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     : wxMDIChildFrame(parent, wxID_ANY, title, wxDefaultPosition, {1000, 700}) {
     clip_slicer::help::Assign(this, clip_slicer::help::documentWindow);
+    clip_slicer::help::Enable(this);
     BuildMenus();
     auto *root = new wxBoxSizer(wxVERTICAL);
     toolbar_ = new wxToolBar(
@@ -634,6 +643,7 @@ void DocumentFrame::OnOpen(wxCommandEvent &) {
                    "3D model files (*.stl;*.cli)|*.stl;*.cli",
                    wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR);
     clip_slicer::help::Assign(&d, clip_slicer::help::openIntoDocumentDialog);
+    clip_slicer::help::Enable(&d);
     if (d.ShowModal() == wxID_OK)
         OpenPath(d.GetPath());
 }
@@ -1028,6 +1038,7 @@ void DocumentFrame::OnExport(wxCommandEvent &) {
                    "CLI files (*.cli)|*.cli",
                    wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxFD_CHANGE_DIR);
     clip_slicer::help::Assign(&d, clip_slicer::help::exportSlicesDialog);
+    clip_slicer::help::Enable(&d);
     if (d.ShowModal() == wxID_OK)
         try {
             stl_slicer::CliWriter{}.write(combined, d.GetPath().ToStdString());
@@ -1062,6 +1073,7 @@ void DocumentFrame::OnExportStl(wxCommandEvent &) {
                         "STL files (*.stl)|*.stl",
                         wxFD_SAVE | wxFD_OVERWRITE_PROMPT | wxFD_CHANGE_DIR);
     clip_slicer::help::Assign(&dialog, clip_slicer::help::exportStlDialog);
+    clip_slicer::help::Enable(&dialog);
     if (dialog.ShowModal() == wxID_OK) {
         try {
             stl_slicer::BinaryStlWriter{}.write(combined, dialog.GetPath().ToStdString());

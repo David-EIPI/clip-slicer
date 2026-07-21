@@ -30,6 +30,7 @@ MainFrame::MainFrame()
     bar->Append(help, "&Help");
     SetMenuBar(bar);
     clip_slicer::help::Assign(this, clip_slicer::help::manualTop);
+    clip_slicer::help::Enable(this);
     wxStatusBar *statusBar = CreateStatusBar(3);
     int buildWidth = 210;
     int sliceWidth = 90;
@@ -109,6 +110,7 @@ void MainFrame::OpenDialog() {
                         "3D model files (*.stl;*.cli)|*.stl;*.cli|STL files|*.stl|CLI files|*.cli",
                         wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR);
     clip_slicer::help::Assign(&dialog, clip_slicer::help::openModelDialog);
+    clip_slicer::help::Enable(&dialog);
     if (dialog.ShowModal() == wxID_OK)
         OpenFile(dialog.GetPath());
 }

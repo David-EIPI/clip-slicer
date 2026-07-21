@@ -323,8 +323,12 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
 
     root->Add(notebook, 1, wxEXPAND | wxALL, 12);
     root->Add(
-        CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
+        CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxHELP),
+        0,
+        wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,
+        12);
     SetSizerAndFit(root);
+    clip_slicer::help::Enable(this);
 
     int displayIndex = wxDisplay::GetFromWindow(parent);
     if (displayIndex == wxNOT_FOUND)

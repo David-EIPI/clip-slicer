@@ -97,8 +97,12 @@ TransformDialog::TransformDialog(wxWindow *parent)
     root->Add(scaling, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
 
     root->Add(
-        CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
+        CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxHELP),
+        0,
+        wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,
+        12);
     SetSizerAndFit(root);
+    clip_slicer::help::Enable(this);
     SetMinSize({360, GetSize().y});
 }
 

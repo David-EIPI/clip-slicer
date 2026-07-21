@@ -5,10 +5,18 @@
 #include <wx/app.h>
 #include <wx/image.h>
 #include <wx/imagpng.h>
+#include <wx/utils.h>
 
 class ClipSlicerApp final : public wxApp {
   public:
     bool OnInit() override {
+#ifdef __WXGTK__
+        // WebKitGTK's DMA-BUF renderer can fail on otherwise functional GBM
+        // configurations and leave wxWebView blank. Help content is static, so
+        // use its robust software-backed renderer without affecting OpenGL.
+        if (!wxGetEnv("WEBKIT_DISABLE_DMABUF_RENDERER", nullptr))
+            wxSetEnv("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+#endif
         wxImage::AddHandler(new wxPNGHandler);
         auto *frame = new MainFrame();
         frame->Show();

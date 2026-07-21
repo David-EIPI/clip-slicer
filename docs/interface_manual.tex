@@ -66,10 +66,24 @@ rotation axis and angle, translation, and uniform scale controls.
 
 The \emph{Slice} menu contains commands for regular slicing, interactive
 cross-sections, unsupported-area detection, orientation optimization, and
-support generation. \hypertarget{slice-dialog}{}The \emph{Slice selected}
-dialog chooses whether generated slices remain in the same document or are
-placed in a new document. The \emph{Help} menu's \emph{Topics} command opens
-the top of this manual.
+support generation. The \emph{Help} menu's \emph{Topics} command opens the top
+of this manual.
+
+\subsection{Slice Dialog}
+\label{slice-dialog}
+
+The \emph{Slice selected} command opens this dialog before converting every
+selected surface model into layer contours. Slicing uses the layer thickness,
+first-layer offset, segmentation tolerance, and contour-healing threshold from
+the Slicing tab of Settings.
+
+\subsubsection{Output}
+\label{slice-output}
+
+\emph{Same document} adds the generated slice models beside their source
+models in the active document. \emph{New document} creates another document
+window and places the generated slice models there. Neither choice deletes or
+modifies the source surface models.
 
 \section{Toolbar Buttons}
 \label{document-toolbar}
@@ -119,12 +133,39 @@ legible.
 \label{section-dialog}
 
 The \emph{Section} toolbar button or \emph{Slice > Section} menu command opens
-a dialog for choosing an X-, Y-, or Z-normal section plane and optionally
-aligning the camera for the best view. Its Clipping choice can remain \emph{No},
-or hide selected model geometry \emph{Above} or \emph{Below} the moving plane.
-The translucent section plane spans the
-shared bounds of the selected models and can be moved along its normal with
-Alt+wheel. Plane positions follow the configured slicing sequence: the first
+a dialog which configures the interactive section before it is displayed.
+
+\subsubsection{Section plane normal}
+\label{section-axis}
+
+The X, Y, and Z choices select the global axis perpendicular to the moving
+section plane. The translucent plane spans the shared bounds of all selected
+models in the other two dimensions. Z is selected by default because it
+previews the horizontal layers produced by normal model slicing.
+
+\subsubsection{Clipping}
+\label{section-clipping}
+
+\emph{No} leaves all selected model geometry visible. \emph{Above} hides the
+part whose coordinate on the selected axis is greater than the section-plane
+coordinate. \emph{Below} hides the part with the lower coordinate. Clipping
+changes only viewport rendering; it does not modify models or exported data.
+
+\subsubsection{Auto rotate for best view}
+\label{section-auto-rotate}
+
+When selected, this option points the camera squarely at the projection plane
+from the side opposite the models and zooms so the plane fits without clipping.
+For a Z-normal section, global X is horizontal and global Y is vertical. For
+X- and Y-normal sections, Z occupies one screen direction and the remaining
+horizontal model axis occupies the other. Clearing the option preserves the
+current camera orientation and scale.
+
+\subsubsection{Section position controls}
+\label{section-controls}
+
+The section plane can be moved along its normal with Alt+wheel. Plane positions
+follow the configured slicing sequence: the first
 position for the Z axis is aligned to the global build-layer grid defined by
 the first-layer offset and layer thickness. X- and Y-axis sections start at
 the selected-bounds minimum plus the first-layer offset. Each subsequent
@@ -134,9 +175,8 @@ and control the slice index. Moving the thumb right increases the index, and
 the projected cross-section updates continuously while the thumb is dragged.
 With the scrollbar focused, the Up and Down keys move by one slice
 and Page Up and Page Down move by ten slices.
-
-\hypertarget{section-controls}{}These two controls constitute the Section
-position controls and share the exact slice-index limits used by the plane.
+The scrollbar and spin control share the exact slice-index limits used by the
+plane.
 
 Moving the plane recalculates the intersection contours for selected models.
 A filled, double-sided copy of those contours is drawn on a dedicated
@@ -221,27 +261,46 @@ the application grows.
 \subsection{Slicing Tab}
 \label{settings-slicing}
 
-The \emph{Slicing} tab defines the default layer thickness and absolute
-first-layer offset above the build platform. These values define the shared
-layer grid used by model slicing, unsupported-area analysis,
-orientation optimization, and interactive cross-sections. They default to 0.1 and
-0.05 model units, respectively.
+The Slicing tab defines the common contour-generation rules used by ordinary
+slicing, unsupported-area detection, orientation optimization, support
+generation, and interactive sections.
 
-The tab also contains the contour healing threshold. After initial
+\paragraph{Layer thickness.}
+This is the distance between consecutive slice planes and defaults to 0.1 model
+units. A smaller value produces more layers and captures finer vertical detail,
+but increases slicing and analysis time.
+
+\paragraph{First-layer offset.}
+This is the absolute height of the first Z slice above the global build plane
+and defaults to 0.05 model units. Together with layer thickness it defines the
+Z sequence \(Z_0 + n dZ\). X- and Y-normal interactive sections use the same
+offset relative to the minimum selected-model coordinate on their chosen axis.
+
+\paragraph{Contour healing threshold.}
+After initial
 segment connection, endpoints separated by no more than this distance can be
 joined to close a contour. The default is 0.01 model units. The setting is
 used by normal slicing, interactive cross-sections, and unsupported-area analysis.
 
+\paragraph{Segmentation tolerance.}
 The segmentation tolerance controls endpoint matching during initial slice
 segment connection. Its default is 0.01 model units. It is shared by the
-same three slicing workflows.
+same slicing workflows. It should remain small relative to real model features;
+an excessive value can merge endpoints which should remain separate.
 
 \subsection{Analysis Tab}
 \label{settings-analysis}
 
-The \emph{Analysis} tab controls unsupported-area detection. The critical
-angle defaults to 30 degrees. The overhang coefficient defaults to 1 and
-scales the direct layer-to-layer allowance. For a layer separation \(dZ\),
+The Analysis tab controls unsupported-area detection and the randomized
+orientation search which repeatedly invokes that detection.
+
+\paragraph{Critical angle.}
+This is the smallest supported surface angle above the build plane and defaults
+to 30 degrees. Increasing it classifies more shallow surfaces as unsupported.
+
+\paragraph{Overhang coefficient.}
+This value defaults to 1 and scales the direct layer-to-layer allowance. For a
+layer separation \(dZ\),
 the support search radius is
 \(dZ (c + 1 / \tan(\alpha))\), where \(c\) is the overhang coefficient and
 \(\alpha\) is the critical angle. Increasing the coefficient permits more
@@ -251,36 +310,61 @@ When unsupported-area detection takes longer than one second, the status bar
 reports the completed slice and total slice count. The report is updated at
 most once per second to avoid slowing the analysis with GUI traffic.
 
-The optimization-attempt setting controls the number of local searches per
-model and defaults to 10. The worker-thread setting controls both the maximum
-number of optimization attempts evaluated concurrently and the support
-generation worker pool. It defaults to 4.
-Convergence tolerance is the minimum unsupported-area reduction accepted as
-an improving step and defaults to 0.1 square model units.
+\paragraph{Optimization attempts.}
+This is the number of independent randomized local searches performed for each
+selected model and defaults to 10. More attempts improve coverage of the
+orientation space at the cost of additional work.
+
+\paragraph{Worker threads.}
+This limits optimization attempts evaluated concurrently and also sizes the
+support-generation worker pool. It defaults to 4. Values above the number of
+available processor cores usually provide little benefit.
+
+\paragraph{Convergence tolerance.}
+This is the minimum unsupported-area reduction accepted as an improving
+optimization step and defaults to 0.1 square model units.
 
 \subsection{Generator Tab}
 \label{settings-generator}
 
-The \emph{Generator} tab contains support-generation parameters. Support spacing
-sets the nearest-neighbor distance of the hexagonal contact-point lattice and
-defaults to 2.0 model units. Boundary contacts use the same value as their
+The Generator tab controls contact sampling and the dimensions and routing of
+generated support geometry.
+
+\paragraph{Support spacing.}
+This sets the nearest-neighbor distance of the hexagonal contact-point lattice
+and defaults to 2.0 model units. Boundary contacts use the same value as their
 maximum spacing and search radius.
 
+\paragraph{Circumference points.}
+This controls the polygonal resolution shared by circular tip, pillar, and base
+surfaces and defaults to 12. Higher values make those surfaces smoother while
+increasing generated triangle counts.
+
+\paragraph{Contact tip dimensions.}
 The Contact tip group defines the truncated cones placed at detected contact
 points. Top radius defaults to 0.25, bottom radius to 0.75, and height to 2.0
-model units. The Generator tab's circumference-points setting controls the
-polygonal resolution shared by circular tip and pillar surfaces and defaults
-to 12.
+model units.
 
-The External pillar group controls supports which extend from the build
-platform to contact tips. Lattice cell size controls the spatial resolution of
-the route search and defaults to 0.5 model units. Minimum support angle is the
-smallest permitted angle between a pillar centerline segment and the build
-platform and defaults to 30 degrees. The cylindrical platform base defaults to
-a height of 0.5 and radius of 2.0 model units. The tapered pillar wire defaults
-to a bottom radius of 0.75 and a top radius of 0.5 model units. Model isolation
-adds clearance between every external support and the model surface and
+\paragraph{Lattice cell size.}
+This controls the spatial resolution of the external-support route search and
+defaults to 0.5 model units. Smaller cells permit finer routes but require more
+memory and search time.
+
+\paragraph{Model isolation.}
+This adds clearance between every external support and the model surface and
 defaults to 1.0 model unit.
+
+\paragraph{Minimum support angle.}
+This is the smallest permitted angle between an external pillar centerline
+segment and the build platform and defaults to 30 degrees.
+
+\paragraph{Base dimensions.}
+The cylindrical platform base defaults to a height of 0.5 and radius of 2.0
+model units.
+
+\paragraph{Pillar radii.}
+The tapered pillar wire defaults to a bottom radius of 0.75 and a top radius of
+0.5 model units.
 External pillar bases use the global Z=0 build platform. Models intended for
 support generation should therefore be placed in the positive Z half-space;
 the \emph{Move to Origin} command performs this placement when appropriate.
@@ -292,9 +376,14 @@ the support pipeline is described in Chapter~\ref{chap:generate}.
 \subsection{Interface Tab}
 \label{settings-interface}
 
-The \emph{Interface} tab contains the \emph{Cross-section display distance},
-which controls the gap between the selected-model bounding box and the
-dedicated cross-section display plane.
+The Interface tab contains display behavior which does not alter generated
+geometry.
+
+\paragraph{Cross-section display distance.}
+This controls the gap between the selected-model bounding box and the dedicated
+cross-section projection plane. Increasing it separates the projection more
+clearly from large models; decreasing it keeps both model and projection closer
+together when auto-rotation is disabled.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.
