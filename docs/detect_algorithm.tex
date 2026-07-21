@@ -1,0 +1,70 @@
+% SPDX-FileCopyrightText: 2026 David Shirvanyants
+% SPDX-License-Identifier: CC0-1.0
+
+\chapter{Unsupported-area Detection}
+\label{chap:detect}
+
+The Detect command identifies the lowest model surfaces that cannot be reached
+from material in the preceding layer. It operates on a snapshot of the
+selected models after their transformation matrices have been applied. The
+work runs in a background thread, and its result is discarded if the source
+models change before completion.
+
+\section{Layer Analysis}
+
+The transformed triangle meshes are combined and sliced on the global build
+grid using the configured layer thickness, first-layer offset, segmentation
+tolerance, and healing threshold. Each layer is converted to integer-scaled
+Clipper2 polygons so that unions, offsets, intersections, and differences use
+robust polygon operations. Contour winding preserves solid regions and holes.
+
+The first layer is considered fully supported. For every later layer $i$,
+the permissible horizontal reach from the preceding layer is
+
+\[
+    r_i = (z_i-z_{i-1})
+          \left(c + \frac{1}{\tan\alpha}\right),
+\]
+
+where $c$ is the overhang coefficient and $\alpha$ is the critical angle.
+The complete material area of layer $i-1$ is expanded by $r_i$. This use of
+the complete layer is deliberate: an unsupported region will eventually
+receive a support and may therefore carry material in the layers above it.
+Consequently, Detect marks the lowest unsupported surface instead of repeating
+the same warning through the height of an overhang.
+
+The current layer is separated into connected solid components. A component
+is eligible for layer-to-layer support only when it intersects the unexpanded
+preceding layer. This test rejects an orphan that appears close to, but is not
+actually connected with, an older component. For an eligible component, the
+supported portion is its intersection with the expanded preceding material.
+The union of these intersections is subtracted from the complete current
+layer. The remainder contains hanging edges and orphan components and is the
+unsupported area for layer $i$.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[node distance=4mm]
+        \node[algstep] (mesh) {Apply model transforms and slice on the global build grid};
+        \node[algstep, below=of mesh] (previous) {Expand complete preceding-layer material by $r_i$};
+        \node[algstep, below=of previous] (components) {Split the current layer into connected solid components};
+        \node[algstep, below=of components] (eligible) {Keep components which intersect the unexpanded preceding layer};
+        \node[algstep, below=of eligible] (subtract) {Intersect eligible components with the expanded area, then subtract from the current layer};
+        \node[algstep, below=of subtract] (result) {Accumulate unsupported polygons and their absolute area};
+        \draw[algarrow] (mesh) -- (previous);
+        \draw[algarrow] (previous) -- (components);
+        \draw[algarrow] (components) -- (eligible);
+        \draw[algarrow] (eligible) -- (subtract);
+        \draw[algarrow] (subtract) -- (result);
+    \end{tikzpicture}
+    \caption{Unsupported-area detection for one layer after slicing.}
+\end{figure}
+
+\section{Result}
+
+The output retains the layer positions and unsupported polygons and reports
+their total absolute area. The GUI tessellates those polygons for a red-orange
+overlay. For visibility, an overlay is drawn at the preceding layer's Z
+position; this is only a display offset and does not alter the analysis data.
+The same result supplies the score used by orientation optimization and the
+input surfaces used by support generation.

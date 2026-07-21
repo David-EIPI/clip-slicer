@@ -1,0 +1,71 @@
+% SPDX-FileCopyrightText: 2026 David Shirvanyants
+% SPDX-License-Identifier: CC0-1.0
+
+\chapter{Orientation Optimization}
+\label{chap:optimize}
+
+Optimize searches for a rotation which reduces the support required by a
+model. Selected models are processed independently, in document-list order.
+For every candidate orientation, a copy of the transformed triangle mesh is
+rotated about its bounding-box center, sliced with the current slicing
+settings, and passed through the Detect algorithm. The score $S$ is the sum
+of unsupported polygon area over all layers; lower scores are better.
+
+\section{Randomized Descent}
+
+The unmodified orientation is scored first so that the user immediately sees
+a baseline. The configured number of attempts are then distributed among the
+worker threads. The first attempt starts at the baseline orientation. Each
+additional attempt starts from a uniformly sampled random three-dimensional
+rotation, which reduces dependence on any one local minimum.
+
+Within an attempt, the optimizer chooses a random unit rotation axis and
+applies a five-degree step. It accepts the candidate only when the score
+decreases by more than the convergence tolerance. An accepted orientation
+becomes the starting point for the next step and resets the failure count. A
+rejected candidate is followed by another random axis. After twelve rejected
+directions, the angular step is halved. Descent stops when the score is no
+greater than the convergence tolerance, or when twelve directions also fail
+at the minimum step of 0.5 degrees.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        node distance=3mm,
+        every node/.append style={font=\small}
+    ]
+        \node[algstep] (start) {Start from the baseline or a random orientation};
+        \node[algstep, below=of start] (perturb) {Rotate five degrees about a random axis};
+        \node[algstep, below=of perturb] (score) {Slice, detect unsupported area, and calculate $S$};
+        \node[algdecision, below=4mm of score] (better) {Improvement exceeds tolerance?};
+        \node[algstep, below left=5mm and -5mm of better,
+            text width=0.30\textwidth] (accept)
+            {Accept candidate and publish a new global best};
+        \node[algstep, below right=5mm and -5mm of better,
+            text width=0.30\textwidth] (reject)
+            {Count failure; halve the step after twelve failures};
+        \node[algstep, below=14mm of better] (finish)
+            {Finish at the stopping condition; begin another attempt if available};
+        \draw[algarrow] (start) -- (perturb);
+        \draw[algarrow] (perturb) -- (score);
+        \draw[algarrow] (score) -- (better);
+        \draw[algarrow] (better) -| node[pos=0.25, above] {yes} (accept);
+        \draw[algarrow] (better) -| node[pos=0.25, above] {no} (reject);
+        \draw[algarrow] (accept.south) -- (finish.north west);
+        \draw[algarrow] (reject.south) -- (finish.north east);
+    \end{tikzpicture}
+    \caption{One orientation-search attempt. Repeated accepted and rejected
+    steps form the local descent before the attempt finishes.}
+\end{figure}
+
+All workers share the best score and rotation under synchronization. When a
+worker finds an improvement, the GUI applies that rotation on top of the
+model's original transform for this run; source vertices are never rewritten.
+The status bar reports completed attempts and the current best score. Stop and
+model revisions are checked between expensive candidate evaluations, which
+prevents a cancelled or stale result from being installed.
+
+Random restarts make the search practical for a score surface with many local
+minima, but the procedure is heuristic. It does not prove that the reported
+orientation is globally optimal, and separate runs may produce different
+results.

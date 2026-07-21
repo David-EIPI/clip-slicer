@@ -10,12 +10,32 @@
 \usepackage{tabularx}
 \usepackage{booktabs}
 \usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
 \usepackage[hidelinks]{hyperref}
 
 \geometry{margin=1in}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.6em}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\tikzset{
+    algstep/.style={
+        draw,
+        rounded corners=2pt,
+        align=center,
+        minimum height=2.5em,
+        text width=0.72\textwidth
+    },
+    algdecision/.style={
+        diamond,
+        draw,
+        aspect=2.6,
+        align=center,
+        inner sep=1.5pt,
+        text width=0.25\textwidth
+    },
+    algarrow/.style={-{Latex[length=2.2mm]}, thick}
+}
 
 \title{CLIP Slicer\\User Manual}
 \author{CLIP Slicer Project}
@@ -38,5 +58,8 @@
 \pagenumbering{arabic}
 \input{intro}
 \input{interface_manual}
+\input{detect_algorithm}
+\input{optimize_algorithm}
+\input{generate_algorithm}
 
 \end{document}

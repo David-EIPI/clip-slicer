@@ -101,25 +101,17 @@ and overhang coefficient. It runs in the background so that document viewing
 remains responsive.
 
 Support generation snapshots the selected transformed models, slices them,
-and detects unsupported areas on a background coordinator thread. The source
-mesh, complete slices, and unsupported slices are shared as read-only data by
-the support workers. Unsupported layers are claimed independently; workers
-with no remaining layer to claim consume detected contact points and build
-triangulated pillar shells. Completed shells are combined into a new surface
-model in the same document.
+and detects unsupported areas on a background coordinator thread. Its complete
+processing sequence is described in Chapter~\ref{chap:generate}.
 
 When analysis finishes, unsupported portions of layer surfaces are overlaid in
 bright red-orange. For clearer visibility against the source mesh, each
 unsupported area is drawn at the Z position of the preceding layer rather
 than the slicing plane on which it was detected. The first layer is treated
-as fully supported. On each
-subsequent layer, support propagates from all model material in the previous
-layer, including areas which were themselves unsupported, within the distance
-allowed by the critical angle. This reflects the support material that will
-later be added beneath the lowest unsupported surface. The analysis marks both
-disconnected new contours and overhanging edges. Transforming a model clears
-the overlay because the previous result no longer represents its current
-position.
+as fully supported. The layer-to-layer support test and the treatment of
+disconnected islands are described in Chapter~\ref{chap:detect}. Transforming
+a model clears the overlay because the previous result no longer represents
+its current position.
 
 \subsection{Orientation Optimization}
 
@@ -129,11 +121,9 @@ the selected models. Selected models are optimized independently and in list
 order. Improved orientations are applied to the document as they are found;
 the source vertex coordinates remain unchanged.
 
-Each model search starts from its current orientation and from a configured
-number of random orientations. Small rigid rotations continue while they
-reduce unsupported area. Failed directions are replaced with random
-directions, and the angular step is progressively reduced around a local
-minimum. Several attempts run concurrently. The third status-bar field reports
+The search procedure and its unsupported-area score are described in
+Chapter~\ref{chap:optimize}. Several attempts run concurrently. The third
+status-bar field reports
 completed attempts and the best unsupported-area score for the current model
 in the form \texttt{Run 1 of 10 (S=12.34)}. The current orientation is analyzed
 first, and its initial score is displayed before rotated search candidates are
@@ -232,72 +222,9 @@ External pillar bases use the global Z=0 build platform. Models intended for
 support generation should therefore be placed in the positive Z half-space;
 the \emph{Move to Origin} command performs this placement when appropriate.
 
-The Generate command places contact candidates on a triangular lattice within
-each unsupported component. This lattice has six equidistant neighbors around
-an interior point. Contacts outside the component or inside its voids are
-discarded. Along portions of the unsupported perimeter that coincide with the
-source-layer perimeter, nearby lattice contacts are moved onto the edge at the
-configured support spacing. Boundaries introduced only by subtracting the
-supported area are not treated as exposed model edges.
-
-Each contact tip starts at its contact point and follows the outward normal of
-the nearest model surface. A two-dimensional bounding-volume index accelerates
-surface lookup, while inside/outside probes determine which side of the
-surface faces away from the solid. The cone slope is calculated once from its
-radii and height. If the surface normal is too shallow, the tip axis is tilted
-downward until its angle from the build plane equals the critical angle minus
-the cone slope angle. A tip is omitted when this cannot be done while keeping
-the cone outside the model. Accepted cone sides and both polygonal end
-surfaces are triangulated and combined in the generated support model.
-
-External-pillar routing is prepared concurrently with contact detection. The
-model's layer polygons are expanded by the local pillar radius, configured
-model isolation, and a conservative grid envelope before being rasterized onto
-the configured cubic lattice. Starting with
-base positions whose cylinders do not intersect the model, each successive Z
-level records cells reachable through an unobstructed segment which satisfies
-the minimum support angle. Each cell stores only the predecessor direction
-used to reach it. Compact obstacle bitmaps are retained as a broad-phase
-collision cache for route generation, avoiding repeated polygon scans.
-
-For an accepted tip, the route search starts at the tip cone's lower center
-and searches downward through unobstructed lattice neighbors until it meets
-the platform-reachable field. A bounded direct-visibility probe handles thin
-obstructions without allowing unreachable tips to trigger an exhaustive cone
-scan. The two halves are joined through their stored predecessor links.
-Collinear centerline steps are merged before a continuously tapered polygonal
-pipe and cylindrical base are triangulated. Contacts for which no
-collision-free external route exists are passed to the internal-pillar search.
-Direction changes in the centerline are replaced by tangent circular fillets
-where adjacent segments provide enough room. The base's vertical centerline
-and the contact tip's conical centerline participate in this smoothing, so the
-pillar enters both adjoining solids without a sharp elbow. Each bend radius is
-the local pillar radius, and its number of axial subdivisions scales with the
-configured circumference-point resolution. Because the base and tip axes are
-terminal rather than shared centerline segments, their fillets may use nearly
-the full axis length when required by the transition angle. If either terminal
-axis is still too short, its bend radius is reduced to fit instead of leaving
-a sharp joint. Body bends retain the full local pillar radius.
-
-Internal supports connect an unsupported surface to a lower part of the model
-when no path to the build platform exists. Original layer polygons and a
-second set expanded by the maximum pillar radius plus model isolation are
-prepared once and shared by all workers. Starting at the upper tip attachment,
-the search advances vertically downward one source slice at a time. At each
-step it scans a downward cone, limited to the contact-tip height and minimum
-support angle, for original filled contours. The closest eligible contour edge
-becomes the lower contact point.
-
-The lower tip uses the same dimensions as the upper tip, with its narrow end
-on the model and wide end toward the pillar. Its axis is directed toward the
-vertical pillar and kept at or above the minimum support angle. Any remaining
-horizontal distance is joined at that same minimum angle before the route
-continues vertically to the upper attachment. The route is rejected if it
-crosses an expanded model contour or if the two tips leave insufficient room
-for a pillar. Accepted routes use the same tube and fillet mesher as external
-supports, but their tube radius is constant and equal to the wide
-radius of both contact-tip cones. Rejected internal attempts contribute to the
-failure count shown in the status bar.
+The Generator settings control contact placement, tip construction, collision
+clearance, route resolution, and surface tessellation. Their use throughout
+the support pipeline is described in Chapter~\ref{chap:generate}.
 
 Settings persist between runs in \texttt{clip-slicer/settings.ini} beneath the
 operating system's user configuration directory.

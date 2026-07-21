@@ -1,0 +1,157 @@
+% SPDX-FileCopyrightText: 2026 David Shirvanyants
+% SPDX-License-Identifier: CC0-1.0
+
+\chapter{Support Generation}
+\label{chap:generate}
+
+Generate converts unsupported layer surfaces into removable triangulated
+supports. It snapshots and combines the selected transformed meshes, slices
+them, and runs the Detect algorithm. The source mesh, complete layers, and
+unsupported polygons then remain read-only while worker threads claim layers,
+produce contact points, and construct supports. Reachability of the space
+outside the model is calculated concurrently with contact discovery.
+
+\section{Contact Points and Tips}
+
+Each connected unsupported component receives a triangular lattice whose six
+nearest neighbors are separated by the configured support spacing. Nodes
+outside the component or inside its holes are removed. The algorithm next
+finds unsupported perimeter runs which coincide with the source-layer
+perimeter. These are exposed model edges; boundaries created only by
+subtracting supported area are not exposed. While walking each exposed run,
+nearby unused lattice nodes are moved onto the edge at the configured spacing.
+
+An additional pass verifies every unsupported component independently. If no
+existing contact in that component can form a valid tip, the center is tested,
+followed by interior samples ordered from the center outward. The first valid
+sample is added. Thus closely spaced but disconnected islands cannot suppress
+one another's contacts, although an island may still remain unsupported when
+no geometrically valid tip can be placed.
+
+For each contact, a bounding-volume index finds the nearby source triangle.
+Inside/outside probes orient its normal away from the solid. The preferred
+axis of a truncated conical tip follows this outward normal from the contact
+toward the wide end. If necessary, it is tilted in its vertical plane to
+satisfy the critical angle after allowing for the cone's own slope. Samples
+along the cone center and circumference reject a tip which enters the model.
+Accepted side faces and both ends are triangulated using the configured number
+of circumference points.
+
+\section{External Supports}
+
+External supports are preferred because they end on the build platform. The
+route search discretizes the model bounds and a surrounding band into a cubic
+lattice. At every source layer, solid polygons are expanded by the local
+pillar radius, model isolation, and half a cell diagonal as a conservative
+grid allowance. These obstacles are stored as compact bit maps.
+
+Cells above collision-free base positions are marked reachable at the lowest
+lattice level. Reachability is propagated upward: a cell is accepted when an
+unobstructed segment connects it to a reachable cell on the preceding level
+and that segment is no shallower than the minimum support angle. Each cell
+stores only the direction of its predecessor, which bounds memory use while
+retaining a route back to the platform.
+
+Starting from the wide end of a contact tip, the route search connects to this
+reachable field and follows predecessor directions down to the base. A direct
+probe and a bounded connector search bridge the off-grid tip position. When
+the preferred surface-normal tip has no external route, a fallback examines
+reachable cells within the tip length and turns the tip toward the nearest
+valid one. This sacrifices normal alignment at the contact in order to retain
+a collision-free external support. A short transition may ignore only the
+extra isolation envelope when the tip necessarily begins within it; physical
+pillar clearance is still enforced.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[x=0.75cm,y=0.75cm,>=Latex]
+        \fill[gray!35] (0,0) rectangle (11,0.25);
+        \draw[thick] (0,0.25) -- (11,0.25)
+            node[right] {build platform};
+        \fill[gray!25]
+            (4.4,7.3) .. controls (6.0,8.1) and (8.2,7.8) ..
+            (9.5,6.8) -- (8.8,6.2) .. controls (7.0,7.0) and (5.5,6.8) ..
+            (4.4,7.3);
+        \draw[thick]
+            (4.4,7.3) .. controls (6.0,8.1) and (8.2,7.8) .. (9.5,6.8);
+        \draw[thick]
+            (4.4,7.3) .. controls (5.5,6.8) and (7.0,7.0) .. (8.8,6.2);
+        \draw[very thick, blue!60!black]
+            (2.2,0.8) -- (2.2,3.2) -- (3.2,4.2) -- (5.6,5.6);
+        \fill[blue!35] (1.5,0.25) rectangle (2.9,0.8);
+        \draw[thick] (1.5,0.25) rectangle (2.9,0.8);
+        \fill[blue!45]
+            (5.25,5.35) -- (5.75,5.85) -- (6.25,6.75) --
+            (5.85,6.95) -- cycle;
+        \draw[thick]
+            (5.25,5.35) -- (5.75,5.85) -- (6.25,6.75) --
+            (5.85,6.95) -- cycle;
+        \fill (6.05,6.86) circle (0.08);
+        \draw[->] (8.1,5.2) -- (6.35,6.55)
+            node[pos=0, right] {contact tip};
+        \draw[->] (0.8,3.4) -- (2.5,3.4)
+            node[pos=0, left] {smoothed pillar};
+        \draw[->] (0.5,1.0) -- (1.7,0.65)
+            node[pos=0, left] {base};
+    \end{tikzpicture}
+    \caption{Principal parts of an external support. The centerline may bend
+    through reachable space while respecting clearance and angle limits.}
+\end{figure}
+
+\section{Internal Fallback and Meshing}
+
+If all external-tip and route choices fail, the generator attempts an internal
+support. From the upper tip it advances vertically through lower layers. At
+each step, a downward cone limited by the tip height and minimum support angle
+is tested against original, unexpanded model contours. The nearest eligible
+contour edge becomes the lower contact point. A second tip is placed there
+with its narrow end on the model and its wide end toward the pillar.
+
+The lower tip is joined at or above the minimum support angle to a vertical
+segment leading to the upper tip. Expanded contours reject a route which
+touches the model between its two intended contacts, and insufficient space
+between the tips also rejects the support. Internal pillar diameter is
+constant and equals the wide diameter of both contact tips.
+
+For either support type, collinear route points are removed and direction
+changes are replaced by tangent circular fillets. The base and tip axes are
+included in this smoothing. Terminal fillets reduce their radius when a short
+base or tip axis cannot accommodate the normal bend; body fillets retain the
+local pillar radius. Transported cross-section frames then form a polygonal
+tube, while external pillars also receive a tapered radius and cylindrical
+platform base.
+
+Every accepted support is a closed triangulated shell. The shells are appended
+to one new surface model in the current document without performing a Boolean
+union. Contacts for which neither route type succeeds are omitted, counted,
+and summarized with the lowest failed Z coordinate. Cooperative cancellation
+is checked throughout slicing, contact processing, volume construction, and
+route generation; partial results are not installed after cancellation.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[node distance=4mm]
+        \node[algstep] (input) {Transformed mesh: slice and detect unsupported polygons};
+        \node[algstep, below=of input] (parallel) {In parallel: place per-island contacts and build the external reachability volume};
+        \node[algstep, below=of parallel] (tips) {Orient and validate contact tips};
+        \node[algdecision, below=7mm of tips] (external) {External route found?};
+        \node[algstep, below left=9mm and -4mm of external,
+            text width=0.29\textwidth] (platform)
+            {Trace to the platform and add a base};
+        \node[algstep, below right=9mm and -4mm of external,
+            text width=0.29\textwidth] (internal)
+            {Try a two-contact internal support};
+        \node[algstep, below=19mm of external] (mesh)
+            {Smooth centerlines, tessellate closed shells, and append the result model};
+        \draw[algarrow] (input) -- (parallel);
+        \draw[algarrow] (parallel) -- (tips);
+        \draw[algarrow] (tips) -- (external);
+        \draw[algarrow] (external) -|
+            node[pos=0.25, above] {yes} (platform);
+        \draw[algarrow] (external) -|
+            node[pos=0.25, above] {no} (internal);
+        \draw[algarrow] (platform.south) -- (mesh.north west);
+        \draw[algarrow] (internal.south) -- (mesh.north east);
+    \end{tikzpicture}
+    \caption{Support-generation pipeline.}
+\end{figure}
