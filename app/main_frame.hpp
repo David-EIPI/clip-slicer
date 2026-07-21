@@ -11,7 +11,7 @@ class MainFrame final : public wxMDIParentFrame {
     void OpenDialog();
     void OpenFile(const wxString &path);
     void ShowSettingsDialog();
-    void ShowHelpTopic(const wxString &topic);
+    void ShowHelpTopic(const wxString &topic, wxWindow *context = nullptr);
     const AppSettings &Settings() const {
         return settings_;
     }

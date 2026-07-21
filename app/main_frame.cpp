@@ -6,6 +6,7 @@
 #include "help_topics.hpp"
 #include "help_window.hpp"
 #include "settings_dialog.hpp"
+#include <wx/dialog.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/msgdlg.h>
@@ -94,9 +95,27 @@ void MainFrame::ShowSettingsDialog() {
 void MainFrame::OnHelpTopics(wxCommandEvent &) {
     ShowHelpTopic(clip_slicer::help::manualTop);
 }
-void MainFrame::ShowHelpTopic(const wxString &topic) {
-    if (!helpWindow_)
-        helpWindow_ = new HelpWindow(this);
+void MainFrame::ShowHelpTopic(const wxString &topic, wxWindow *context) {
+    wxWindow *helpParent = this;
+    if (context) {
+        wxWindow *topLevel = wxGetTopLevelParent(context);
+        if (auto *dialog = dynamic_cast<wxDialog *>(topLevel); dialog && dialog->IsModal())
+            helpParent = dialog;
+    }
+
+    if (helpWindow_ && helpWindow_->GetParent() != helpParent) {
+        helpWindow_->Destroy();
+        helpWindow_ = nullptr;
+    }
+    if (!helpWindow_) {
+        auto *window = new HelpWindow(helpParent);
+        helpWindow_ = window;
+        window->Bind(wxEVT_DESTROY, [this, window](wxWindowDestroyEvent &event) {
+            if (helpWindow_ == window)
+                helpWindow_ = nullptr;
+            event.Skip();
+        });
+    }
     helpWindow_->ShowTopic(topic);
 }
 void MainFrame::OnOpen(wxCommandEvent &) {

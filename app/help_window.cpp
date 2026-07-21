@@ -63,17 +63,17 @@ MainFrame *FindMainFrame(wxWindow *context) {
 void OpenTopic(wxWindow *context, const wxString &topic) {
     auto *mainFrame = FindMainFrame(context);
     if (mainFrame && !topic.empty())
-        mainFrame->ShowHelpTopic(topic);
+        mainFrame->ShowHelpTopic(topic, context);
 }
 } // namespace
 
 HelpWindow::HelpWindow(wxWindow *parent)
-    : wxFrame(parent,
-              wxID_ANY,
-              "CLIP Slicer Help",
-              wxDefaultPosition,
-              wxSize(900, 700),
-              wxDEFAULT_FRAME_STYLE | wxFRAME_FLOAT_ON_PARENT) {
+    : wxDialog(parent,
+               wxID_ANY,
+               "CLIP Slicer Help",
+               wxDefaultPosition,
+               wxSize(900, 700),
+               wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxMAXIMIZE_BOX) {
     SetSize(FromDIP(wxSize(900, 700)));
     webView_ = wxWebView::New(this, wxID_ANY);
     auto *root = new wxBoxSizer(wxVERTICAL);
@@ -90,8 +90,13 @@ void HelpWindow::ShowTopic(const wxString &topic) {
     pendingTopic_ = topic;
     if (loaded_)
         ScrollToPendingTopic();
-    Show();
-    Raise();
+    if (auto *parentDialog = dynamic_cast<wxDialog *>(GetParent());
+        parentDialog && parentDialog->IsModal()) {
+        ShowModal();
+    } else {
+        Show();
+        Raise();
+    }
 }
 
 void HelpWindow::ScrollToPendingTopic() {
@@ -126,6 +131,10 @@ void HelpWindow::OnNavigating(wxWebViewEvent &event) {
 }
 
 void HelpWindow::OnClose(wxCloseEvent &event) {
+    if (IsModal()) {
+        EndModal(wxID_CLOSE);
+        return;
+    }
     if (event.CanVeto()) {
         Hide();
         event.Veto();

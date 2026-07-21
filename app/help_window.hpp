@@ -3,13 +3,13 @@
 
 #pragma once
 
-#include <wx/frame.h>
+#include <wx/dialog.h>
 
 class wxCloseEvent;
 class wxWebView;
 class wxWebViewEvent;
 
-class HelpWindow final : public wxFrame {
+class HelpWindow final : public wxDialog {
   public:
     explicit HelpWindow(wxWindow *parent);
     void ShowTopic(const wxString &topic);
