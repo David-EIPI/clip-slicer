@@ -145,9 +145,15 @@ The CLIP Slicer user manual is written in LaTeX and can be built with:
 
 ```sh
 make -C docs pdf
+make -C docs html
 ```
 
-The generated manual is stored at `docs/build/main.pdf`.
+The generated manuals are stored at `docs/build/main.pdf` and
+`docs/build/main.html`. The HTML target requires Pandoc and produces one
+self-contained file with an embedded stylesheet and offline MathML, making it
+suitable for later embedding in the application executable. Pandoc preserves
+the TikZ figure captions but not the drawings; the diagrams currently remain
+available in the PDF manual only.
 
 To enable compile-time CPU-specific vectorization, set the compiler architecture target:
 

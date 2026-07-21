@@ -1,0 +1,94 @@
+/* SPDX-FileCopyrightText: 2026 David Shirvanyants */
+/* SPDX-License-Identifier: CC0-1.0 */
+
+html {
+    background: #f4f5f7;
+    color: #202124;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.55;
+}
+
+body {
+    box-sizing: border-box;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 2rem 3rem 4rem;
+    background: #fff;
+}
+
+a {
+    color: #185abc;
+}
+
+nav#TOC {
+    margin: 2rem 0;
+    padding: 1rem 1.5rem;
+    border: 1px solid #d7d9dd;
+    border-radius: 0.35rem;
+    background: #f8f9fa;
+}
+
+nav#TOC ul {
+    padding-left: 1.4rem;
+}
+
+h1,
+h2,
+h3 {
+    line-height: 1.25;
+}
+
+h1 {
+    margin-top: 2.5rem;
+    border-bottom: 1px solid #d7d9dd;
+    padding-bottom: 0.25rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 0.45rem 0.65rem;
+    border: 1px solid #d7d9dd;
+    text-align: left;
+    vertical-align: top;
+}
+
+code {
+    font-family: ui-monospace, "Cascadia Mono", monospace;
+}
+
+@media (max-width: 48rem) {
+    body {
+        padding: 1rem 1.25rem 3rem;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    html {
+        background: #202124;
+        color: #e8eaed;
+    }
+
+    body {
+        background: #292a2d;
+    }
+
+    a {
+        color: #8ab4f8;
+    }
+
+    nav#TOC {
+        border-color: #5f6368;
+        background: #303134;
+    }
+
+    h1,
+    th,
+    td {
+        border-color: #5f6368;
+    }
+}
