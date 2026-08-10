@@ -198,7 +198,7 @@ void AddDocumentTabCloseButton(DocumentFrame &document, const wxString &title) {
     gtk_widget_set_focus_on_click(close, FALSE);
     gtk_widget_set_name(close, "tab-close-button");
     gtk_widget_set_tooltip_text(close, "Close document");
-    gtk_box_pack_start(GTK_BOX(tab), label, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(tab), label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(tab), close, FALSE, FALSE, 0);
     gtk_widget_show_all(tab);
     gtk_notebook_set_tab_label(
@@ -478,7 +478,11 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     sectionScroll_->Bind(wxEVT_SCROLL_CHANGED, &DocumentFrame::OnSectionScroll, this);
     sectionScroll_->Bind(wxEVT_CHAR_HOOK, &DocumentFrame::OnSectionScrollKey, this);
 #ifdef __WXGTK__
-    AddDocumentTabCloseButton(*this, title);
+    // wxGTK inserts MDI children into a GtkNotebook while they are being
+    // constructed. Replacing its tab widget before the notebook has received
+    // its first allocation can make GTK draw the header with negative
+    // dimensions. Wait until the initial layout has completed.
+    CallAfter([this, title] { AddDocumentTabCloseButton(*this, title); });
 #endif
     UpdateStatus();
     UpdateCommandState();

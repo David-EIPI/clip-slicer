@@ -291,10 +291,12 @@ void ModelCanvas::OnPaint(wxPaintEvent &) {
     wxPaintDC dc(this);
     if (!IsShownOnScreen())
         return;
+    const wxSize size = GetClientSize();
+    if (size.x <= 0 || size.y <= 0)
+        return;
     try {
         InitializeGl();
         SetCurrent(*context_);
-        auto size = GetClientSize();
         glViewport(0, 0, size.x, size.y);
         glClearColor(0.72f, 0.86f, 0.72f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
