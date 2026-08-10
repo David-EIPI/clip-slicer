@@ -306,10 +306,6 @@ the support search radius is
 \(\alpha\) is the critical angle. Increasing the coefficient permits more
 horizontal displacement between successive layers before an area is marked
 unsupported.
-When unsupported-area detection takes longer than one second, the status bar
-reports the completed slice and total slice count. The report is updated at
-most once per second to avoid slowing the analysis with GUI traffic.
-
 \paragraph{Optimization attempts.}
 This is the number of independent randomized local searches performed for each
 selected model and defaults to 10. More attempts improve coverage of the
@@ -322,7 +318,13 @@ available processor cores usually provide little benefit.
 
 \paragraph{Convergence tolerance.}
 This is the minimum unsupported-area reduction accepted as an improving
-optimization step and defaults to 0.1 square model units.
+optimization step and defaults to 0.1 square model units. Smaller values will
+result in slower convergence.
+
+When unsupported-area detection takes longer than one second, the status bar
+reports the completed slice and total slice count. The report is updated at
+most once per second to avoid slowing the analysis with GUI traffic.
+
 
 \subsection{Generator Tab}
 \label{settings-generator}
