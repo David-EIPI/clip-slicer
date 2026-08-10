@@ -17,18 +17,55 @@ struct RenderVertex {
     float nx, ny, nz;
 };
 
+class SceneModelGeometry {
+  public:
+    SceneModelGeometry(TriangleMesh mesh,
+                       Bounds3 bounds,
+                       std::vector<RenderVertex> vertices,
+                       std::shared_ptr<const SliceData> slices = {});
+
+    const TriangleMesh &triangleMesh() const noexcept {
+        return mesh_;
+    }
+    const Bounds3 &bounds() const noexcept {
+        return bounds_;
+    }
+    const std::vector<RenderVertex> &renderVertices() const noexcept {
+        return vertices_;
+    }
+    const SliceData *slices() const noexcept {
+        return slices_.get();
+    }
+
+  private:
+    TriangleMesh mesh_;
+    Bounds3 bounds_;
+    std::vector<RenderVertex> vertices_;
+    std::shared_ptr<const SliceData> slices_;
+};
+
 class SceneModel {
   public:
     virtual ~SceneModel() = default;
-    virtual const Bounds3 &localBounds() const = 0;
-    virtual const std::vector<RenderVertex> &renderVertices() const = 0;
+    const Bounds3 &localBounds() const {
+        return geometry_->bounds();
+    }
+    const std::vector<RenderVertex> &renderVertices() const {
+        return geometry_->renderVertices();
+    }
+    const TriangleMesh &triangleMesh() const {
+        return geometry_->triangleMesh();
+    }
+    const SceneModelGeometry *geometryIdentity() const noexcept {
+        return geometry_.get();
+    }
     virtual bool isSliced() const {
         return false;
     }
     virtual const SliceData *slices() const {
         return nullptr;
     }
-    virtual TriangleMesh triangleMesh() const = 0;
+    virtual std::shared_ptr<SceneModel> replica(std::string modelName) const = 0;
 
     std::string name;
     Mat4 transform;
@@ -37,46 +74,30 @@ class SceneModel {
     Bounds3 worldBounds() const {
         return transformedBounds(localBounds(), transform);
     }
+
+  protected:
+    SceneModel(std::string modelName, std::shared_ptr<const SceneModelGeometry> geometry);
+    std::shared_ptr<const SceneModelGeometry> geometry_;
 };
 
 class MeshSceneModel final : public SceneModel {
   public:
     MeshSceneModel(std::string modelName, TriangleMesh mesh);
-    const Bounds3 &localBounds() const override {
-        return mesh_.bounds();
-    }
-    const std::vector<RenderVertex> &renderVertices() const override {
-        return vertices_;
-    }
-    TriangleMesh triangleMesh() const override;
-
-  private:
-    TriangleMesh mesh_;
-    std::vector<RenderVertex> vertices_;
+    MeshSceneModel(std::string modelName, std::shared_ptr<const SceneModelGeometry> geometry);
+    std::shared_ptr<SceneModel> replica(std::string modelName) const override;
 };
 
 class SliceSceneModel final : public SceneModel {
   public:
     SliceSceneModel(std::string modelName, SliceData slices);
-    const Bounds3 &localBounds() const override {
-        return bounds_;
-    }
-    const std::vector<RenderVertex> &renderVertices() const override {
-        return vertices_;
-    }
+    SliceSceneModel(std::string modelName, std::shared_ptr<const SceneModelGeometry> geometry);
     bool isSliced() const override {
         return true;
     }
     const SliceData *slices() const override {
-        return &slices_;
+        return geometry_->slices();
     }
-    TriangleMesh triangleMesh() const override;
-
-  private:
-    void buildMesh();
-    SliceData slices_;
-    Bounds3 bounds_;
-    std::vector<RenderVertex> vertices_;
+    std::shared_ptr<SceneModel> replica(std::string modelName) const override;
 };
 
 TriangleMesh transformedMesh(const SceneModel &model);

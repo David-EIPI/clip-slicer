@@ -90,7 +90,7 @@ class ModelCanvas final : public wxGLCanvas {
     GLsizei unsupportedIndexCount_ = 0;
     GLint matrixUniform_ = -1, modelUniform_ = -1, colorUniform_ = -1, litUniform_ = -1;
     GLint clippingUniform_ = -1, clipPlaneUniform_ = -1;
-    std::unordered_map<const stl_slicer::SceneModel *, Buffer> buffers_;
+    std::unordered_map<const stl_slicer::SceneModelGeometry *, Buffer> buffers_;
     std::unordered_map<const stl_slicer::SceneModel *,
                        std::shared_ptr<const stl_slicer::TriangleMesh>>
         sliceMeshes_;

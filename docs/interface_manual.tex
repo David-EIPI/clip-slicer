@@ -64,6 +64,16 @@ fits tightly in the positive octant and rests on the build plane.
 \hypertarget{transform-dialog}{}The \emph{Transform} dialog provides numeric
 rotation axis and angle, translation, and uniform scale controls.
 
+\hypertarget{multiply-dialog}{}The \emph{Multiply} dialog creates a rectangular
+array of every selected model. Its \emph{Multiply} tab has a copy count and
+stride for each global axis. A count of one leaves that axis unchanged; larger
+counts place instances at successive stride offsets. The initial stride values
+are the X, Y, and Z dimensions of the selected models' shared bounding box, so
+the default array places adjacent copies without overlap. The original models
+form the first array position and are included in the requested counts. Replica
+geometry is shared in memory, while each instance has its own transformation
+and can subsequently be moved or rotated independently.
+
 The \emph{Slice} menu contains commands for regular slicing, interactive
 cross-sections, unsupported-area detection, orientation optimization, and
 support generation. The \emph{Help} menu's \emph{Topics} command opens the top
@@ -88,12 +98,11 @@ modifies the source surface models.
 \section{Toolbar Buttons}
 \label{document-toolbar}
 
-The toolbar provides the most frequently used menu commands. \emph{Export},
-\emph{Slice}, and \emph{Section} write or inspect layers. \emph{Hide},
-\emph{Show}, and \emph{Delete} affect selected list entries. \emph{Detect},
-\emph{Optimize}, and \emph{Generate} run the analysis and support workflows;
-\emph{Stop} cancels a running background workflow. \emph{Reset},
-\emph{Transform}, and \emph{Origin} change selected-model transformations.
+The toolbar provides frequently used menu commands. \emph{Hide},
+\emph{Show}, and \emph{Delete} affect selected list entries. \emph{Section}
+opens the interactive cross-section view, \emph{Supports} generates support
+structures, and \emph{Stop} cancels a running background workflow.
+\emph{Transform} and \emph{Origin} change selected-model transformations.
 Buttons which cannot operate on the current selection are disabled.
 
 \section{Viewport Guides}

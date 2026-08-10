@@ -85,6 +85,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnDeleteModels(wxCommandEvent &);
     void OnResetTransform(wxCommandEvent &);
     void OnTransformModels(wxCommandEvent &);
+    void OnMultiplyModels(wxCommandEvent &);
     void OnMoveToOrigin(wxCommandEvent &);
     void OnListSelection(wxCommandEvent &);
     void OnListCheck(wxCommandEvent &);
@@ -124,6 +125,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *deleteModelsItem_ = nullptr;
     wxMenuItem *resetTransformItem_ = nullptr;
     wxMenuItem *transformModelsItem_ = nullptr;
+    wxMenuItem *multiplyModelsItem_ = nullptr;
     wxMenuItem *moveToOriginItem_ = nullptr;
     wxMenuItem *sectionItem_ = nullptr;
     std::thread unsupportedWorker_;

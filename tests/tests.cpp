@@ -140,6 +140,29 @@ void testBinaryStlWriter() {
             "binary STL transformed geometry");
 }
 
+void testSceneModelReplicasShareGeometry() {
+    TriangleMesh source;
+    Triangle triangle;
+    triangle.vertices = {{{0, 0, 0}, {2, 0, 0}, {0, 3, 0}}};
+    source.addTriangle(triangle);
+    MeshSceneModel original("original", std::move(source));
+    original.transform = Mat4::translation(1, 2, 3);
+
+    auto replica = original.replica("replica");
+    require(replica->geometryIdentity() == original.geometryIdentity(),
+            "scene-model replica did not share geometry");
+    require(&replica->triangleMesh() == &original.triangleMesh(),
+            "scene-model replica did not share triangle storage");
+    replica->transform = Mat4::translation(10, 20, 30) * original.transform;
+    require(original.transform.transformPoint({0, 0, 0}).x == 1,
+            "replica transform changed the original transform");
+    const TriangleMesh replicaMesh = transformedMesh(*replica);
+    const Triangle &transformed = replicaMesh.triangles().front();
+    require(transformed.vertices[0].x == 11 && transformed.vertices[0].y == 22 &&
+                transformed.vertices[0].z == 33,
+            "replica transform was not applied to surface geometry");
+}
+
 void testCubeSlices() {
     TriangleMesh cube;
     addBox(cube, 0, 0, 0, 10, 10, 1);
@@ -1113,6 +1136,7 @@ int main() {
     try {
         testBinaryStlReader();
         testBinaryStlWriter();
+        testSceneModelReplicasShareGeometry();
         testCubeSlices();
         testSliceCancellation();
         testNestedContours();

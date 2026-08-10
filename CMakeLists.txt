@@ -187,6 +187,7 @@ if(STL_SLICER_BUILD_GUI)
         app/app_settings.cpp
         app/settings_dialog.cpp
         app/model_transform_dialog.cpp
+        app/model_multiply_dialog.cpp
         app/embedded_assets.cpp
         app/embedded_manual.cpp
         app/help_window.cpp

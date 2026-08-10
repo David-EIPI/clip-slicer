@@ -7,6 +7,7 @@
 #include "gl_canvas.hpp"
 #include "main_frame.hpp"
 #include "model_transform_dialog.hpp"
+#include "model_multiply_dialog.hpp"
 #include "slice_visualization.hpp"
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
@@ -60,6 +61,7 @@ enum {
     IdDeleteModels,
     IdResetTransform,
     IdTransformModels,
+    IdMultiplyModels,
     IdMoveToOrigin,
     IdSettings
 };
@@ -119,7 +121,7 @@ stl_slicer::TriangleMesh combinedTransformedMesh(const std::vector<ModelSnapshot
         triangleCount += snapshot.triangleCount;
     combined.reserve(triangleCount);
     for (const ModelSnapshot &snapshot : snapshots) {
-        const stl_slicer::TriangleMesh mesh = snapshot.model->triangleMesh();
+        const stl_slicer::TriangleMesh &mesh = snapshot.model->triangleMesh();
         for (auto triangle : mesh.triangles()) {
             for (auto &vertex : triangle.vertices)
                 vertex = snapshot.transform.transformPoint(vertex);
@@ -398,6 +400,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnDeleteModels, this, IdDeleteModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnResetTransform, this, IdResetTransform);
     Bind(wxEVT_MENU, &DocumentFrame::OnTransformModels, this, IdTransformModels);
+    Bind(wxEVT_MENU, &DocumentFrame::OnMultiplyModels, this, IdMultiplyModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnMoveToOrigin, this, IdMoveToOrigin);
     Bind(
         wxEVT_MENU,
@@ -458,6 +461,7 @@ void DocumentFrame::BuildMenus() {
     models->AppendSeparator();
     resetTransformItem_ = models->Append(IdResetTransform, "&Reset transformations");
     transformModelsItem_ = models->Append(IdTransformModels, "&Transform...");
+    multiplyModelsItem_ = models->Append(IdMultiplyModels, "&Multiply...");
     moveToOriginItem_ = models->Append(IdMoveToOrigin, "Move to &Origin");
     auto *slice = new wxMenu;
     slice->Append(IdSlice, "&Slice selected...");
@@ -644,6 +648,8 @@ void DocumentFrame::UpdateCommandState() {
         resetTransformItem_->Enable(modelSelected);
     if (transformModelsItem_)
         transformModelsItem_->Enable(modelSelected);
+    if (multiplyModelsItem_)
+        multiplyModelsItem_->Enable(modelSelected);
     if (moveToOriginItem_)
         moveToOriginItem_->Enable(modelSelected);
     if (deleteModelsItem_)
@@ -756,6 +762,82 @@ void DocumentFrame::OnTransformModels(wxCommandEvent &) {
     }
     InvalidateUnsupportedAnalysis();
     canvas_->ModelTransformsChanged();
+    UpdateStatus();
+}
+void DocumentFrame::OnMultiplyModels(wxCommandEvent &) {
+    const stl_slicer::Bounds3 bounds = SelectedBounds();
+    if (!bounds.valid())
+        return;
+
+    MultiplyDialog dialog(
+        this,
+        {bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z});
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+
+    std::vector<std::shared_ptr<stl_slicer::SceneModel>> selected;
+    for (const auto &model : models_)
+        if (model->selected)
+            selected.push_back(model);
+    if (selected.empty())
+        return;
+
+    const auto copies = dialog.Copies();
+    const stl_slicer::Vec3 stride = dialog.Stride();
+    constexpr std::size_t maximumDocumentInstances = 1000000;
+    std::size_t placements = 1;
+    for (const unsigned int count : copies) {
+        if (placements > maximumDocumentInstances / count) {
+            wxMessageBox("The requested multiplication exceeds the limit of 1,000,000 models.",
+                         "Multiply failed",
+                         wxOK | wxICON_ERROR,
+                         this);
+            return;
+        }
+        placements *= count;
+    }
+    if (placements == 1)
+        return;
+    if (selected.size() > maximumDocumentInstances / placements) {
+        wxMessageBox("The requested multiplication exceeds the limit of 1,000,000 models.",
+                     "Multiply failed",
+                     wxOK | wxICON_ERROR,
+                     this);
+        return;
+    }
+    const std::size_t additional = selected.size() * (placements - 1);
+    if (models_.size() > maximumDocumentInstances - additional) {
+        wxMessageBox("The resulting document would exceed the limit of 1,000,000 models.",
+                     "Multiply failed",
+                     wxOK | wxICON_ERROR,
+                     this);
+        return;
+    }
+
+    InvalidateUnsupportedAnalysis();
+    models_.reserve(models_.size() + additional);
+    for (unsigned int z = 0; z < copies[2]; ++z) {
+        for (unsigned int y = 0; y < copies[1]; ++y) {
+            for (unsigned int x = 0; x < copies[0]; ++x) {
+                if (x == 0 && y == 0 && z == 0)
+                    continue;
+                const stl_slicer::Mat4 translation =
+                    stl_slicer::Mat4::translation(x * stride.x, y * stride.y, z * stride.z);
+                for (const auto &source : selected) {
+                    std::string copyName = source->name + " [" + std::to_string(x + 1) + "," +
+                                           std::to_string(y + 1) + "," + std::to_string(z + 1) +
+                                           "]";
+                    auto copy = source->replica(std::move(copyName));
+                    copy->transform = translation * source->transform;
+                    copy->visible = source->visible;
+                    copy->selected = true;
+                    models_.push_back(std::move(copy));
+                }
+            }
+        }
+    }
+    RefreshModelList();
+    canvas_->ModelsChanged();
     UpdateStatus();
 }
 void DocumentFrame::OnMoveToOrigin(wxCommandEvent &) {

@@ -3,6 +3,7 @@
 
 #include "stl_slicer/scene_model.hpp"
 #include <cmath>
+#include <utility>
 
 namespace stl_slicer {
 namespace {
@@ -20,35 +21,29 @@ Vec3 normal(Vec3 a, Vec3 b, Vec3 c) {
 RenderVertex rv(Vec3 p, Vec3 n) {
     return {float(p.x), float(p.y), float(p.z), float(n.x), float(n.y), float(n.z)};
 }
-} // namespace
-
-MeshSceneModel::MeshSceneModel(std::string modelName, TriangleMesh mesh) : mesh_(std::move(mesh)) {
-    name = std::move(modelName);
-    vertices_.reserve(mesh_.triangles().size() * 3);
-    for (const auto &triangle : mesh_.triangles()) {
+std::shared_ptr<const SceneModelGeometry> meshGeometry(TriangleMesh mesh) {
+    std::vector<RenderVertex> vertices;
+    vertices.reserve(mesh.triangles().size() * 3);
+    for (const auto &triangle : mesh.triangles()) {
         Vec3 n = triangle.normal;
         if (n.x * n.x + n.y * n.y + n.z * n.z < 1e-12)
             n = normal(triangle.vertices[0], triangle.vertices[1], triangle.vertices[2]);
-        for (const auto &p : triangle.vertices)
-            vertices_.push_back(rv(p, n));
+        for (const auto &point : triangle.vertices)
+            vertices.push_back(rv(point, n));
     }
+    const Bounds3 bounds = mesh.bounds();
+    return std::make_shared<SceneModelGeometry>(std::move(mesh), bounds, std::move(vertices));
 }
-TriangleMesh MeshSceneModel::triangleMesh() const {
-    return mesh_;
-}
-
-SliceSceneModel::SliceSceneModel(std::string modelName, SliceData slices)
-    : slices_(std::move(slices)) {
-    name = std::move(modelName);
-    bounds_ = slices_.sourceBounds;
-    buildMesh();
-}
-void SliceSceneModel::buildMesh() {
-    const double fallback =
-        slices_.layers.size() > 1 ? slices_.layers[1].z - slices_.layers[0].z : 1.0;
-    for (std::size_t li = 0; li < slices_.layers.size(); ++li) {
-        const auto &layer = slices_.layers[li];
-        const double bottom = li ? slices_.layers[li - 1].z : layer.z - fallback;
+std::shared_ptr<const SceneModelGeometry> sliceGeometry(SliceData slices) {
+    auto sharedSlices = std::make_shared<SliceData>(std::move(slices));
+    Bounds3 bounds = sharedSlices->sourceBounds;
+    std::vector<RenderVertex> vertices;
+    const double fallback = sharedSlices->layers.size() > 1
+                                ? sharedSlices->layers[1].z - sharedSlices->layers[0].z
+                                : 1.0;
+    for (std::size_t li = 0; li < sharedSlices->layers.size(); ++li) {
+        const auto &layer = sharedSlices->layers[li];
+        const double bottom = li ? sharedSlices->layers[li - 1].z : layer.z - fallback;
         for (const auto &path : layer.paths) {
             if (path.points.size() < 2)
                 continue;
@@ -93,45 +88,76 @@ void SliceSceneModel::buildMesh() {
                 Vec3 p0{a.x, a.y, bottom}, p1{b.x, b.y, bottom}, p2{b.x, b.y, layer.z},
                     p3{a.x, a.y, layer.z};
                 if (path.type == PathType::Internal)
-                    vertices_.insert(vertices_.end(),
-                                     {rv(p0, normalA),
-                                      rv(p2, normalB),
-                                      rv(p1, normalB),
-                                      rv(p0, normalA),
-                                      rv(p3, normalA),
-                                      rv(p2, normalB)});
+                    vertices.insert(vertices.end(),
+                                    {rv(p0, normalA),
+                                     rv(p2, normalB),
+                                     rv(p1, normalB),
+                                     rv(p0, normalA),
+                                     rv(p3, normalA),
+                                     rv(p2, normalB)});
                 else
-                    vertices_.insert(vertices_.end(),
-                                     {rv(p0, normalA),
-                                      rv(p1, normalB),
-                                      rv(p2, normalB),
-                                      rv(p0, normalA),
-                                      rv(p2, normalB),
-                                      rv(p3, normalA)});
-                bounds_.include(p0);
-                bounds_.include(p2);
+                    vertices.insert(vertices.end(),
+                                    {rv(p0, normalA),
+                                     rv(p1, normalB),
+                                     rv(p2, normalB),
+                                     rv(p0, normalA),
+                                     rv(p2, normalB),
+                                     rv(p3, normalA)});
+                bounds.include(p0);
+                bounds.include(p2);
             }
         }
     }
-}
-TriangleMesh SliceSceneModel::triangleMesh() const {
+
     TriangleMesh mesh;
-    for (std::size_t i = 0; i + 2 < vertices_.size(); i += 3) {
-        Triangle t;
+    mesh.reserve(vertices.size() / 3);
+    for (std::size_t i = 0; i + 2 < vertices.size(); i += 3) {
+        Triangle triangle;
         for (int k = 0; k < 3; ++k)
-            t.vertices[k] = {vertices_[i + k].x, vertices_[i + k].y, vertices_[i + k].z};
-        t.normal = {vertices_[i].nx, vertices_[i].ny, vertices_[i].nz};
-        mesh.addTriangle(t);
+            triangle.vertices[k] = {vertices[i + k].x, vertices[i + k].y, vertices[i + k].z};
+        triangle.normal = {vertices[i].nx, vertices[i].ny, vertices[i].nz};
+        mesh.addTriangle(std::move(triangle));
     }
-    return mesh;
+    return std::make_shared<SceneModelGeometry>(
+        std::move(mesh), bounds, std::move(vertices), std::move(sharedSlices));
 }
+} // namespace
+
+SceneModelGeometry::SceneModelGeometry(TriangleMesh mesh,
+                                       Bounds3 bounds,
+                                       std::vector<RenderVertex> vertices,
+                                       std::shared_ptr<const SliceData> slices)
+    : mesh_(std::move(mesh)), bounds_(bounds), vertices_(std::move(vertices)),
+      slices_(std::move(slices)) {}
+
+SceneModel::SceneModel(std::string modelName, std::shared_ptr<const SceneModelGeometry> geometry)
+    : name(std::move(modelName)), geometry_(std::move(geometry)) {}
+
+MeshSceneModel::MeshSceneModel(std::string modelName, TriangleMesh mesh)
+    : SceneModel(std::move(modelName), meshGeometry(std::move(mesh))) {}
+MeshSceneModel::MeshSceneModel(std::string modelName,
+                               std::shared_ptr<const SceneModelGeometry> geometry)
+    : SceneModel(std::move(modelName), std::move(geometry)) {}
+std::shared_ptr<SceneModel> MeshSceneModel::replica(std::string modelName) const {
+    return std::make_shared<MeshSceneModel>(std::move(modelName), geometry_);
+}
+
+SliceSceneModel::SliceSceneModel(std::string modelName, SliceData slices)
+    : SceneModel(std::move(modelName), sliceGeometry(std::move(slices))) {}
+SliceSceneModel::SliceSceneModel(std::string modelName,
+                                 std::shared_ptr<const SceneModelGeometry> geometry)
+    : SceneModel(std::move(modelName), std::move(geometry)) {}
+std::shared_ptr<SceneModel> SliceSceneModel::replica(std::string modelName) const {
+    return std::make_shared<SliceSceneModel>(std::move(modelName), geometry_);
+}
+
 TriangleMesh transformedMesh(const SceneModel &model) {
     TriangleMesh result;
-    auto mesh = model.triangleMesh();
+    const TriangleMesh &mesh = model.triangleMesh();
     result.reserve(mesh.triangles().size());
     for (auto triangle : mesh.triangles()) {
-        for (auto &p : triangle.vertices)
-            p = model.transform.transformPoint(p);
+        for (auto &point : triangle.vertices)
+            point = model.transform.transformPoint(point);
         triangle.normal = model.transform.transformVector(triangle.normal);
         result.addTriangle(std::move(triangle));
     }

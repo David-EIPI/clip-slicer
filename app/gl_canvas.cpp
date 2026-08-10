@@ -486,7 +486,8 @@ void ModelCanvas::DrawModels(const float *) {
             ++ci;
             continue;
         }
-        auto it = buffers_.find(m.get());
+        const auto *geometry = m->geometryIdentity();
+        auto it = buffers_.find(geometry);
         if (it == buffers_.end()) {
             Buffer b;
             glGenBuffers(1, &b.id);
@@ -519,7 +520,7 @@ void ModelCanvas::DrawModels(const float *) {
                              GL_STATIC_DRAW);
                 b.capCount = GLsizei(caps.indices.size());
             }
-            it = buffers_.emplace(m.get(), b).first;
+            it = buffers_.emplace(geometry, b).first;
         }
         glBindBuffer(GL_ARRAY_BUFFER, it->second.id);
         glEnableVertexAttribArray(0);
