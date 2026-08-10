@@ -25,6 +25,7 @@
 #include <sstream>
 #include <unordered_set>
 #include <wx/artprov.h>
+#include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/dataobj.h>
 #include <wx/filedlg.h>
@@ -40,9 +41,6 @@
 #include <wx/textdlg.h>
 #include <wx/thread.h>
 #include <wx/toolbar.h>
-#ifdef __WXGTK__
-#include <gtk/gtk.h>
-#endif
 
 namespace {
 enum {
@@ -176,36 +174,6 @@ wxBitmapBundle SlicedModelIcon() {
     return wxBitmapBundle::FromSVG(svg, {16, 16});
 }
 
-#ifdef __WXGTK__
-void CloseDocumentTab(GtkButton *, gpointer data) {
-    static_cast<DocumentFrame *>(data)->Close();
-}
-
-void AddDocumentTabCloseButton(DocumentFrame &document, const wxString &title) {
-    wxMDIParentFrame *parent = document.GetMDIParent();
-    wxMDIClientWindowBase *client = parent ? parent->GetClientWindow() : nullptr;
-    GtkWidget *notebookWidget = client ? client->GetHandle() : nullptr;
-    GtkWidget *documentWidget = document.GetHandle();
-    if (!GTK_IS_NOTEBOOK(notebookWidget) || !documentWidget)
-        return;
-
-    GtkWidget *tab = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    GtkWidget *label = gtk_label_new(title.utf8_str());
-    GtkWidget *close = gtk_button_new();
-    GtkWidget *icon = gtk_image_new_from_icon_name("window-close-symbolic", GTK_ICON_SIZE_MENU);
-    gtk_container_add(GTK_CONTAINER(close), icon);
-    gtk_button_set_relief(GTK_BUTTON(close), GTK_RELIEF_NONE);
-    gtk_widget_set_focus_on_click(close, FALSE);
-    gtk_widget_set_name(close, "tab-close-button");
-    gtk_widget_set_tooltip_text(close, "Close document");
-    gtk_box_pack_start(GTK_BOX(tab), label, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(tab), close, FALSE, FALSE, 0);
-    gtk_widget_show_all(tab);
-    gtk_notebook_set_tab_label(
-        GTK_NOTEBOOK(notebookWidget), documentWidget, tab);
-    g_signal_connect(close, "clicked", G_CALLBACK(CloseDocumentTab), &document);
-}
-#endif
 } // namespace
 
 class SliceDialog final : public wxDialog {
@@ -342,7 +310,19 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                       "Move selected models into the positive octant");
     toolbar_->Realize();
     clip_slicer::help::Assign(toolbar_, clip_slicer::help::documentToolbar);
-    root->Add(toolbar_, 0, wxEXPAND);
+    auto *toolbarRow = new wxBoxSizer(wxHORIZONTAL);
+    toolbarRow->Add(toolbar_, 1, wxEXPAND);
+    auto *closeButton = new wxButton(this,
+                                     wxID_CLOSE,
+                                     wxString::FromUTF8("\xc3\x97"),
+                                     wxDefaultPosition,
+                                     {FromDIP(32), wxDefaultCoord},
+                                     wxBU_EXACTFIT);
+    closeButton->SetToolTip("Close document");
+    clip_slicer::help::Assign(closeButton, clip_slicer::help::documentWindow);
+    closeButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { Close(); });
+    toolbarRow->Add(closeButton, 0, wxEXPAND);
+    root->Add(toolbarRow, 0, wxEXPAND);
     auto *split = new wxSplitterWindow(this);
     modelList_ = new wxDataViewCtrl(split,
                                     wxID_ANY,
@@ -477,13 +457,6 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     sectionScroll_->Bind(wxEVT_SCROLL_THUMBRELEASE, &DocumentFrame::OnSectionScroll, this);
     sectionScroll_->Bind(wxEVT_SCROLL_CHANGED, &DocumentFrame::OnSectionScroll, this);
     sectionScroll_->Bind(wxEVT_CHAR_HOOK, &DocumentFrame::OnSectionScrollKey, this);
-#ifdef __WXGTK__
-    // wxGTK inserts MDI children into a GtkNotebook while they are being
-    // constructed. Replacing its tab widget before the notebook has received
-    // its first allocation can make GTK draw the header with negative
-    // dimensions. Wait until the initial layout has completed.
-    CallAfter([this, title] { AddDocumentTabCloseButton(*this, title); });
-#endif
     UpdateStatus();
     UpdateCommandState();
 }
