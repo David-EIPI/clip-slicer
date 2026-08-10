@@ -4,6 +4,7 @@
 #pragma once
 
 #include "stl_slicer/scene_model.hpp"
+#include "model_tree_model.hpp"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -12,13 +13,14 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
-#include <wx/checklst.h>
+#include <wx/dataview.h>
 #include <wx/mdi.h>
 
 class ModelCanvas;
 class wxActivateEvent;
 class wxCloseEvent;
 class wxDPIChangedEvent;
+class wxDataViewEvent;
 class wxKeyEvent;
 class wxMenuItem;
 class wxPanel;
@@ -87,12 +89,24 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnTransformModels(wxCommandEvent &);
     void OnMultiplyModels(wxCommandEvent &);
     void OnMoveToOrigin(wxCommandEvent &);
-    void OnListSelection(wxCommandEvent &);
-    void OnListCheck(wxCommandEvent &);
+    void OnModelSelectionChanged(wxDataViewEvent &);
+    void OnModelVisibilityChanged(wxDataViewEvent &);
+    void OnModelGroupExpanded(wxDataViewEvent &);
+    void OnModelGroupCollapsed(wxDataViewEvent &);
+    void OnModelDragBegin(wxDataViewEvent &);
+    void OnModelDropPossible(wxDataViewEvent &);
+    void OnModelDrop(wxDataViewEvent &);
+    void OnNewModelGroup(wxCommandEvent &);
+    void OnUngroupModels(wxCommandEvent &);
     void PublishStatus();
     void UpdateCommandState();
     void UpdateSectionControls();
     void UpdateToolbarBitmaps();
+    void PruneModelGroups();
+    void CreateModelGroup(std::string name,
+                          const std::vector<std::shared_ptr<stl_slicer::SceneModel>> &members);
+    void RemoveModelsFromGroups(const std::vector<stl_slicer::SceneModel *> &models);
+    std::uint64_t ModelGroupId(const stl_slicer::SceneModel *model) const;
 
     enum class SupportProgressStage : std::size_t {
         Slicing,
@@ -111,7 +125,11 @@ class DocumentFrame final : public wxMDIChildFrame {
     };
 
     std::vector<std::shared_ptr<stl_slicer::SceneModel>> models_;
-    wxCheckListBox *modelList_ = nullptr;
+    wxDataViewCtrl *modelList_ = nullptr;
+    ModelTreeModel *modelListModel_ = nullptr;
+    std::vector<DocumentModelGroup> modelGroups_;
+    std::uint64_t nextModelGroupId_ = 1;
+    bool updatingModelList_ = false;
     ModelCanvas *canvas_ = nullptr;
     wxPanel *sectionControls_ = nullptr;
     wxSpinCtrl *sectionIndex_ = nullptr;
@@ -126,6 +144,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *resetTransformItem_ = nullptr;
     wxMenuItem *transformModelsItem_ = nullptr;
     wxMenuItem *multiplyModelsItem_ = nullptr;
+    wxMenuItem *newModelGroupItem_ = nullptr;
+    wxMenuItem *ungroupModelsItem_ = nullptr;
     wxMenuItem *moveToOriginItem_ = nullptr;
     wxMenuItem *sectionItem_ = nullptr;
     std::thread unsupportedWorker_;

@@ -188,6 +188,7 @@ if(STL_SLICER_BUILD_GUI)
         app/settings_dialog.cpp
         app/model_transform_dialog.cpp
         app/model_multiply_dialog.cpp
+        app/model_tree_model.cpp
         app/embedded_assets.cpp
         app/embedded_manual.cpp
         app/help_window.cpp
@@ -251,5 +252,28 @@ if(STL_SLICER_BUILD_TESTS)
         endif()
         target_compile_features(slice_visualization_tests PRIVATE cxx_std_17)
         add_test(NAME slice_visualization_tests COMMAND slice_visualization_tests)
+
+        add_executable(model_tree_model_tests
+            tests/model_tree_model_tests.cpp
+            app/model_tree_model.cpp)
+        target_include_directories(model_tree_model_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app)
+        if(WIN32)
+            if(STL_SLICER_USE_LOCAL_WX_SOURCE)
+                target_link_libraries(model_tree_model_tests PRIVATE
+                    stl_slicer_lib
+                    wx::core
+                    wx::base)
+            else()
+                target_link_libraries(model_tree_model_tests PRIVATE
+                    stl_slicer_lib
+                    wxWidgets::wxWidgets)
+            endif()
+        else()
+            target_link_libraries(model_tree_model_tests PRIVATE
+                stl_slicer_lib
+                ${wxWidgets_LIBRARIES})
+        endif()
+        target_compile_features(model_tree_model_tests PRIVATE cxx_std_17)
+        add_test(NAME model_tree_model_tests COMMAND model_tree_model_tests)
     endif()
 endif()

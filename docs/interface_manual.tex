@@ -28,10 +28,20 @@ diagnosis.
 \subsection{Model List}
 \label{model-list}
 
-The model list controls selection and visibility. Its check boxes show or hide
-model geometry without deleting it. Commands and transformations apply to all
-selected entries, and a document can contain both source surface models and
-generated slice models.
+The model pane controls selection, visibility, type identification, and
+organization. The \emph{Visible} check boxes show or hide geometry without
+deleting it. Surface models use a mesh icon and normal text; generated slice
+models use a stacked-layer icon, italic text, and the type \emph{Slices}.
+Commands and transformations apply to all selected entries.
+
+Models can be placed in named, collapsible groups. Selecting a group selects
+all of its children for subsequent commands, and changing a group's visibility
+changes every child. Use \emph{Models > New Group} to place the current
+selection in a named group and \emph{Ungroup selected} to remove selected
+models from their groups. Drag selected rows onto a group to move them into it,
+onto another model to adopt that model's group and position, or onto the empty
+pane background to ungroup them. Multiple selection uses the platform's normal
+Ctrl and Shift conventions.
 
 \section{Menu Commands}
 \label{document-menus}
@@ -60,6 +70,8 @@ model coordinates. \emph{Move to Origin} preserves the relative placement of
 all selected models while translating their combined bounding box so that its
 minimum X, Y, and Z coordinates are all zero. The selected group therefore
 fits tightly in the positive octant and rests on the build plane.
+\emph{New Group} organizes the selected models under a named, collapsible row;
+\emph{Ungroup selected} returns them to the top level.
 
 \hypertarget{transform-dialog}{}The \emph{Transform} dialog provides numeric
 rotation axis and angle, translation, and uniform scale controls.
@@ -72,7 +84,8 @@ are the X, Y, and Z dimensions of the selected models' shared bounding box, so
 the default array places adjacent copies without overlap. The original models
 form the first array position and are included in the requested counts. Replica
 geometry is shared in memory, while each instance has its own transformation
-and can subsequently be moved or rotated independently.
+and can subsequently be moved or rotated independently. The original models
+and all new instances are placed in one automatically named, expanded group.
 
 The \emph{Slice} menu contains commands for regular slicing, interactive
 cross-sections, unsupported-area detection, orientation optimization, and

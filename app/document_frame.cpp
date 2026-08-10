@@ -23,8 +23,10 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <unordered_set>
 #include <wx/artprov.h>
 #include <wx/checkbox.h>
+#include <wx/dataobj.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/msgdlg.h>
@@ -62,6 +64,8 @@ enum {
     IdResetTransform,
     IdTransformModels,
     IdMultiplyModels,
+    IdNewModelGroup,
+    IdUngroupModels,
     IdMoveToOrigin,
     IdSettings
 };
@@ -157,6 +161,19 @@ wxBitmap LoadEmbeddedIcon(const unsigned char *data,
     wxImage image = icon.ConvertToImage();
     image.Rescale(size.GetWidth(), size.GetHeight(), wxIMAGE_QUALITY_HIGH);
     return wxBitmap(image);
+}
+
+wxBitmapBundle ModelGroupIcon() {
+    static constexpr char svg[] = R"svg(<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fill="#d9a62e" stroke="#795a12" stroke-width="1" d="M1.5 3.5h5l1.5 2h6.5v7.5H1.5z"/><path fill="#f3c84b" d="M2.5 6.5h11v5.5h-11z"/></svg>)svg";
+    return wxBitmapBundle::FromSVG(svg, {16, 16});
+}
+wxBitmapBundle MeshModelIcon() {
+    static constexpr char svg[] = R"svg(<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fill="#4b9fca" fill-opacity=".35" stroke="#236887" stroke-width="1.2" stroke-linejoin="round" d="M8 1.5 14 12.5 2 12.5z"/><path fill="none" stroke="#236887" stroke-width="1" d="M8 1.5v11M2 12.5 11 7"/></svg>)svg";
+    return wxBitmapBundle::FromSVG(svg, {16, 16});
+}
+wxBitmapBundle SlicedModelIcon() {
+    static constexpr char svg[] = R"svg(<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><g fill="#58ad77" stroke="#27613d" stroke-width="1"><path d="m2 4 6-2 6 2-6 2z"/><path d="m2 8 6-2 6 2-6 2z"/><path d="m2 12 6-2 6 2-6 2z"/></g></svg>)svg";
+    return wxBitmapBundle::FromSVG(svg, {16, 16});
 }
 
 #ifdef __WXGTK__
@@ -327,8 +344,32 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     clip_slicer::help::Assign(toolbar_, clip_slicer::help::documentToolbar);
     root->Add(toolbar_, 0, wxEXPAND);
     auto *split = new wxSplitterWindow(this);
-    modelList_ =
-        new wxCheckListBox(split, wxID_ANY, wxDefaultPosition, wxDefaultSize, {}, wxLB_EXTENDED);
+    modelList_ = new wxDataViewCtrl(split,
+                                    wxID_ANY,
+                                    wxDefaultPosition,
+                                    wxDefaultSize,
+                                    wxDV_MULTIPLE | wxDV_ROW_LINES | wxDV_VERT_RULES);
+    modelListModel_ =
+        new ModelTreeModel(ModelGroupIcon(), MeshModelIcon(), SlicedModelIcon());
+    modelList_->AssociateModel(modelListModel_);
+    modelListModel_->DecRef();
+    modelList_->AppendToggleColumn("Visible",
+                                   ModelTreeModel::Visibility,
+                                   wxDATAVIEW_CELL_ACTIVATABLE,
+                                   FromDIP(58),
+                                   wxALIGN_CENTER);
+    modelList_->AppendIconTextColumn("Model",
+                                     ModelTreeModel::Name,
+                                     wxDATAVIEW_CELL_INERT,
+                                     FromDIP(180),
+                                     wxALIGN_LEFT);
+    modelList_->AppendTextColumn("Type",
+                                 ModelTreeModel::Type,
+                                 wxDATAVIEW_CELL_INERT,
+                                 FromDIP(72),
+                                 wxALIGN_LEFT);
+    modelList_->EnableDragSource(wxDF_UNICODETEXT);
+    modelList_->EnableDropTarget(wxDF_UNICODETEXT);
     clip_slicer::help::Assign(modelList_, clip_slicer::help::modelList);
     auto *viewArea = new wxPanel(split);
     auto *viewSizer = new wxBoxSizer(wxVERTICAL);
@@ -364,7 +405,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     viewSizer->Add(canvas_, 1, wxEXPAND);
     viewArea->SetSizer(viewSizer);
     sectionControls_->Hide();
-    split->SplitVertically(modelList_, viewArea, 220);
+    split->SplitVertically(modelList_, viewArea, FromDIP(320));
     split->SetMinimumPaneSize(120);
     root->Add(split, 1, wxEXPAND);
     SetSizer(root);
@@ -401,6 +442,8 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnResetTransform, this, IdResetTransform);
     Bind(wxEVT_MENU, &DocumentFrame::OnTransformModels, this, IdTransformModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnMultiplyModels, this, IdMultiplyModels);
+    Bind(wxEVT_MENU, &DocumentFrame::OnNewModelGroup, this, IdNewModelGroup);
+    Bind(wxEVT_MENU, &DocumentFrame::OnUngroupModels, this, IdUngroupModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnMoveToOrigin, this, IdMoveToOrigin);
     Bind(
         wxEVT_MENU,
@@ -408,8 +451,17 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
             static_cast<MainFrame *>(GetMDIParent())->ShowSettingsDialog();
         },
         IdSettings);
-    modelList_->Bind(wxEVT_LISTBOX, &DocumentFrame::OnListSelection, this);
-    modelList_->Bind(wxEVT_CHECKLISTBOX, &DocumentFrame::OnListCheck, this);
+    modelList_->Bind(
+        wxEVT_DATAVIEW_SELECTION_CHANGED, &DocumentFrame::OnModelSelectionChanged, this);
+    modelList_->Bind(
+        wxEVT_DATAVIEW_ITEM_VALUE_CHANGED, &DocumentFrame::OnModelVisibilityChanged, this);
+    modelList_->Bind(wxEVT_DATAVIEW_ITEM_EXPANDED, &DocumentFrame::OnModelGroupExpanded, this);
+    modelList_->Bind(wxEVT_DATAVIEW_ITEM_COLLAPSED, &DocumentFrame::OnModelGroupCollapsed, this);
+    modelList_->Bind(wxEVT_DATAVIEW_ITEM_BEGIN_DRAG, &DocumentFrame::OnModelDragBegin, this);
+    modelList_->Bind(wxEVT_DATAVIEW_ITEM_DROP_POSSIBLE,
+                     &DocumentFrame::OnModelDropPossible,
+                     this);
+    modelList_->Bind(wxEVT_DATAVIEW_ITEM_DROP, &DocumentFrame::OnModelDrop, this);
     sectionIndex_->Bind(wxEVT_SPINCTRL, &DocumentFrame::OnSectionIndexChanged, this);
     sectionIndex_->Bind(wxEVT_TEXT_ENTER, [this](wxCommandEvent &) {
         canvas_->SetSliceIndex(
@@ -463,6 +515,9 @@ void DocumentFrame::BuildMenus() {
     transformModelsItem_ = models->Append(IdTransformModels, "&Transform...");
     multiplyModelsItem_ = models->Append(IdMultiplyModels, "&Multiply...");
     moveToOriginItem_ = models->Append(IdMoveToOrigin, "Move to &Origin");
+    models->AppendSeparator();
+    newModelGroupItem_ = models->Append(IdNewModelGroup, "New &Group...");
+    ungroupModelsItem_ = models->Append(IdUngroupModels, "&Ungroup selected");
     auto *slice = new wxMenu;
     slice->Append(IdSlice, "&Slice selected...");
     sectionItem_ = slice->AppendCheckItem(IdInteractive, "&Section...");
@@ -623,12 +678,26 @@ void DocumentFrame::OnOpen(wxCommandEvent &) {
         OpenPath(d.GetPath());
 }
 void DocumentFrame::RefreshModelList() {
-    modelList_->Clear();
-    for (const auto &m : models_) {
-        const int index = modelList_->Append(m->name);
-        modelList_->Check(index, m->visible);
-        modelList_->SetSelection(index, m->selected);
+    PruneModelGroups();
+    updatingModelList_ = true;
+    modelListModel_->Rebuild(models_, modelGroups_);
+    wxDataViewItemArray selections;
+    for (const auto &model : models_) {
+        if (model->selected) {
+            const wxDataViewItem item = modelListModel_->ItemForModel(model.get());
+            if (item.IsOk())
+                selections.push_back(item);
+        }
     }
+    modelList_->SetSelections(selections);
+    for (const DocumentModelGroup &group : modelGroups_) {
+        if (!group.expanded)
+            continue;
+        const wxDataViewItem item = modelListModel_->ItemForGroup(group.id);
+        if (item.IsOk())
+            modelList_->Expand(item);
+    }
+    updatingModelList_ = false;
     UpdateCommandState();
 }
 void DocumentFrame::UpdateCommandState() {
@@ -650,6 +719,15 @@ void DocumentFrame::UpdateCommandState() {
         transformModelsItem_->Enable(modelSelected);
     if (multiplyModelsItem_)
         multiplyModelsItem_->Enable(modelSelected);
+    if (newModelGroupItem_)
+        newModelGroupItem_->Enable(modelSelected);
+    if (ungroupModelsItem_) {
+        const bool groupedModelSelected =
+            std::any_of(models_.begin(), models_.end(), [this](const auto &model) {
+                return model->selected && ModelGroupId(model.get()) != 0;
+            });
+        ungroupModelsItem_->Enable(groupedModelSelected);
+    }
     if (moveToOriginItem_)
         moveToOriginItem_->Enable(modelSelected);
     if (deleteModelsItem_)
@@ -685,16 +763,208 @@ void DocumentFrame::UpdateCommandState() {
                              optimizationRunning_ || unsupportedAnalysisRunning_ ||
                                  supportGenerationRunning_);
 }
-void DocumentFrame::OnListSelection(wxCommandEvent &) {
-    for (std::size_t i = 0; i < models_.size(); ++i)
-        models_[i]->selected = modelList_->IsSelected(i);
+void DocumentFrame::OnModelSelectionChanged(wxDataViewEvent &) {
+    if (updatingModelList_)
+        return;
+    for (auto &model : models_)
+        model->selected = false;
+    wxDataViewItemArray selections;
+    modelList_->GetSelections(selections);
+    for (const wxDataViewItem &item : selections) {
+        if (stl_slicer::SceneModel *model = modelListModel_->Model(item)) {
+            model->selected = true;
+            continue;
+        }
+        const std::uint64_t groupId = modelListModel_->GroupId(item);
+        if (!groupId)
+            continue;
+        for (auto &model : models_)
+            if (ModelGroupId(model.get()) == groupId)
+                model->selected = true;
+    }
     UpdateCommandState();
     canvas_->SelectionChanged();
 }
-void DocumentFrame::OnListCheck(wxCommandEvent &e) {
-    models_[e.GetInt()]->visible = modelList_->IsChecked(e.GetInt());
+void DocumentFrame::OnModelVisibilityChanged(wxDataViewEvent &) {
     canvas_->Refresh();
     UpdateStatus();
+}
+void DocumentFrame::OnModelGroupExpanded(wxDataViewEvent &event) {
+    const std::uint64_t groupId = modelListModel_->GroupId(event.GetItem());
+    for (DocumentModelGroup &group : modelGroups_)
+        if (group.id == groupId)
+            group.expanded = true;
+}
+void DocumentFrame::OnModelGroupCollapsed(wxDataViewEvent &event) {
+    const std::uint64_t groupId = modelListModel_->GroupId(event.GetItem());
+    for (DocumentModelGroup &group : modelGroups_)
+        if (group.id == groupId)
+            group.expanded = false;
+}
+void DocumentFrame::PruneModelGroups() {
+    std::unordered_set<const stl_slicer::SceneModel *> live;
+    live.reserve(models_.size());
+    for (const auto &model : models_)
+        live.insert(model.get());
+    std::unordered_set<const stl_slicer::SceneModel *> assigned;
+    for (DocumentModelGroup &group : modelGroups_) {
+        const auto end = std::remove_if(group.members.begin(),
+                                        group.members.end(),
+                                        [&live, &assigned](const auto *model) {
+                                            return !live.count(model) || !assigned.insert(model).second;
+                                        });
+        group.members.erase(end, group.members.end());
+    }
+    modelGroups_.erase(
+        std::remove_if(modelGroups_.begin(),
+                       modelGroups_.end(),
+                       [](const DocumentModelGroup &group) { return group.members.empty(); }),
+        modelGroups_.end());
+}
+void DocumentFrame::RemoveModelsFromGroups(
+    const std::vector<stl_slicer::SceneModel *> &models) {
+    const std::unordered_set<const stl_slicer::SceneModel *> removed(models.begin(), models.end());
+    for (DocumentModelGroup &group : modelGroups_) {
+        const auto end = std::remove_if(group.members.begin(),
+                                        group.members.end(),
+                                        [&removed](const auto *model) {
+                                            return removed.count(model) != 0;
+                                        });
+        group.members.erase(end, group.members.end());
+    }
+}
+void DocumentFrame::CreateModelGroup(
+    std::string name,
+    const std::vector<std::shared_ptr<stl_slicer::SceneModel>> &members) {
+    std::vector<stl_slicer::SceneModel *> rawMembers;
+    rawMembers.reserve(members.size());
+    for (const auto &model : members)
+        rawMembers.push_back(model.get());
+    RemoveModelsFromGroups(rawMembers);
+    DocumentModelGroup group;
+    group.id = nextModelGroupId_++;
+    group.name = std::move(name);
+    group.members.assign(rawMembers.begin(), rawMembers.end());
+    modelGroups_.push_back(std::move(group));
+    PruneModelGroups();
+}
+std::uint64_t DocumentFrame::ModelGroupId(const stl_slicer::SceneModel *model) const {
+    for (const DocumentModelGroup &group : modelGroups_)
+        if (std::find(group.members.begin(), group.members.end(), model) != group.members.end())
+            return group.id;
+    return 0;
+}
+void DocumentFrame::OnNewModelGroup(wxCommandEvent &) {
+    std::vector<std::shared_ptr<stl_slicer::SceneModel>> selected;
+    for (const auto &model : models_)
+        if (model->selected)
+            selected.push_back(model);
+    if (selected.empty())
+        return;
+
+    const wxString defaultName = wxString::Format("Group %llu",
+                                                   static_cast<unsigned long long>(
+                                                       nextModelGroupId_));
+    wxTextEntryDialog dialog(this, "Group name:", "New model group", defaultName);
+    clip_slicer::help::Assign(&dialog, clip_slicer::help::modelList);
+    clip_slicer::help::Enable(&dialog);
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+    wxString name = dialog.GetValue();
+    name.Trim(true).Trim(false);
+    if (name.empty())
+        name = defaultName;
+    CreateModelGroup(name.ToStdString(), selected);
+    RefreshModelList();
+}
+void DocumentFrame::OnUngroupModels(wxCommandEvent &) {
+    std::vector<stl_slicer::SceneModel *> selected;
+    for (const auto &model : models_)
+        if (model->selected)
+            selected.push_back(model.get());
+    if (selected.empty())
+        return;
+    RemoveModelsFromGroups(selected);
+    PruneModelGroups();
+    RefreshModelList();
+}
+void DocumentFrame::OnModelDragBegin(wxDataViewEvent &event) {
+    if (!std::any_of(models_.begin(), models_.end(), [](const auto &model) {
+            return model->selected;
+        })) {
+        event.Veto();
+        return;
+    }
+    event.SetDataObject(new wxTextDataObject("clip-slicer-models"));
+    event.SetDragFlags(wxDrag_AllowMove);
+}
+void DocumentFrame::OnModelDropPossible(wxDataViewEvent &event) {
+    if (event.GetDataFormat() != wxDF_UNICODETEXT)
+        event.Veto();
+    else
+        event.SetDropEffect(wxDragMove);
+}
+void DocumentFrame::OnModelDrop(wxDataViewEvent &event) {
+    if (event.GetDataFormat() != wxDF_UNICODETEXT) {
+        event.Veto();
+        return;
+    }
+    wxTextDataObject data;
+    data.SetData(wxDF_UNICODETEXT, event.GetDataSize(), event.GetDataBuffer());
+    if (data.GetText() != "clip-slicer-models") {
+        event.Veto();
+        return;
+    }
+
+    std::vector<std::shared_ptr<stl_slicer::SceneModel>> selected;
+    std::vector<stl_slicer::SceneModel *> selectedRaw;
+    for (const auto &model : models_) {
+        if (!model->selected)
+            continue;
+        selected.push_back(model);
+        selectedRaw.push_back(model.get());
+    }
+    if (selected.empty()) {
+        event.Veto();
+        return;
+    }
+
+    stl_slicer::SceneModel *targetModel = modelListModel_->Model(event.GetItem());
+    const std::uint64_t targetGroupId = modelListModel_->GroupId(event.GetItem());
+    const bool targetMoves = targetModel &&
+                             std::find(selectedRaw.begin(), selectedRaw.end(), targetModel) !=
+                                 selectedRaw.end();
+    RemoveModelsFromGroups(selectedRaw);
+    if (targetGroupId) {
+        const auto group = std::find_if(modelGroups_.begin(),
+                                        modelGroups_.end(),
+                                        [targetGroupId](const DocumentModelGroup &candidate) {
+                                            return candidate.id == targetGroupId;
+                                        });
+        if (group != modelGroups_.end())
+            group->members.insert(group->members.end(), selectedRaw.begin(), selectedRaw.end());
+    }
+
+    if (targetModel && !targetMoves) {
+        const std::unordered_set<stl_slicer::SceneModel *> moving(selectedRaw.begin(),
+                                                                  selectedRaw.end());
+        models_.erase(std::remove_if(models_.begin(),
+                                     models_.end(),
+                                     [&moving](const auto &model) {
+                                         return moving.count(model.get()) != 0;
+                                     }),
+                      models_.end());
+        const auto target = std::find_if(models_.begin(),
+                                         models_.end(),
+                                         [targetModel](const auto &model) {
+                                             return model.get() == targetModel;
+                                         });
+        models_.insert(target, selected.begin(), selected.end());
+    }
+    PruneModelGroups();
+    RefreshModelList();
+    canvas_->SelectionChanged();
+    event.SetDropEffect(wxDragMove);
 }
 void DocumentFrame::OnShow(wxCommandEvent &) {
     for (auto &m : models_)
@@ -784,11 +1054,12 @@ void DocumentFrame::OnMultiplyModels(wxCommandEvent &) {
 
     const auto copies = dialog.Copies();
     const stl_slicer::Vec3 stride = dialog.Stride();
-    constexpr std::size_t maximumDocumentInstances = 1000000;
+    constexpr std::size_t maximumDataViewItems =
+        std::numeric_limits<unsigned int>::max();
     std::size_t placements = 1;
     for (const unsigned int count : copies) {
-        if (placements > maximumDocumentInstances / count) {
-            wxMessageBox("The requested multiplication exceeds the limit of 1,000,000 models.",
+        if (placements > std::numeric_limits<std::size_t>::max() / count) {
+            wxMessageBox("The requested multiplication is too large for this platform.",
                          "Multiply failed",
                          wxOK | wxICON_ERROR,
                          this);
@@ -798,24 +1069,19 @@ void DocumentFrame::OnMultiplyModels(wxCommandEvent &) {
     }
     if (placements == 1)
         return;
-    if (selected.size() > maximumDocumentInstances / placements) {
-        wxMessageBox("The requested multiplication exceeds the limit of 1,000,000 models.",
+    if (selected.size() > maximumDataViewItems / placements) {
+        wxMessageBox("The requested copies exceed the wxDataViewCtrl item-count range.",
                      "Multiply failed",
                      wxOK | wxICON_ERROR,
                      this);
         return;
     }
     const std::size_t additional = selected.size() * (placements - 1);
-    if (models_.size() > maximumDocumentInstances - additional) {
-        wxMessageBox("The resulting document would exceed the limit of 1,000,000 models.",
-                     "Multiply failed",
-                     wxOK | wxICON_ERROR,
-                     this);
-        return;
-    }
 
     InvalidateUnsupportedAnalysis();
     models_.reserve(models_.size() + additional);
+    std::vector<std::shared_ptr<stl_slicer::SceneModel>> multiplied = selected;
+    multiplied.reserve(selected.size() * placements);
     for (unsigned int z = 0; z < copies[2]; ++z) {
         for (unsigned int y = 0; y < copies[1]; ++y) {
             for (unsigned int x = 0; x < copies[0]; ++x) {
@@ -831,11 +1097,15 @@ void DocumentFrame::OnMultiplyModels(wxCommandEvent &) {
                     copy->transform = translation * source->transform;
                     copy->visible = source->visible;
                     copy->selected = true;
-                    models_.push_back(std::move(copy));
+                    models_.push_back(copy);
+                    multiplied.push_back(std::move(copy));
                 }
             }
         }
     }
+    const std::string groupName = selected.size() == 1 ? selected.front()->name + " array"
+                                                       : "Multiplied models";
+    CreateModelGroup(groupName, multiplied);
     RefreshModelList();
     canvas_->ModelsChanged();
     UpdateStatus();
