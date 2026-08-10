@@ -279,22 +279,6 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     const wxSize toolSize = FromDIP(wxSize(24, 24));
     toolbar_->SetToolBitmapSize(toolSize);
     toolbar_->AddTool(
-        IdExport, "Export", wxArtProvider::GetBitmap(wxART_FILE_SAVE_AS, wxART_TOOLBAR, toolSize));
-    toolbar_->AddTool(IdSlice,
-                      "Slice",
-                      LoadEmbeddedIcon(clip_slicer::assets::sliceBreadIconPng,
-                                       clip_slicer::assets::sliceBreadIconPngSize,
-                                       wxART_EXECUTABLE_FILE,
-                                       toolSize));
-    toolbar_->AddTool(IdInteractive,
-                      "Section",
-                      LoadEmbeddedIcon(clip_slicer::assets::planeSliceIconPng,
-                                       clip_slicer::assets::planeSliceIconPngSize,
-                                       wxART_LIST_VIEW,
-                                       toolSize),
-                      "Interactive cross-section",
-                      wxITEM_CHECK);
-    toolbar_->AddTool(
         IdHide, "Hide", wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     toolbar_->AddTool(
         IdShow, "Show", wxArtProvider::GetBitmap(wxART_TICK_MARK, wxART_TOOLBAR, toolSize));
@@ -303,22 +287,16 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                       wxArtProvider::GetBitmap(wxART_DELETE, wxART_TOOLBAR, toolSize),
                       "Delete selected models");
     toolbar_->AddSeparator();
-    toolbar_->AddTool(IdDetectUnsupported,
-                      "Detect",
-                      LoadEmbeddedIcon(clip_slicer::assets::supportDetectIconPng,
-                                       clip_slicer::assets::supportDetectIconPngSize,
-                                       wxART_FIND,
+    toolbar_->AddTool(IdInteractive,
+                      "Section",
+                      LoadEmbeddedIcon(clip_slicer::assets::planeSliceIconPng,
+                                       clip_slicer::assets::planeSliceIconPngSize,
+                                       wxART_LIST_VIEW,
                                        toolSize),
-                      "Detect unsupported areas");
-    toolbar_->AddTool(IdOptimizeOrientation,
-                      "Optimize",
-                      LoadEmbeddedIcon(clip_slicer::assets::orientationOptimizerIconPng,
-                                       clip_slicer::assets::orientationOptimizerIconPngSize,
-                                       wxART_GO_UP,
-                                       toolSize),
-                      "Optimize model orientation");
+                      "Interactive cross-section",
+                      wxITEM_CHECK);
     toolbar_->AddTool(IdGenerateSupports,
-                      "Generate",
+                      "Supports",
                       LoadEmbeddedIcon(clip_slicer::assets::supportGenerateIconPng,
                                        clip_slicer::assets::supportGenerateIconPngSize,
                                        wxART_PLUS,
@@ -329,13 +307,6 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                       wxArtProvider::GetBitmap(wxART_STOP, wxART_TOOLBAR, toolSize),
                       "Stop background operation");
     toolbar_->AddSeparator();
-    toolbar_->AddTool(IdResetTransform,
-                      "Reset",
-                      LoadEmbeddedIcon(clip_slicer::assets::resetTransformIconPng,
-                                       clip_slicer::assets::resetTransformIconPngSize,
-                                       wxART_UNDO,
-                                       toolSize),
-                      "Reset selected model transformations");
     toolbar_->AddTool(IdTransformModels,
                       "Transform",
                       LoadEmbeddedIcon(clip_slicer::assets::transformModelsIconPng,
@@ -669,8 +640,6 @@ void DocumentFrame::UpdateCommandState() {
         exportItem_->Enable(sliced);
     if (exportStlItem_)
         exportStlItem_->Enable(meshSelected);
-    if (toolbar_)
-        toolbar_->EnableTool(IdExport, sliced);
     if (resetTransformItem_)
         resetTransformItem_->Enable(modelSelected);
     if (transformModelsItem_)
@@ -680,7 +649,6 @@ void DocumentFrame::UpdateCommandState() {
     if (deleteModelsItem_)
         deleteModelsItem_->Enable(modelSelected);
     if (toolbar_) {
-        toolbar_->EnableTool(IdResetTransform, modelSelected);
         toolbar_->EnableTool(IdTransformModels, modelSelected);
         toolbar_->EnableTool(IdMoveToOrigin, modelSelected);
         toolbar_->EnableTool(IdDeleteModels, modelSelected);
@@ -695,13 +663,9 @@ void DocumentFrame::UpdateCommandState() {
     if (generateSupportsItem_)
         generateSupportsItem_->Enable(canAnalyze);
     if (toolbar_)
-        toolbar_->EnableTool(IdDetectUnsupported, canAnalyze);
-    if (toolbar_)
         toolbar_->EnableTool(IdGenerateSupports, canAnalyze);
     if (optimizationItem_)
         optimizationItem_->Enable(canAnalyze);
-    if (toolbar_)
-        toolbar_->EnableTool(IdOptimizeOrientation, canAnalyze);
     if (sectionItem_) {
         sectionItem_->Enable(modelSelected);
         sectionItem_->Check(canvas_ && canvas_->InteractiveSlice());
@@ -934,12 +898,6 @@ void DocumentFrame::UpdateToolbarBitmaps() {
         if (auto *tool = toolbar_->FindById(id))
             tool->SetNormalBitmap(bitmap);
     };
-    setBitmap(IdExport, wxArtProvider::GetBitmap(wxART_FILE_SAVE_AS, wxART_TOOLBAR, toolSize));
-    setBitmap(IdSlice,
-              LoadEmbeddedIcon(clip_slicer::assets::sliceBreadIconPng,
-                               clip_slicer::assets::sliceBreadIconPngSize,
-                               wxART_EXECUTABLE_FILE,
-                               toolSize));
     setBitmap(IdInteractive,
               LoadEmbeddedIcon(clip_slicer::assets::planeSliceIconPng,
                                clip_slicer::assets::planeSliceIconPngSize,
@@ -948,16 +906,6 @@ void DocumentFrame::UpdateToolbarBitmaps() {
     setBitmap(IdHide, wxArtProvider::GetBitmap(wxART_CROSS_MARK, wxART_TOOLBAR, toolSize));
     setBitmap(IdShow, wxArtProvider::GetBitmap(wxART_TICK_MARK, wxART_TOOLBAR, toolSize));
     setBitmap(IdDeleteModels, wxArtProvider::GetBitmap(wxART_DELETE, wxART_TOOLBAR, toolSize));
-    setBitmap(IdDetectUnsupported,
-              LoadEmbeddedIcon(clip_slicer::assets::supportDetectIconPng,
-                               clip_slicer::assets::supportDetectIconPngSize,
-                               wxART_FIND,
-                               toolSize));
-    setBitmap(IdOptimizeOrientation,
-              LoadEmbeddedIcon(clip_slicer::assets::orientationOptimizerIconPng,
-                               clip_slicer::assets::orientationOptimizerIconPngSize,
-                               wxART_GO_UP,
-                               toolSize));
     setBitmap(IdGenerateSupports,
               LoadEmbeddedIcon(clip_slicer::assets::supportGenerateIconPng,
                                clip_slicer::assets::supportGenerateIconPngSize,
@@ -965,11 +913,6 @@ void DocumentFrame::UpdateToolbarBitmaps() {
                                toolSize));
     setBitmap(IdStopOptimization,
               wxArtProvider::GetBitmap(wxART_STOP, wxART_TOOLBAR, toolSize));
-    setBitmap(IdResetTransform,
-              LoadEmbeddedIcon(clip_slicer::assets::resetTransformIconPng,
-                               clip_slicer::assets::resetTransformIconPngSize,
-                               wxART_UNDO,
-                               toolSize));
     setBitmap(IdTransformModels,
               LoadEmbeddedIcon(clip_slicer::assets::transformModelsIconPng,
                                clip_slicer::assets::transformModelsIconPngSize,
