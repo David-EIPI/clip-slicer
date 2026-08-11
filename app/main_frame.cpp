@@ -184,9 +184,14 @@ void MainFrame::OpenFiles(const wxArrayString &paths) {
 void MainFrame::SetDocumentStatus(const wxString &buildVolume,
                                   const wxString &slicePosition,
                                   const wxString &optimizationProgress) {
-    SetStatusText(buildVolume, 0);
-    SetStatusText(slicePosition, 1);
-    SetStatusText(optimizationProgress, 2);
+    const std::uint64_t revision = ++statusUpdateRevision_;
+    CallAfter([this, revision, buildVolume, slicePosition, optimizationProgress] {
+        if (revision != statusUpdateRevision_)
+            return;
+        SetStatusText(buildVolume, 0);
+        SetStatusText(slicePosition, 1);
+        SetStatusText(optimizationProgress, 2);
+    });
 }
 void MainFrame::ClearDocumentStatus() {
     SetDocumentStatus({}, {}, {});

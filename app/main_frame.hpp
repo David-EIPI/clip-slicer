@@ -3,6 +3,7 @@
 
 #pragma once
 #include "app_settings.hpp"
+#include <cstdint>
 #include <wx/arrstr.h>
 #include <wx/mdi.h>
 
@@ -29,5 +30,6 @@ class MainFrame final : public wxMDIParentFrame {
     void OnExit(wxCommandEvent &);
 
     AppSettings settings_;
+    std::uint64_t statusUpdateRevision_ = 0;
     class HelpWindow *helpWindow_ = nullptr;
 };
