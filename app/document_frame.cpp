@@ -11,6 +11,7 @@
 #include "slice_visualization.hpp"
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
+#include "stl_slicer/flat_facet.hpp"
 #include "stl_slicer/orientation_optimizer.hpp"
 #include "stl_slicer/slicer.hpp"
 #include "stl_slicer/stl_reader.hpp"
@@ -26,6 +27,7 @@
 #include <unordered_set>
 #include <wx/artprov.h>
 #include <wx/checkbox.h>
+#include <wx/choicdlg.h>
 #include <wx/dataobj.h>
 #include <wx/dnd.h>
 #include <wx/filedlg.h>
@@ -41,6 +43,7 @@
 #include <wx/textdlg.h>
 #include <wx/thread.h>
 #include <wx/toolbar.h>
+#include <wx/utils.h>
 
 namespace {
 enum {
@@ -68,6 +71,7 @@ enum {
     IdNewModelGroup,
     IdUngroupModels,
     IdMoveToOrigin,
+    IdPlaceFacetOnPlatform,
     IdSettings
 };
 
@@ -476,6 +480,10 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnNewModelGroup, this, IdNewModelGroup);
     Bind(wxEVT_MENU, &DocumentFrame::OnUngroupModels, this, IdUngroupModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnMoveToOrigin, this, IdMoveToOrigin);
+    Bind(wxEVT_MENU,
+         &DocumentFrame::OnPlaceFacetOnPlatform,
+         this,
+         IdPlaceFacetOnPlatform);
     Bind(
         wxEVT_MENU,
         [this](wxCommandEvent &) {
@@ -547,6 +555,8 @@ void DocumentFrame::BuildMenus() {
     distributeModelsItem_ = models->Append(IdDistributeModels, "&Distribute...");
     multiplyModelsItem_ = models->Append(IdMultiplyModels, "&Multiply...");
     moveToOriginItem_ = models->Append(IdMoveToOrigin, "Move to &Origin");
+    placeFacetItem_ =
+        models->Append(IdPlaceFacetOnPlatform, "Place &facet on platform...");
     models->AppendSeparator();
     newModelGroupItem_ = models->Append(IdNewModelGroup, "New &Group...");
     ungroupModelsItem_ = models->Append(IdUngroupModels, "&Ungroup selected");
@@ -773,6 +783,8 @@ void DocumentFrame::UpdateCommandState() {
     }
     if (moveToOriginItem_)
         moveToOriginItem_->Enable(modelSelected);
+    if (placeFacetItem_)
+        placeFacetItem_->Enable(meshSelected);
     if (deleteModelsItem_)
         deleteModelsItem_->Enable(modelSelected);
     if (toolbar_) {
@@ -868,6 +880,8 @@ void DocumentFrame::OnModelContextMenu(wxDataViewEvent &event) {
     menu.AppendSeparator();
     menu.Append(IdArrangeModels, "&Arrange...")->Enable(modelSelected);
     menu.Append(IdTransformModels, "&Transform...")->Enable(modelSelected);
+    menu.Append(IdPlaceFacetOnPlatform, "Place &facet on platform...")
+        ->Enable(meshSelected);
     menu.Append(IdSlice, "&Slice...")->Enable(meshSelected && !slicedSelected);
     menu.AppendSeparator();
     auto *exportMenu = new wxMenu;
@@ -1374,6 +1388,82 @@ void DocumentFrame::OnMoveToOrigin(wxCommandEvent &) {
     }
     InvalidateUnsupportedAnalysis();
     canvas_->TranslateViewCenter(translation);
+    canvas_->ModelTransformsChanged();
+    UpdateStatus();
+}
+void DocumentFrame::OnPlaceFacetOnPlatform(wxCommandEvent &) {
+    std::shared_ptr<stl_slicer::SceneModel> model;
+    for (const auto &candidate : models_) {
+        if (candidate->selected && !candidate->isSliced()) {
+            model = candidate;
+            break;
+        }
+    }
+    if (!model) {
+        wxMessageBox("Select a surface model to align.",
+                     "Place facet on platform",
+                     wxOK | wxICON_INFORMATION,
+                     this);
+        return;
+    }
+
+    stl_slicer::TriangleMesh worldMesh;
+    std::vector<stl_slicer::FlatFacet> facets;
+    try {
+        wxBusyCursor busy;
+        worldMesh = stl_slicer::transformedMesh(*model);
+        const AppSettings &settings =
+            static_cast<MainFrame *>(GetMDIParent())->Settings();
+        facets = stl_slicer::FlatFacetDetector{
+            {settings.facetFlatnessTolerance, 0.01, 10}}.detect(worldMesh);
+    } catch (const std::exception &error) {
+        wxMessageBox(error.what(),
+                     "Facet detection failed",
+                     wxOK | wxICON_ERROR,
+                     this);
+        return;
+    }
+
+    if (facets.empty()) {
+        wxMessageBox(
+            "No outer flat facets were found. The Facet flatness tolerance can be "
+            "adjusted on the Analysis tab in Settings.",
+            "Place facet on platform",
+            wxOK | wxICON_INFORMATION,
+            this);
+        return;
+    }
+
+    std::size_t selectedFacet = 0;
+    if (facets.size() > 1) {
+        wxArrayString choices;
+        for (std::size_t index = 0; index < facets.size(); ++index) {
+            choices.push_back(wxString::Format("Facet %u. A=%.3f",
+                                               static_cast<unsigned int>(index + 1),
+                                               facets[index].area));
+        }
+        wxSingleChoiceDialog dialog(this,
+                                    "Choose the facet to place on the print platform.",
+                                    "Place facet on platform",
+                                    choices);
+        dialog.SetSelection(0);
+        if (dialog.ShowModal() != wxID_OK)
+            return;
+        selectedFacet = static_cast<std::size_t>(dialog.GetSelection());
+    }
+
+    try {
+        const stl_slicer::Mat4 alignment =
+            stl_slicer::alignFacetToBuildPlatform(worldMesh, facets[selectedFacet]);
+        model->transform = alignment * model->transform;
+    } catch (const std::exception &error) {
+        wxMessageBox(error.what(),
+                     "Facet alignment failed",
+                     wxOK | wxICON_ERROR,
+                     this);
+        return;
+    }
+    InvalidateUnsupportedAnalysis();
     canvas_->ModelTransformsChanged();
     UpdateStatus();
 }

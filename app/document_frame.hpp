@@ -99,6 +99,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void ApplyModelLayoutDialog();
     void ApplyTransformDialog();
     void OnMoveToOrigin(wxCommandEvent &);
+    void OnPlaceFacetOnPlatform(wxCommandEvent &);
     void OnModelSelectionChanged(wxDataViewEvent &);
     void OnModelContextMenu(wxDataViewEvent &);
     void SyncModelSelection();
@@ -163,6 +164,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *newModelGroupItem_ = nullptr;
     wxMenuItem *ungroupModelsItem_ = nullptr;
     wxMenuItem *moveToOriginItem_ = nullptr;
+    wxMenuItem *placeFacetItem_ = nullptr;
     wxMenuItem *sectionItem_ = nullptr;
     std::thread unsupportedWorker_;
     std::thread supportGenerationWorker_;

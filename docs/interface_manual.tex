@@ -82,6 +82,28 @@ model coordinates. \emph{Move to Origin} preserves the relative placement of
 all selected models while translating their combined bounding box so that its
 minimum X, Y, and Z coordinates are all zero. The selected group therefore
 fits tightly in the positive octant and rests on the build plane.
+
+\subsection{Facet Placement}
+
+The \emph{Place facet on platform} command operates on the first selected
+non-sliced surface model. Each nondegenerate triangle receives a geometric
+normal and area. Triangles which share a complete edge are collected into a
+facet only when every pair of normals satisfies the configured flatness
+tolerance. Opposite triangle winding is normalized within a facet, preventing
+an otherwise flat surface from being split by inconsistent STL orientation.
+
+A candidate is retained only when a plane parallel to the facet can support
+the entire model from one side. This rejects internal and concave surfaces and
+also determines which normal direction points away from the model. Candidates
+are sorted by decreasing area; surfaces smaller than one percent of the largest
+outer facet are discarded, and at most ten remain. When several facets remain,
+a dialog lists their areas for selection.
+
+The chosen outward normal is rotated to the negative Z direction about the
+model bounding-box center. A final Z translation places the rotated model
+minimum on the global Z=0 print platform. As with other model operations, only
+the transformation matrix changes; source vertices remain unmodified.
+
 \emph{New Group} organizes the selected models under a named, collapsible row;
 \emph{Ungroup selected} returns them to the top level.
 
@@ -373,8 +395,8 @@ an excessive value can merge endpoints which should remain separate.
 \subsection{Analysis Tab}
 \label{settings-analysis}
 
-The Analysis tab controls unsupported-area detection and the randomized
-orientation search which repeatedly invokes that detection.
+The Analysis tab controls facet detection, unsupported-area detection, and the
+randomized orientation search which repeatedly invokes unsupported analysis.
 
 \paragraph{Critical angle.}
 This is the smallest supported surface angle above the build plane and defaults
@@ -388,6 +410,14 @@ the support search radius is
 \(\alpha\) is the critical angle. Increasing the coefficient permits more
 horizontal displacement between successive layers before an area is marked
 unsupported.
+
+\paragraph{Facet flatness tolerance.}
+This dimensionless value defaults to 0.001 and is interpreted as
+\(1 - |\cos(\alpha)|\), where \(\alpha\) is the angle between
+two edge-connected triangle normals. Smaller values require more nearly
+parallel triangles. The absolute cosine allows the facet detector to tolerate
+reversed winding while the later supporting-plane test establishes the outward
+direction.
 \paragraph{Optimization attempts.}
 This is the number of independent randomized local searches performed for each
 selected model and defaults to 10. More attempts improve coverage of the

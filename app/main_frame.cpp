@@ -114,6 +114,7 @@ void MainFrame::ShowSettingsDialog() {
     updated.segmentationTolerance = dialog.SegmentationTolerance();
     updated.criticalAngleDegrees = dialog.CriticalAngleDegrees();
     updated.overhangCoefficient = dialog.OverhangCoefficient();
+    updated.facetFlatnessTolerance = dialog.FacetFlatnessTolerance();
     updated.optimizationAttempts = dialog.OptimizationAttempts();
     updated.optimizationWorkers = dialog.OptimizationWorkers();
     updated.optimizationTolerance = dialog.OptimizationTolerance();

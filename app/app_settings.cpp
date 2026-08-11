@@ -27,6 +27,7 @@ bool AppSettings::Load() {
     segmentationTolerance = defaultSegmentationTolerance;
     criticalAngleDegrees = defaultCriticalAngleDegrees;
     overhangCoefficient = defaultOverhangCoefficient;
+    facetFlatnessTolerance = defaultFacetFlatnessTolerance;
     optimizationAttempts = defaultOptimizationAttempts;
     optimizationWorkers = defaultOptimizationWorkers;
     optimizationTolerance = defaultOptimizationTolerance;
@@ -72,6 +73,12 @@ bool AppSettings::Load() {
     config.Read("/analysis/overhangCoefficient", &value, defaultOverhangCoefficient);
     if (std::isfinite(value) && value >= 0.0)
         overhangCoefficient = value;
+    value = defaultFacetFlatnessTolerance;
+    config.Read("/analysis/facetFlatnessTolerance",
+                &value,
+                defaultFacetFlatnessTolerance);
+    if (std::isfinite(value) && value > 0.0 && value < 1.0)
+        facetFlatnessTolerance = value;
     long integerValue = defaultOptimizationAttempts;
     config.Read("/analysis/optimizationAttempts", &integerValue, defaultOptimizationAttempts);
     if (integerValue > 0 && integerValue <= 100000)
@@ -155,6 +162,7 @@ bool AppSettings::Save() const {
     config.Write("/slicing/segmentationTolerance", segmentationTolerance);
     config.Write("/analysis/criticalAngleDegrees", criticalAngleDegrees);
     config.Write("/analysis/overhangCoefficient", overhangCoefficient);
+    config.Write("/analysis/facetFlatnessTolerance", facetFlatnessTolerance);
     config.Write("/analysis/optimizationAttempts", optimizationAttempts);
     config.Write("/analysis/optimizationWorkers", optimizationWorkers);
     config.Write("/analysis/optimizationTolerance", optimizationTolerance);

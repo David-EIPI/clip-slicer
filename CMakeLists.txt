@@ -68,6 +68,7 @@ add_library(stl_slicer_lib
     src/support_pillar.cpp
     src/support_tip.cpp
     src/orientation_optimizer.cpp
+    src/flat_facet.cpp
     src/cli_writer.cpp
     src/scene_model.cpp)
 target_include_directories(stl_slicer_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -246,6 +247,11 @@ if(STL_SLICER_BUILD_TESTS)
     target_link_libraries(model_alignment_tests PRIVATE stl_slicer_lib)
     target_compile_features(model_alignment_tests PRIVATE cxx_std_17)
     add_test(NAME model_alignment_tests COMMAND model_alignment_tests)
+
+    add_executable(flat_facet_tests tests/flat_facet_tests.cpp)
+    target_link_libraries(flat_facet_tests PRIVATE stl_slicer_lib)
+    target_compile_features(flat_facet_tests PRIVATE cxx_std_17)
+    add_test(NAME flat_facet_tests COMMAND flat_facet_tests)
     add_executable(model_distribution_tests
         tests/model_distribution_tests.cpp
         app/model_distribution.cpp)

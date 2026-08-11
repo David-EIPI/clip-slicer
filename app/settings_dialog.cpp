@@ -120,6 +120,21 @@ SettingsDialog::SettingsDialog(wxWindow *parent, const AppSettings &settings)
                                                 0.1);
     overhangCoefficient_->SetDigits(2);
     analysisSizer->Add(overhangCoefficient_, 1, wxEXPAND);
+    analysisSizer->Add(new wxStaticText(analysis, wxID_ANY, "Facet flatness tolerance:"),
+                       0,
+                       wxALIGN_CENTER_VERTICAL);
+    facetFlatnessTolerance_ = new wxSpinCtrlDouble(analysis,
+                                                   wxID_ANY,
+                                                   wxEmptyString,
+                                                   wxDefaultPosition,
+                                                   wxDefaultSize,
+                                                   wxSP_ARROW_KEYS,
+                                                   0.000001,
+                                                   0.999999,
+                                                   settings.facetFlatnessTolerance,
+                                                   0.0001);
+    facetFlatnessTolerance_->SetDigits(6);
+    analysisSizer->Add(facetFlatnessTolerance_, 1, wxEXPAND);
     analysisSizer->Add(
         new wxStaticText(analysis, wxID_ANY, "Optimization attempts:"), 0, wxALIGN_CENTER_VERTICAL);
     optimizationAttempts_ = new wxSpinCtrl(analysis,
@@ -363,6 +378,10 @@ double SettingsDialog::CriticalAngleDegrees() const {
 
 double SettingsDialog::OverhangCoefficient() const {
     return overhangCoefficient_->GetValue();
+}
+
+double SettingsDialog::FacetFlatnessTolerance() const {
+    return facetFlatnessTolerance_->GetValue();
 }
 
 int SettingsDialog::OptimizationAttempts() const {

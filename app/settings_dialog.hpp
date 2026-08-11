@@ -18,6 +18,7 @@ class SettingsDialog final : public wxDialog {
     double SegmentationTolerance() const;
     double CriticalAngleDegrees() const;
     double OverhangCoefficient() const;
+    double FacetFlatnessTolerance() const;
     int OptimizationAttempts() const;
     int OptimizationWorkers() const;
     double OptimizationTolerance() const;
@@ -42,6 +43,7 @@ class SettingsDialog final : public wxDialog {
     wxSpinCtrlDouble *segmentationTolerance_ = nullptr;
     wxSpinCtrlDouble *criticalAngleDegrees_ = nullptr;
     wxSpinCtrlDouble *overhangCoefficient_ = nullptr;
+    wxSpinCtrlDouble *facetFlatnessTolerance_ = nullptr;
     wxSpinCtrl *optimizationAttempts_ = nullptr;
     wxSpinCtrl *optimizationWorkers_ = nullptr;
     wxSpinCtrlDouble *optimizationTolerance_ = nullptr;
