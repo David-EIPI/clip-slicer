@@ -75,10 +75,10 @@ fits tightly in the positive octant and rests on the build plane.
 \hypertarget{transform-dialog}{}The \emph{Transform} dialog provides numeric
 rotation axis and angle, translation, and uniform scale controls.
 
-The \emph{Align} and \emph{Multiply} commands share the \emph{Arrange selected
+The \emph{Align}, \emph{Distribute}, and \emph{Multiply} commands share the \emph{Arrange selected
 models} dialog. The invoking command initially selects its corresponding tab,
 but the tab active when \emph{OK} is pressed determines which operation is
-performed. Control values on both tabs are remembered for later calls during
+performed. Control values on all three tabs are remembered for later calls during
 the application session; the first alignment defaults to Z and Min.
 
 \hypertarget{align-dialog}{}The \emph{Align} command is enabled when at least two
@@ -88,6 +88,25 @@ that axis equal to the selection's shared minimum; Max similarly uses the
 shared maximum; Center places every bounding-box center at the center of the
 shared bounds. Alignment changes only the chosen coordinate and preserves each
 model's rotation, scale, and placement on the other two axes.
+
+\hypertarget{distribute-dialog}{}The \emph{Distribute} tab places the selected
+models into cells in their current model-list order. Cell counts are specified
+separately for X, Y, and Z; their product must be at least the number of
+selected models. The fill-order control lists the fastest-changing axis first,
+so, for example, X then Y then Z fills an X row before advancing Y and finally
+Z. Unused cells at the end of the lattice are permitted. The center of the
+first selected model remains fixed at the first cell.
+
+Each axis has an independent distance interpretation. \emph{Center distance}
+uses a regular lattice step between neighboring cell centers.
+\emph{Bounding-box gap} instead guarantees the requested minimum separation
+between the bounding boxes in neighboring index planes. For this mode, each
+plane is sized from the largest model assigned to that index, and successive
+plane centers are separated by half of each neighboring plane width plus the
+requested gap. A large part therefore expands only the rows or columns sharing
+its index; smaller parts can have a larger gap where they share a plane with
+the limiting part. On first use, distance values are initialized to the largest
+individual selected-model dimension on each axis.
 
 \hypertarget{multiply-dialog}{}The \emph{Multiply} tab creates a rectangular
 array of every selected model. It has a copy count and stride for each global

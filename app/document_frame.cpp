@@ -62,6 +62,7 @@ enum {
     IdResetTransform,
     IdTransformModels,
     IdAlignModels,
+    IdDistributeModels,
     IdMultiplyModels,
     IdNewModelGroup,
     IdUngroupModels,
@@ -423,6 +424,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnResetTransform, this, IdResetTransform);
     Bind(wxEVT_MENU, &DocumentFrame::OnTransformModels, this, IdTransformModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnAlignModels, this, IdAlignModels);
+    Bind(wxEVT_MENU, &DocumentFrame::OnDistributeModels, this, IdDistributeModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnMultiplyModels, this, IdMultiplyModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnNewModelGroup, this, IdNewModelGroup);
     Bind(wxEVT_MENU, &DocumentFrame::OnUngroupModels, this, IdUngroupModels);
@@ -493,6 +495,7 @@ void DocumentFrame::BuildMenus() {
     resetTransformItem_ = models->Append(IdResetTransform, "&Reset transformations");
     transformModelsItem_ = models->Append(IdTransformModels, "&Transform...");
     alignModelsItem_ = models->Append(IdAlignModels, "&Align...");
+    distributeModelsItem_ = models->Append(IdDistributeModels, "&Distribute...");
     multiplyModelsItem_ = models->Append(IdMultiplyModels, "&Multiply...");
     moveToOriginItem_ = models->Append(IdMoveToOrigin, "Move to &Origin");
     models->AppendSeparator();
@@ -698,6 +701,8 @@ void DocumentFrame::UpdateCommandState() {
         resetTransformItem_->Enable(modelSelected);
     if (transformModelsItem_)
         transformModelsItem_->Enable(modelSelected);
+    if (distributeModelsItem_)
+        distributeModelsItem_->Enable(selectedModelCount >= 2);
     if (alignModelsItem_)
         alignModelsItem_->Enable(selectedModelCount >= 2);
     if (multiplyModelsItem_)
@@ -1020,6 +1025,9 @@ void DocumentFrame::OnTransformModels(wxCommandEvent &) {
 void DocumentFrame::OnAlignModels(wxCommandEvent &) {
     ShowModelLayoutDialog(ModelLayoutOperation::Align);
 }
+void DocumentFrame::OnDistributeModels(wxCommandEvent &) {
+    ShowModelLayoutDialog(ModelLayoutOperation::Distribute);
+}
 void DocumentFrame::OnMultiplyModels(wxCommandEvent &) {
     ShowModelLayoutDialog(ModelLayoutOperation::Multiply);
 }
@@ -1029,15 +1037,29 @@ void DocumentFrame::ShowModelLayoutDialog(ModelLayoutOperation initialOperation)
         return;
 
     std::vector<std::shared_ptr<stl_slicer::SceneModel>> selected;
-    for (const auto &model : models_)
-        if (model->selected)
-            selected.push_back(model);
+    std::vector<stl_slicer::Bounds3> selectedBounds;
+    stl_slicer::Vec3 largestModelDimensions;
+    for (const auto &model : models_) {
+        if (!model->selected)
+            continue;
+        selected.push_back(model);
+        const stl_slicer::Bounds3 modelBounds = model->worldBounds();
+        selectedBounds.push_back(modelBounds);
+        largestModelDimensions.x =
+            std::max(largestModelDimensions.x, modelBounds.max.x - modelBounds.min.x);
+        largestModelDimensions.y =
+            std::max(largestModelDimensions.y, modelBounds.max.y - modelBounds.min.y);
+        largestModelDimensions.z =
+            std::max(largestModelDimensions.z, modelBounds.max.z - modelBounds.min.z);
+    }
     if (selected.empty())
         return;
 
     ModelLayoutDialog dialog(
         this,
         {bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z},
+        largestModelDimensions,
+        selected.size(),
         initialOperation);
     if (dialog.ShowModal() != wxID_OK)
         return;
@@ -1062,6 +1084,46 @@ void DocumentFrame::ShowModelLayoutDialog(ModelLayoutOperation initialOperation)
             model->transform =
                 stl_slicer::Mat4::translation(translation.x, translation.y, translation.z) *
                 model->transform;
+            changed = true;
+        }
+        if (changed) {
+            InvalidateUnsupportedAnalysis();
+            canvas_->ModelTransformsChanged();
+            UpdateStatus();
+        }
+        return;
+    }
+
+    if (dialog.ActiveOperation() == ModelLayoutOperation::Distribute) {
+        if (selected.size() < 2) {
+            wxMessageBox("Select at least two models to distribute.",
+                         "Distribute models", wxOK | wxICON_INFORMATION, this);
+            return;
+        }
+        const DistributionParameters parameters = dialog.Distribution();
+        const std::size_t capacity = DistributionCapacity(parameters);
+        if (capacity < selected.size()) {
+            wxMessageBox("The distribution grid has " + std::to_string(capacity) +
+                             " cells, but " + std::to_string(selected.size()) +
+                             " models are selected.",
+                         "Distribute failed", wxOK | wxICON_ERROR, this);
+            return;
+        }
+        std::vector<stl_slicer::Vec3> translations;
+        try {
+            translations = DistributionTranslations(selectedBounds, parameters);
+        } catch (const std::exception &error) {
+            wxMessageBox(error.what(), "Distribute failed", wxOK | wxICON_ERROR, this);
+            return;
+        }
+        bool changed = false;
+        for (std::size_t model = 0; model < selected.size(); ++model) {
+            const stl_slicer::Vec3 translation = translations[model];
+            if (translation.x == 0.0 && translation.y == 0.0 && translation.z == 0.0)
+                continue;
+            selected[model]->transform =
+                stl_slicer::Mat4::translation(translation.x, translation.y, translation.z) *
+                selected[model]->transform;
             changed = true;
         }
         if (changed) {

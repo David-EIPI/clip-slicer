@@ -90,6 +90,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnResetTransform(wxCommandEvent &);
     void OnTransformModels(wxCommandEvent &);
     void OnAlignModels(wxCommandEvent &);
+    void OnDistributeModels(wxCommandEvent &);
     void OnMultiplyModels(wxCommandEvent &);
     void ShowModelLayoutDialog(ModelLayoutOperation initialOperation);
     void OnMoveToOrigin(wxCommandEvent &);
@@ -148,6 +149,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *resetTransformItem_ = nullptr;
     wxMenuItem *transformModelsItem_ = nullptr;
     wxMenuItem *alignModelsItem_ = nullptr;
+    wxMenuItem *distributeModelsItem_ = nullptr;
     wxMenuItem *multiplyModelsItem_ = nullptr;
     wxMenuItem *newModelGroupItem_ = nullptr;
     wxMenuItem *ungroupModelsItem_ = nullptr;
