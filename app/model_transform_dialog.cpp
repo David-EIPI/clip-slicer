@@ -3,6 +3,7 @@
 
 #include "model_transform_dialog.hpp"
 #include "help_topics.hpp"
+#include <wx/frame.h>
 #include <wx/radiobox.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -30,7 +31,8 @@ AddTranslationInput(wxWindow *parent, wxFlexGridSizer *grid, const wxString &lab
 } // namespace
 
 TransformDialog::TransformDialog(wxWindow *parent)
-    : wxDialog(parent, wxID_ANY, "Transform selected models") {
+    : wxDialog(parent, wxID_ANY, "Transform selected models", wxDefaultPosition,
+               wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxFRAME_FLOAT_ON_PARENT) {
     clip_slicer::help::Assign(this, clip_slicer::help::transformDialog);
     auto *root = new wxBoxSizer(wxVERTICAL);
 
@@ -97,11 +99,20 @@ TransformDialog::TransformDialog(wxWindow *parent)
     root->Add(scaling, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
 
     root->Add(
-        CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxHELP),
+        CreateStdDialogButtonSizer(wxAPPLY | wxCLOSE | wxHELP),
         0,
         wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,
         12);
     SetSizerAndFit(root);
+    Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { Hide(); }, wxID_CLOSE);
+    Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent &event) {
+        if (event.CanVeto()) {
+            Hide();
+            event.Veto();
+        } else {
+            event.Skip();
+        }
+    });
     clip_slicer::help::Enable(this);
     SetMinSize({360, GetSize().y});
 }

@@ -19,6 +19,8 @@
 enum class ModelLayoutOperation;
 
 class ModelCanvas;
+class ModelLayoutDialog;
+class TransformDialog;
 class wxActivateEvent;
 class wxCloseEvent;
 class wxDPIChangedEvent;
@@ -94,6 +96,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnDistributeModels(wxCommandEvent &);
     void OnMultiplyModels(wxCommandEvent &);
     void ShowModelLayoutDialog(ModelLayoutOperation initialOperation);
+    void ApplyModelLayoutDialog();
+    void ApplyTransformDialog();
     void OnMoveToOrigin(wxCommandEvent &);
     void OnModelSelectionChanged(wxDataViewEvent &);
     void OnModelVisibilityChanged(wxDataViewEvent &);
@@ -141,6 +145,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxSpinCtrl *sectionIndex_ = nullptr;
     wxScrollBar *sectionScroll_ = nullptr;
     wxToolBar *toolbar_ = nullptr;
+    TransformDialog *transformDialog_ = nullptr;
+    ModelLayoutDialog *modelLayoutDialog_ = nullptr;
     wxMenuItem *exportItem_ = nullptr;
     wxMenuItem *exportStlItem_ = nullptr;
     wxMenuItem *detectUnsupportedItem_ = nullptr;

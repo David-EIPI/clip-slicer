@@ -34,6 +34,7 @@ class ModelLayoutDialog final : public wxDialog {
     DistributionParameters Distribution() const;
     std::array<unsigned int, 3> Copies() const;
     stl_slicer::Vec3 Stride() const;
+    void SelectOperation(ModelLayoutOperation operation);
 
   private:
     void UpdateHelpTopic();

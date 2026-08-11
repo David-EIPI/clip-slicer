@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <wx/choice.h>
+#include <wx/frame.h>
 #include <wx/notebook.h>
 #include <wx/panel.h>
 #include <wx/radiobox.h>
@@ -73,7 +74,8 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
                                      const stl_slicer::Vec3 &defaultDistributionStride,
                                      std::size_t selectedModelCount,
                                      ModelLayoutOperation initialOperation)
-    : wxDialog(parent, wxID_ANY, "Arrange selected models") {
+    : wxDialog(parent, wxID_ANY, "Arrange selected models", wxDefaultPosition,
+               wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxFRAME_FLOAT_ON_PARENT) {
     auto *root = new wxBoxSizer(wxVERTICAL);
     notebook_ = new wxNotebook(this, wxID_ANY);
     const RememberedLayoutState &remembered = rememberedLayoutState();
@@ -204,15 +206,25 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
             distributeVisited_ = true;
         else
             multiplyVisited_ = true;
+        rememberedLayoutState().activeOperation = ActiveOperation();
         UpdateHelpTopic();
         event.Skip();
     });
     root->Add(notebook_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
-    root->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxHELP),
+    root->Add(CreateStdDialogButtonSizer(wxAPPLY | wxCLOSE | wxHELP),
               0, wxEXPAND | wxALL, 12);
     SetSizerAndFit(root);
     SetMinSize({FromDIP(620), GetSize().y});
     UpdateHelpTopic();
+    Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { Hide(); }, wxID_CLOSE);
+    Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent &event) {
+        if (event.CanVeto()) {
+            Hide();
+            event.Veto();
+        } else {
+            event.Skip();
+        }
+    });
     clip_slicer::help::Enable(this);
 }
 
@@ -236,6 +248,15 @@ ModelLayoutDialog::~ModelLayoutDialog() {
         remembered.stride = Stride();
         remembered.hasStride = true;
     }
+}
+
+void ModelLayoutDialog::SelectOperation(ModelLayoutOperation operation) {
+    const int page = operation == ModelLayoutOperation::Align
+                         ? 0
+                         : operation == ModelLayoutOperation::Distribute ? 1 : 2;
+    notebook_->SetSelection(page);
+    rememberedLayoutState().activeOperation = operation;
+    UpdateHelpTopic();
 }
 
 ModelLayoutOperation ModelLayoutDialog::ActiveOperation() const {

@@ -15,8 +15,9 @@ visibility, the \hyperref[document-toolbar]{toolbar} or
 inspect or transform geometry. Detailed gesture descriptions are collected
 under \hyperref[mouse-actions]{Mouse Actions}; keyboard access is summarized
 under \hyperref[keyboard-shortcuts]{Keyboard Shortcuts}. The close button at
-the toolbar right edge closes this document. On Windows, documents retain the
-native MDI window controls supplied by the operating system.
+the right edge of the document tab row closes this document.
+On Windows, documents retain
+the native MDI window controls supplied by the operating system.
 
 Open and export file dialogs retain the directory of the last accepted file
 for use by subsequent dialogs. The model viewport requires OpenGL 3.2 and GLSL
@@ -76,13 +77,20 @@ fits tightly in the positive octant and rests on the build plane.
 \emph{Ungroup selected} returns them to the top level.
 
 \hypertarget{transform-dialog}{}The \emph{Transform} dialog provides numeric
-rotation axis and angle, translation, and uniform scale controls.
+rotation axis and angle, translation, and uniform scale controls. It is a
+modeless tool window that remains above its document while allowing continued
+selection and viewport interaction. \emph{Apply} transforms the models selected
+at that moment and leaves the window open; \emph{Close} hides it. Reopening the
+window preserves its control values.
 
 The \emph{Align}, \emph{Distribute}, and \emph{Multiply} commands share the \emph{Arrange selected
 models} dialog. The invoking command initially selects its corresponding tab,
-but the tab active when \emph{OK} is pressed determines which operation is
-performed. Control values on all three tabs are remembered for later calls during
-the application session; the first alignment defaults to Z and Min.
+but the tab active when \emph{Apply} is pressed determines which operation is
+performed on the models selected at that moment. This modeless tool window
+remains above its document while allowing selection and viewport interaction.
+\emph{Apply} leaves it open and \emph{Close} hides it. Control values on all
+three tabs remain available when the window is reopened; the first alignment
+defaults to Z and Min.
 
 \hypertarget{align-dialog}{}The \emph{Align} command is enabled when at least two
 models are selected. Choose a global X, Y, or Z axis and a Min, Center, or Max

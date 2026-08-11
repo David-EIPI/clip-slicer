@@ -384,6 +384,18 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     sectionControls_->Hide();
     split->SplitVertically(modelList_, viewArea, FromDIP(320));
     split->SetMinimumPaneSize(120);
+#ifdef __WXGTK__
+    // wxGTK briefly gives a newly inserted MDI notebook page a near-zero height.
+    // Delay the native GtkScrolledWindow until its first stable allocation; otherwise
+    // GTK gives its scrollbar a negative height and pixman receives invalid regions.
+    modelList_->Hide();
+    CallAfter([this] {
+        if (!closing_.load(std::memory_order_relaxed)) {
+            modelList_->Show();
+            Layout();
+        }
+    });
+#endif
     root->Add(split, 1, wxEXPAND);
     SetSizer(root);
     Bind(wxEVT_ACTIVATE, &DocumentFrame::OnActivate, this);
@@ -1002,19 +1014,34 @@ void DocumentFrame::OnResetTransform(wxCommandEvent &) {
     UpdateStatus();
 }
 void DocumentFrame::OnTransformModels(wxCommandEvent &) {
-    TransformDialog dialog(this);
-    if (dialog.ShowModal() != wxID_OK)
+    if (!transformDialog_) {
+        transformDialog_ = new TransformDialog(this);
+        transformDialog_->Bind(wxEVT_BUTTON,
+                               [this](wxCommandEvent &) { ApplyTransformDialog(); },
+                               wxID_APPLY);
+    }
+    transformDialog_->Show();
+    transformDialog_->Raise();
+}
+void DocumentFrame::ApplyTransformDialog() {
+    if (!transformDialog_)
         return;
 
+    const stl_slicer::Bounds3 bounds = SelectedBounds();
+    if (!bounds.valid()) {
+        wxMessageBox("Select at least one model to transform.",
+                     "Transform models", wxOK | wxICON_INFORMATION, this);
+        return;
+    }
     constexpr double pi = 3.14159265358979323846;
     const stl_slicer::Vec3 center = SelectedCenter();
-    const stl_slicer::Vec3 translation = dialog.Translation();
-    const stl_slicer::Mat4 rotation =
-        stl_slicer::Mat4::rotation(dialog.AngleDegrees() * pi / 180.0, dialog.Axis());
+    const stl_slicer::Vec3 translation = transformDialog_->Translation();
+    const stl_slicer::Mat4 rotation = stl_slicer::Mat4::rotation(
+        transformDialog_->AngleDegrees() * pi / 180.0, transformDialog_->Axis());
     const stl_slicer::Mat4 transform =
         stl_slicer::Mat4::translation(translation.x, translation.y, translation.z) *
         stl_slicer::Mat4::translation(center.x, center.y, center.z) * rotation *
-        stl_slicer::Mat4::scale(dialog.UniformScale()) *
+        stl_slicer::Mat4::scale(transformDialog_->UniformScale()) *
         stl_slicer::Mat4::translation(-center.x, -center.y, -center.z);
     for (auto &model : models_) {
         if (model->selected)
@@ -1037,19 +1064,23 @@ void DocumentFrame::OnMultiplyModels(wxCommandEvent &) {
     ShowModelLayoutDialog(ModelLayoutOperation::Multiply);
 }
 void DocumentFrame::ShowModelLayoutDialog(ModelLayoutOperation initialOperation) {
+    if (modelLayoutDialog_) {
+        modelLayoutDialog_->SelectOperation(initialOperation);
+        modelLayoutDialog_->Show();
+        modelLayoutDialog_->Raise();
+        return;
+    }
+
     const stl_slicer::Bounds3 bounds = SelectedBounds();
     if (!bounds.valid())
         return;
-
-    std::vector<std::shared_ptr<stl_slicer::SceneModel>> selected;
-    std::vector<stl_slicer::Bounds3> selectedBounds;
     stl_slicer::Vec3 largestModelDimensions;
+    std::size_t selectedCount = 0;
     for (const auto &model : models_) {
         if (!model->selected)
             continue;
-        selected.push_back(model);
+        ++selectedCount;
         const stl_slicer::Bounds3 modelBounds = model->worldBounds();
-        selectedBounds.push_back(modelBounds);
         largestModelDimensions.x =
             std::max(largestModelDimensions.x, modelBounds.max.x - modelBounds.min.x);
         largestModelDimensions.y =
@@ -1057,17 +1088,36 @@ void DocumentFrame::ShowModelLayoutDialog(ModelLayoutOperation initialOperation)
         largestModelDimensions.z =
             std::max(largestModelDimensions.z, modelBounds.max.z - modelBounds.min.z);
     }
-    if (selected.empty())
-        return;
-
-    ModelLayoutDialog dialog(
+    modelLayoutDialog_ = new ModelLayoutDialog(
         this,
         {bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z},
-        largestModelDimensions,
-        selected.size(),
-        initialOperation);
-    if (dialog.ShowModal() != wxID_OK)
+        largestModelDimensions, selectedCount, initialOperation);
+    modelLayoutDialog_->Bind(wxEVT_BUTTON,
+                             [this](wxCommandEvent &) { ApplyModelLayoutDialog(); },
+                             wxID_APPLY);
+    modelLayoutDialog_->Show();
+    modelLayoutDialog_->Raise();
+}
+
+void DocumentFrame::ApplyModelLayoutDialog() {
+    if (!modelLayoutDialog_)
         return;
+    const stl_slicer::Bounds3 bounds = SelectedBounds();
+    if (!bounds.valid()) {
+        wxMessageBox("Select at least one model to arrange.",
+                     "Arrange models", wxOK | wxICON_INFORMATION, this);
+        return;
+    }
+
+    std::vector<std::shared_ptr<stl_slicer::SceneModel>> selected;
+    std::vector<stl_slicer::Bounds3> selectedBounds;
+    for (const auto &model : models_) {
+        if (!model->selected)
+            continue;
+        selected.push_back(model);
+        selectedBounds.push_back(model->worldBounds());
+    }
+    ModelLayoutDialog &dialog = *modelLayoutDialog_;
 
     if (dialog.ActiveOperation() == ModelLayoutOperation::Align) {
         if (selected.size() < 2) {
