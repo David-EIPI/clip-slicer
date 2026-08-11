@@ -213,7 +213,8 @@ The library API is divided into reusable data and processing components:
 - `TriangleMesh`, `Triangle`, `Vec2`, `Vec3`, and `Bounds3` store model geometry.
 - `BinaryStlReader` validates and reads little-endian binary STL streams or files.
 - `Slicer` produces reusable `SliceData`, `SliceLayer`, and `SlicePath` objects.
-- `FlatFacetDetector` finds ranked outer planar facets, and `alignFacetToBuildPlatform`
+- `FlatFacetDetector` finds ranked outer planar facets and merges disconnected coplanar
+  fragments within its configured plane tolerance; `alignFacetToBuildPlatform`
   produces a non-destructive placement transform.
 - `CliWriter` writes binary or ASCII CLI streams or files.
 - `CliReader` reads binary CLI layer files.

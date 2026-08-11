@@ -1414,8 +1414,10 @@ void DocumentFrame::OnPlaceFacetOnPlatform(wxCommandEvent &) {
         worldMesh = stl_slicer::transformedMesh(*model);
         const AppSettings &settings =
             static_cast<MainFrame *>(GetMDIParent())->Settings();
-        facets = stl_slicer::FlatFacetDetector{
-            {settings.facetFlatnessTolerance, 0.01, 10}}.detect(worldMesh);
+        stl_slicer::FlatFacetOptions facetOptions;
+        facetOptions.flatnessTolerance = settings.facetFlatnessTolerance;
+        facetOptions.coplanarTolerance = settings.layerThickness;
+        facets = stl_slicer::FlatFacetDetector{facetOptions}.detect(worldMesh);
     } catch (const std::exception &error) {
         wxMessageBox(error.what(),
                      "Facet detection failed",

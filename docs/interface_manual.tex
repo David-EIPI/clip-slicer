@@ -87,9 +87,14 @@ fits tightly in the positive octant and rests on the build plane.
 
 The \emph{Place facet on platform} command operates on the first selected
 non-sliced surface model. Each nondegenerate triangle receives a geometric
-normal and area. Triangles which share a complete edge are collected into a
-facet only when every pair of normals satisfies the configured flatness
-tolerance. Opposite triangle winding is normalized within a facet, preventing
+normal and area. Edge-connected triangles are first collected into planar
+patches, provided every pair of normals satisfies the configured flatness
+tolerance. A second pass merges disconnected patches when their normals meet
+the same rule and all their vertices lie inside one plane-normal projection
+band. The band width equals the current slicing thickness, so inscriptions,
+cutouts, and other interruptions do not split one practical print facet into
+several choices. Parallel surfaces farther apart than that thickness remain
+separate. Opposite triangle winding is normalized within a facet, preventing
 an otherwise flat surface from being split by inconsistent STL orientation.
 
 A candidate is retained only when a plane parallel to the facet can support

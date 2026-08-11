@@ -115,6 +115,10 @@ struct TriangleInfo {
 struct FacetCandidate {
     FlatFacet facet;
     Vec3 normal;
+    Vec3 normalSum;
+    Vec3 seedNormal;
+    std::vector<Vec3> memberNormals;
+    double maximumSeedAngle = 0.0;
 };
 
 TriangleInfo triangleInfo(const Triangle &triangle) {
@@ -141,6 +145,198 @@ Vec3 alignedWith(const Vec3 &normal, const Vec3 &reference) {
 bool withinFlatness(double normalDot, double tolerance) {
     return 1.0 - std::clamp(normalDot, -1.0, 1.0) <=
            tolerance + 8.0 * std::numeric_limits<double>::epsilon();
+}
+
+struct ProjectionRange {
+    double minimum = std::numeric_limits<double>::infinity();
+    double maximum = -std::numeric_limits<double>::infinity();
+
+    void include(double projection) {
+        minimum = std::min(minimum, projection);
+        maximum = std::max(maximum, projection);
+    }
+
+    void include(const ProjectionRange &other) {
+        minimum = std::min(minimum, other.minimum);
+        maximum = std::max(maximum, other.maximum);
+    }
+
+    double width() const {
+        return maximum - minimum;
+    }
+};
+
+ProjectionRange triangleProjectionRange(const Triangle &triangle, const Vec3 &normal) {
+    ProjectionRange range;
+    for (const Vec3 &vertex : triangle.vertices)
+        range.include(dot(normal, vertex));
+    return range;
+}
+
+ProjectionRange facetProjectionRange(const TriangleMesh &mesh,
+                                     const std::vector<std::size_t> &indices,
+                                     const Vec3 &normal) {
+    ProjectionRange range;
+    for (const std::size_t index : indices)
+        range.include(triangleProjectionRange(mesh.triangles()[index], normal));
+    return range;
+}
+
+struct NormalBin {
+    std::array<std::int64_t, 3> coordinates{};
+
+    bool operator==(const NormalBin &other) const noexcept {
+        return coordinates == other.coordinates;
+    }
+};
+
+struct NormalBinHash {
+    std::size_t operator()(const NormalBin &bin) const noexcept {
+        std::size_t result = 0;
+        for (const std::int64_t coordinate : bin.coordinates)
+            result = combineHash(result, static_cast<std::uint64_t>(coordinate));
+        return result;
+    }
+};
+
+NormalBin normalBin(const Vec3 &normal, double binWidth) {
+    return {{{static_cast<std::int64_t>(std::floor(normal.x / binWidth)),
+              static_cast<std::int64_t>(std::floor(normal.y / binWidth)),
+              static_cast<std::int64_t>(std::floor(normal.z / binWidth))}}};
+}
+
+bool normalsCompatible(const FacetCandidate &merged,
+                       const FacetCandidate &patch,
+                       const FlatFacetOptions &options,
+                       double maximumAngle,
+                       double angleEpsilon,
+                       double &candidateMaximumAngle) {
+    candidateMaximumAngle = 0.0;
+    for (const Vec3 &normal : patch.memberNormals) {
+        const Vec3 aligned = alignedWith(normal, merged.seedNormal);
+        const double seedDot = dot(merged.seedNormal, aligned);
+        if (!withinFlatness(seedDot, options.flatnessTolerance))
+            return false;
+        candidateMaximumAngle = std::max(
+            candidateMaximumAngle,
+            std::acos(std::clamp(seedDot, -1.0, 1.0)));
+    }
+    if (candidateMaximumAngle + merged.maximumSeedAngle <= maximumAngle + angleEpsilon)
+        return true;
+
+    for (const Vec3 &candidateNormal : patch.memberNormals) {
+        const Vec3 aligned = alignedWith(candidateNormal, merged.seedNormal);
+        const bool compatible = std::all_of(
+            merged.memberNormals.begin(),
+            merged.memberNormals.end(),
+            [&](const Vec3 &memberNormal) {
+                return withinFlatness(dot(memberNormal, aligned), options.flatnessTolerance);
+            });
+        if (!compatible)
+            return false;
+    }
+    return true;
+}
+
+void appendPatch(FacetCandidate &merged,
+                 const FacetCandidate &patch,
+                 const std::vector<TriangleInfo> &information,
+                 double candidateMaximumAngle) {
+    merged.facet.triangleIndices.insert(merged.facet.triangleIndices.end(),
+                                        patch.facet.triangleIndices.begin(),
+                                        patch.facet.triangleIndices.end());
+    for (std::size_t index = 0; index < patch.memberNormals.size(); ++index) {
+        const Vec3 aligned = alignedWith(patch.memberNormals[index], merged.seedNormal);
+        merged.memberNormals.push_back(aligned);
+        const double area = information[patch.facet.triangleIndices[index]].area;
+        merged.normalSum.x += aligned.x * area;
+        merged.normalSum.y += aligned.y * area;
+        merged.normalSum.z += aligned.z * area;
+    }
+    merged.facet.area += patch.facet.area;
+    merged.maximumSeedAngle = std::max(merged.maximumSeedAngle, candidateMaximumAngle);
+    merged.normal = normalized(merged.normalSum);
+}
+
+std::vector<FacetCandidate> mergeCoplanarPatches(
+    const TriangleMesh &mesh,
+    const std::vector<TriangleInfo> &information,
+    std::vector<FacetCandidate> patches,
+    const FlatFacetOptions &options,
+    double maximumAngle) {
+    std::sort(patches.begin(), patches.end(), [](const auto &first, const auto &second) {
+        if (first.facet.area != second.facet.area)
+            return first.facet.area > second.facet.area;
+        return first.facet.triangleIndices.front() < second.facet.triangleIndices.front();
+    });
+    const double angleEpsilon = 8.0 * std::numeric_limits<double>::epsilon();
+    const double planeEpsilon = std::max(1e-12, options.coplanarTolerance * 1e-12);
+    const double binWidth = std::sqrt(2.0 * options.flatnessTolerance);
+    std::unordered_map<NormalBin, std::vector<std::size_t>, NormalBinHash> normalIndex;
+    normalIndex.reserve(patches.size());
+    std::vector<FacetCandidate> mergedPatches;
+    std::vector<ProjectionRange> planeRanges;
+    mergedPatches.reserve(patches.size());
+    planeRanges.reserve(patches.size());
+
+    for (FacetCandidate &patch : patches) {
+        const NormalBin bin = normalBin(patch.seedNormal, binWidth);
+        bool wasMerged = false;
+        for (std::int64_t xOffset = -1; xOffset <= 1 && !wasMerged; ++xOffset) {
+            for (std::int64_t yOffset = -1; yOffset <= 1 && !wasMerged; ++yOffset) {
+                for (std::int64_t zOffset = -1; zOffset <= 1 && !wasMerged; ++zOffset) {
+                    const NormalBin nearby{{{bin.coordinates[0] + xOffset,
+                                             bin.coordinates[1] + yOffset,
+                                             bin.coordinates[2] + zOffset}}};
+                    const auto indexed = normalIndex.find(nearby);
+                    if (indexed == normalIndex.end())
+                        continue;
+                    for (const std::size_t mergedIndex : indexed->second) {
+                        FacetCandidate &merged = mergedPatches[mergedIndex];
+                        double candidateMaximumAngle = 0.0;
+                        if (!normalsCompatible(merged,
+                                               patch,
+                                               options,
+                                               maximumAngle,
+                                               angleEpsilon,
+                                               candidateMaximumAngle))
+                            continue;
+
+                        const Vec3 &sample = mesh.triangles()[
+                            patch.facet.triangleIndices.front()].vertices.front();
+                        const double sampleProjection = dot(merged.seedNormal, sample);
+                        const ProjectionRange &planeRange = planeRanges[mergedIndex];
+                        if (sampleProjection <
+                                planeRange.maximum - options.coplanarTolerance - planeEpsilon ||
+                            sampleProjection >
+                                planeRange.minimum + options.coplanarTolerance + planeEpsilon)
+                            continue;
+
+                        ProjectionRange combinedRange = planeRange;
+                        combinedRange.include(facetProjectionRange(
+                            mesh, patch.facet.triangleIndices, merged.seedNormal));
+                        if (combinedRange.width() > options.coplanarTolerance + planeEpsilon)
+                            continue;
+
+                        appendPatch(merged, patch, information, candidateMaximumAngle);
+                        planeRanges[mergedIndex] = combinedRange;
+                        wasMerged = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (wasMerged)
+            continue;
+
+        const std::size_t mergedIndex = mergedPatches.size();
+        planeRanges.push_back(facetProjectionRange(
+            mesh, patch.facet.triangleIndices, patch.seedNormal));
+        normalIndex[bin].push_back(mergedIndex);
+        normalIndex[normalBin(negate(patch.seedNormal), binWidth)].push_back(mergedIndex);
+        mergedPatches.push_back(std::move(patch));
+    }
+    return mergedPatches;
 }
 
 bool orientOutward(const TriangleMesh &mesh, FacetCandidate &candidate, double planeTolerance) {
@@ -194,6 +390,8 @@ FlatFacetDetector::FlatFacetDetector(FlatFacetOptions options) : options_(option
         throw std::invalid_argument("Minimum relative facet area must be between 0 and 1");
     if (options_.maximumFacetCount == 0)
         throw std::invalid_argument("Maximum facet count must be positive");
+    if (!std::isfinite(options_.coplanarTolerance) || options_.coplanarTolerance <= 0.0)
+        throw std::invalid_argument("Coplanar facet tolerance must be positive");
 }
 
 std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const {
@@ -234,6 +432,9 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
         double maximumSeedAngle = 0.0;
         double area = information[seed].area;
         Vec3 normalSum{seedNormal.x * area, seedNormal.y * area, seedNormal.z * area};
+        ProjectionRange planeRange = triangleProjectionRange(triangles[seed], seedNormal);
+        const double planeEpsilon =
+            std::max(1e-12, options_.coplanarTolerance * 1e-12);
 
         for (std::size_t position = 0; position < queue.size(); ++position) {
             const std::size_t current = queue[position];
@@ -265,6 +466,11 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
                     }
                     if (!compatible)
                         continue;
+                    ProjectionRange combinedRange = planeRange;
+                    combinedRange.include(
+                        triangleProjectionRange(triangles[neighbor], seedNormal));
+                    if (combinedRange.width() > options_.coplanarTolerance + planeEpsilon)
+                        continue;
 
                     assigned[neighbor] = true;
                     members.push_back(neighbor);
@@ -276,6 +482,7 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
                     normalSum.x += candidateNormal.x * triangleArea;
                     normalSum.y += candidateNormal.y * triangleArea;
                     normalSum.z += candidateNormal.z * triangleArea;
+                    planeRange = combinedRange;
                 }
             }
         }
@@ -284,8 +491,15 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
         candidate.facet.triangleIndices = std::move(members);
         candidate.facet.area = area;
         candidate.normal = normalized(normalSum);
+        candidate.normalSum = normalSum;
+        candidate.seedNormal = seedNormal;
+        candidate.memberNormals = std::move(memberNormals);
+        candidate.maximumSeedAngle = maximumSeedAngle;
         candidates.push_back(std::move(candidate));
     }
+
+    candidates = mergeCoplanarPatches(
+        mesh, information, std::move(candidates), options_, maximumAngle);
 
     std::sort(candidates.begin(), candidates.end(), [](const auto &first, const auto &second) {
         if (first.facet.area != second.facet.area)

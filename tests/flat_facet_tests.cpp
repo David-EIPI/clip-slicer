@@ -90,20 +90,36 @@ void testNormalChainDoesNotBecomeOneFacet() {
             "pairwise flatness allowed a gradual normal chain to form one facet");
 }
 
-void testFacetCountAndRelativeAreaLimits() {
-    TriangleMesh manyFacets;
-    for (int index = 0; index < 12; ++index) {
-        const double x = static_cast<double>(index) * 2.0;
-        manyFacets.addTriangle({{}, {Vec3{x, 0, 0}, Vec3{x + 1, 0, 0}, Vec3{x, 1, 0}}, 0});
-    }
-    require(FlatFacetDetector{}.detect(manyFacets).size() == 10,
-            "facet result was not limited to ten entries");
+void testDisconnectedCoplanarFragmentsAreMerged() {
+    TriangleMesh mesh;
+    mesh.addTriangle({{}, {Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{0, 1, 0}}, 0});
+    mesh.addTriangle({{}, {Vec3{3, 0, 0}, Vec3{4, 0, 0}, Vec3{3, 1, 0}}, 0});
+    mesh.addTriangle(
+        {{}, {Vec3{6, 0, 0.05}, Vec3{7, 0, 0.05}, Vec3{6, 1, 0.05}}, 0});
 
-    TriangleMesh differentAreas;
-    differentAreas.addTriangle({{}, {Vec3{0, 0, 0}, Vec3{10, 0, 0}, Vec3{0, 10, 0}}, 0});
-    differentAreas.addTriangle({{}, {Vec3{20, 0, 0}, Vec3{20.5, 0, 0}, Vec3{20, 0.5, 0}}, 0});
-    require(FlatFacetDetector{}.detect(differentAreas).size() == 1,
-            "facet below one percent of the largest was retained");
+    FlatFacetOptions options;
+    options.coplanarTolerance = 0.1;
+    const std::vector<FlatFacet> merged = FlatFacetDetector{options}.detect(mesh);
+    require(merged.size() == 1 && merged.front().triangleIndices.size() == 3,
+            "disconnected fragments inside the plane tolerance were not merged");
+    requireNear(merged.front().area, 1.5, 1e-12, "merged fragment area is incorrect");
+
+    options.coplanarTolerance = 0.01;
+    const std::vector<FlatFacet> separated = FlatFacetDetector{options}.detect(mesh);
+    require(separated.size() == 2,
+            "parallel fragments outside the plane tolerance were merged");
+}
+
+void testFacetCountAndRelativeAreaLimits() {
+    FlatFacetOptions limitedOptions;
+    limitedOptions.maximumFacetCount = 3;
+    require(FlatFacetDetector{limitedOptions}.detect(box(2, 3, 4)).size() == 3,
+            "facet result did not honor the configured count limit");
+
+    const std::vector<FlatFacet> thinBoxFacets =
+        FlatFacetDetector{}.detect(box(100, 100, 0.5));
+    require(thinBoxFacets.size() == 2,
+            "outer facets below one percent of the largest were retained");
 
     TriangleMesh reversedWinding;
     reversedWinding.addTriangle({{}, {Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}}, 0});
@@ -146,6 +162,7 @@ int main() {
         testBoxFacetsAreMergedAndSorted();
         testInternalPlaneIsDiscarded();
         testNormalChainDoesNotBecomeOneFacet();
+        testDisconnectedCoplanarFragmentsAreMerged();
         testFacetCountAndRelativeAreaLimits();
         testAlignmentPlacesSelectedFacetOnPlatform();
         std::cout << "Flat facet tests passed\n";

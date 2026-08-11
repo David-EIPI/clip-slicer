@@ -20,6 +20,7 @@ struct FlatFacetOptions {
     double flatnessTolerance = 1e-3;
     double minimumRelativeArea = 0.01;
     std::size_t maximumFacetCount = 10;
+    double coplanarTolerance = 0.1;
 };
 
 class FlatFacetDetector {
