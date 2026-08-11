@@ -45,13 +45,16 @@ Ctrl and Shift conventions.
 \section{Menu Commands}
 \label{document-menus}
 
-The \emph{File} menu opens a model in a new document or in the active document,
+The \emph{File} menu opens one or more models in a new document or in the
+active document,
 exports selected slices as CLI, exports selected surface models as STL, opens
-Settings, and closes the document or application.
+Settings, and closes the document or application. On GTK, the close button at
+the right end of the document tab row closes the active tab; platforms with
+native MDI child controls retain their document-window close buttons.
 \hypertarget{open-model-dialog}{}The \emph{Open} command uses the Open Model
-dialog and creates a new document.
-\hypertarget{open-into-document-dialog}{}The \emph{Open into document} dialog
-adds the chosen STL or CLI file to the active document.
+dialog and creates one new document containing all selected STL and CLI files.
+\hypertarget{open-into-document-dialog}{}The \emph{Open into document}
+dialog adds all chosen STL and CLI files to the active document.
 \hypertarget{export-slices-dialog}{}The \emph{Export Slices} dialog writes the
 selected sliced models to a CLI file.
 \hypertarget{export-stl-dialog}{}The \emph{Export STL} dialog writes selected
@@ -148,6 +151,7 @@ The toolbar provides frequently used menu commands. \emph{Hide},
 \emph{Show}, and \emph{Delete} affect selected list entries. \emph{Section}
 opens the interactive cross-section view, \emph{Supports} generates support
 structures, and \emph{Stop} cancels a running background workflow.
+\emph{Arrange} opens the shared arrangement dialog at its last selected tab.
 \emph{Transform} and \emph{Origin} change selected-model transformations.
 Buttons which cannot operate on the current selection are disabled.
 

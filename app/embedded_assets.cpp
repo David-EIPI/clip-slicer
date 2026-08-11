@@ -241,6 +241,7 @@ const std::size_t unsupportedAreaIconPngSize = sizeof(unsupportedAreaIconPng);
 #include "embedded_orientation_optimizer_asset.inc"
 
 #include "embedded_reset_transform_asset.inc"
+#include "embedded_arrange_models_asset.inc"
 #include "embedded_transform_models_asset.inc"
 #include "embedded_move_to_origin_asset.inc"
 #include "embedded_support_generate_asset.inc"

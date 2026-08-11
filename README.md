@@ -241,8 +241,9 @@ The library API is divided into reusable data and processing components:
   Model visibility does not hide the build platform, section plane, projection plane, or
   projected contours.
 
-`File > Open...` creates a new document, while `File > Open into document...` adds a model to the
-active document. Slice export merges every selected sliced model and stably orders their layers by
+`File > Open...` accepts multiple STL or CLI files and creates one new document containing
+them, while `File > Open into document...` adds all selected files to the active
+document. Slice export merges every selected sliced model and stably orders their layers by
 Z, including layers from different models at the same height.
 
 The viewport draws global X/Y/Z axes in both directions. Cross-tick spacing follows viewport scale

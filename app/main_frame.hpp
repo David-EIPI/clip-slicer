@@ -3,6 +3,7 @@
 
 #pragma once
 #include "app_settings.hpp"
+#include <wx/arrstr.h>
 #include <wx/mdi.h>
 
 class MainFrame final : public wxMDIParentFrame {
@@ -10,6 +11,7 @@ class MainFrame final : public wxMDIParentFrame {
     MainFrame();
     void OpenDialog();
     void OpenFile(const wxString &path);
+    void OpenFiles(const wxArrayString &paths);
     void ShowSettingsDialog();
     void ShowHelpTopic(const wxString &topic, wxWindow *context = nullptr);
     const AppSettings &Settings() const {

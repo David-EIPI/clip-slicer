@@ -17,6 +17,7 @@ class wxSpinCtrl;
 class wxSpinCtrlDouble;
 
 enum class ModelLayoutOperation { Align, Distribute, Multiply };
+ModelLayoutOperation LastModelLayoutOperation();
 
 class ModelLayoutDialog final : public wxDialog {
   public:

@@ -24,6 +24,7 @@ constexpr std::array<std::array<AlignmentAxis, 3>, 6> axisOrders = {{
 }};
 
 struct RememberedLayoutState {
+    ModelLayoutOperation activeOperation = ModelLayoutOperation::Align;
     AlignmentAxis axis = AlignmentAxis::Z;
     AlignmentType type = AlignmentType::Minimum;
     std::array<unsigned int, 3> distributionCells = {1, 1, 1};
@@ -62,6 +63,10 @@ int orderSelection(const std::array<AlignmentAxis, 3> &order) {
     return 0;
 }
 } // namespace
+
+ModelLayoutOperation LastModelLayoutOperation() {
+    return rememberedLayoutState().activeOperation;
+}
 
 ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
                                      const stl_slicer::Vec3 &defaultMultiplyStride,
@@ -199,6 +204,7 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
 
 ModelLayoutDialog::~ModelLayoutDialog() {
     RememberedLayoutState &remembered = rememberedLayoutState();
+    remembered.activeOperation = ActiveOperation();
     if (alignVisited_) {
         remembered.axis = SelectedAlignmentAxis();
         remembered.type = SelectedAlignmentType();

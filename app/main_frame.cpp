@@ -11,14 +11,38 @@
 #include <wx/filename.h>
 #include <wx/msgdlg.h>
 #include <wx/statusbr.h>
+#ifdef __WXGTK__
+#include <gtk/gtk.h>
+#endif
 
 namespace {
 enum { IdOpen = wxID_HIGHEST + 1, IdSettings };
+#ifdef __WXGTK__
+void CloseActiveDocument(GtkButton *, gpointer data) {
+    auto *frame = static_cast<MainFrame *>(data);
+    if (wxMDIChildFrame *child = frame->GetActiveChild())
+        child->Close();
+}
+#endif
 }
 
 MainFrame::MainFrame()
     : wxMDIParentFrame(nullptr, wxID_ANY, "CLIP Slicer", wxDefaultPosition, {1200, 800}) {
     settings_.Load();
+#ifdef __WXGTK__
+    GtkWidget *closeDocument =
+        gtk_button_new_from_icon_name("window-close-symbolic", GTK_ICON_SIZE_MENU);
+    gtk_button_set_relief(GTK_BUTTON(closeDocument), GTK_RELIEF_NONE);
+    gtk_widget_set_focus_on_click(closeDocument, FALSE);
+    gtk_widget_set_tooltip_text(closeDocument, "Close active document");
+    g_signal_connect(closeDocument,
+                     "clicked",
+                     G_CALLBACK(CloseActiveDocument),
+                     this);
+    gtk_widget_show(closeDocument);
+    gtk_notebook_set_action_widget(
+        GTK_NOTEBOOK(GetClientWindow()->GetHandle()), closeDocument, GTK_PACK_END);
+#endif
     auto *file = new wxMenu;
     file->Append(IdOpen, "&Open...\tCtrl+O");
     file->Append(IdSettings, "&Settings...");
@@ -127,16 +151,30 @@ void MainFrame::OpenDialog() {
                         {},
                         {},
                         "3D model files (*.stl;*.cli)|*.stl;*.cli|STL files|*.stl|CLI files|*.cli",
-                        wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR);
+                        wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR | wxFD_MULTIPLE);
     clip_slicer::help::Assign(&dialog, clip_slicer::help::openModelDialog);
     clip_slicer::help::Enable(&dialog);
-    if (dialog.ShowModal() == wxID_OK)
-        OpenFile(dialog.GetPath());
+    if (dialog.ShowModal() == wxID_OK) {
+        wxArrayString paths;
+        dialog.GetPaths(paths);
+        OpenFiles(paths);
+    }
 }
 void MainFrame::OpenFile(const wxString &path) {
-    auto *child = new DocumentFrame(this, wxFileName(path).GetFullName());
+    wxArrayString paths;
+    paths.push_back(path);
+    OpenFiles(paths);
+}
+void MainFrame::OpenFiles(const wxArrayString &paths) {
+    if (paths.empty())
+        return;
+    wxString title = wxFileName(paths.front()).GetFullName();
+    if (paths.size() > 1)
+        title += wxString::Format(" (+%zu)", paths.size() - 1);
+    auto *child = new DocumentFrame(this, title);
     child->Show();
-    child->OpenPath(path);
+    for (const wxString &path : paths)
+        child->OpenPath(path);
 }
 void MainFrame::SetDocumentStatus(const wxString &buildVolume,
                                   const wxString &slicePosition,

@@ -25,7 +25,6 @@
 #include <sstream>
 #include <unordered_set>
 #include <wx/artprov.h>
-#include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/dataobj.h>
 #include <wx/filedlg.h>
@@ -61,6 +60,7 @@ enum {
     IdDeleteModels,
     IdResetTransform,
     IdTransformModels,
+    IdArrangeModels,
     IdAlignModels,
     IdDistributeModels,
     IdMultiplyModels,
@@ -168,7 +168,7 @@ wxBitmapBundle ModelGroupIcon() {
     return wxBitmapBundle::FromSVG(svg, {16, 16});
 }
 wxBitmapBundle MeshModelIcon() {
-    static constexpr char svg[] = R"svg(<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fill="#4b9fca" fill-opacity=".35" stroke="#236887" stroke-width="1.2" stroke-linejoin="round" d="M8 1.5 14 12.5 2 12.5z"/><path fill="none" stroke="#236887" stroke-width="1" d="M8 1.5v11M2 12.5 11 7"/></svg>)svg";
+    static constexpr char svg[] = R"svg(<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><g stroke="#174f73" stroke-width="1.1" stroke-linejoin="round"><path fill="#79c9ef" d="M8 1.2 14 4.3 8 7.5 2 4.3z"/><path fill="#3c91c5" d="M2 4.3 8 7.5v7.2l-6-3.3z"/><path fill="#236f9f" d="M8 7.5 14 4.3v7.1l-6 3.3z"/></g></svg>)svg";
     return wxBitmapBundle::FromSVG(svg, {16, 16});
 }
 wxBitmapBundle SlicedModelIcon() {
@@ -296,6 +296,13 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                       wxArtProvider::GetBitmap(wxART_STOP, wxART_TOOLBAR, toolSize),
                       "Stop background operation");
     toolbar_->AddSeparator();
+    toolbar_->AddTool(IdArrangeModels,
+                      "Arrange",
+                      LoadEmbeddedIcon(clip_slicer::assets::arrangeModelsIconPng,
+                                       clip_slicer::assets::arrangeModelsIconPngSize,
+                                       wxART_LIST_VIEW,
+                                       toolSize),
+                      "Arrange selected models");
     toolbar_->AddTool(IdTransformModels,
                       "Transform",
                       LoadEmbeddedIcon(clip_slicer::assets::transformModelsIconPng,
@@ -312,19 +319,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                       "Move selected models into the positive octant");
     toolbar_->Realize();
     clip_slicer::help::Assign(toolbar_, clip_slicer::help::documentToolbar);
-    auto *toolbarRow = new wxBoxSizer(wxHORIZONTAL);
-    toolbarRow->Add(toolbar_, 1, wxEXPAND);
-    auto *closeButton = new wxButton(this,
-                                     wxID_CLOSE,
-                                     wxString::FromUTF8("\xc3\x97"),
-                                     wxDefaultPosition,
-                                     {FromDIP(32), wxDefaultCoord},
-                                     wxBU_EXACTFIT);
-    closeButton->SetToolTip("Close document");
-    clip_slicer::help::Assign(closeButton, clip_slicer::help::documentWindow);
-    closeButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { Close(); });
-    toolbarRow->Add(closeButton, 0, wxEXPAND);
-    root->Add(toolbarRow, 0, wxEXPAND);
+    root->Add(toolbar_, 0, wxEXPAND);
     auto *split = new wxSplitterWindow(this);
     modelList_ = new wxDataViewCtrl(split,
                                     wxID_ANY,
@@ -423,6 +418,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnDeleteModels, this, IdDeleteModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnResetTransform, this, IdResetTransform);
     Bind(wxEVT_MENU, &DocumentFrame::OnTransformModels, this, IdTransformModels);
+    Bind(wxEVT_MENU, &DocumentFrame::OnArrangeModels, this, IdArrangeModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnAlignModels, this, IdAlignModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnDistributeModels, this, IdDistributeModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnMultiplyModels, this, IdMultiplyModels);
@@ -654,11 +650,15 @@ void DocumentFrame::OnOpen(wxCommandEvent &) {
                    {},
                    {},
                    "3D model files (*.stl;*.cli)|*.stl;*.cli",
-                   wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR);
+                   wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR | wxFD_MULTIPLE);
     clip_slicer::help::Assign(&d, clip_slicer::help::openIntoDocumentDialog);
     clip_slicer::help::Enable(&d);
-    if (d.ShowModal() == wxID_OK)
-        OpenPath(d.GetPath());
+    if (d.ShowModal() == wxID_OK) {
+        wxArrayString paths;
+        d.GetPaths(paths);
+        for (const wxString &path : paths)
+            OpenPath(path);
+    }
 }
 void DocumentFrame::RefreshModelList() {
     PruneModelGroups();
@@ -699,6 +699,8 @@ void DocumentFrame::UpdateCommandState() {
         exportStlItem_->Enable(meshSelected);
     if (resetTransformItem_)
         resetTransformItem_->Enable(modelSelected);
+    if (toolbar_)
+        toolbar_->EnableTool(IdArrangeModels, modelSelected);
     if (transformModelsItem_)
         transformModelsItem_->Enable(modelSelected);
     if (distributeModelsItem_)
@@ -1021,6 +1023,9 @@ void DocumentFrame::OnTransformModels(wxCommandEvent &) {
     InvalidateUnsupportedAnalysis();
     canvas_->ModelTransformsChanged();
     UpdateStatus();
+}
+void DocumentFrame::OnArrangeModels(wxCommandEvent &) {
+    ShowModelLayoutDialog(LastModelLayoutOperation());
 }
 void DocumentFrame::OnAlignModels(wxCommandEvent &) {
     ShowModelLayoutDialog(ModelLayoutOperation::Align);
@@ -1347,6 +1352,11 @@ void DocumentFrame::UpdateToolbarBitmaps() {
                                toolSize));
     setBitmap(IdStopOptimization,
               wxArtProvider::GetBitmap(wxART_STOP, wxART_TOOLBAR, toolSize));
+    setBitmap(IdArrangeModels,
+              LoadEmbeddedIcon(clip_slicer::assets::arrangeModelsIconPng,
+                               clip_slicer::assets::arrangeModelsIconPngSize,
+                               wxART_LIST_VIEW,
+                               toolSize));
     setBitmap(IdTransformModels,
               LoadEmbeddedIcon(clip_slicer::assets::transformModelsIconPng,
                                clip_slicer::assets::transformModelsIconPngSize,

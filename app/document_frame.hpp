@@ -89,6 +89,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnDeleteModels(wxCommandEvent &);
     void OnResetTransform(wxCommandEvent &);
     void OnTransformModels(wxCommandEvent &);
+    void OnArrangeModels(wxCommandEvent &);
     void OnAlignModels(wxCommandEvent &);
     void OnDistributeModels(wxCommandEvent &);
     void OnMultiplyModels(wxCommandEvent &);
