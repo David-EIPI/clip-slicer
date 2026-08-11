@@ -485,6 +485,8 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     modelList_->Bind(
         wxEVT_DATAVIEW_SELECTION_CHANGED, &DocumentFrame::OnModelSelectionChanged, this);
     modelList_->Bind(
+        wxEVT_DATAVIEW_ITEM_CONTEXT_MENU, &DocumentFrame::OnModelContextMenu, this);
+    modelList_->Bind(
         wxEVT_DATAVIEW_ITEM_VALUE_CHANGED, &DocumentFrame::OnModelVisibilityChanged, this);
     modelList_->Bind(wxEVT_DATAVIEW_ITEM_EXPANDED, &DocumentFrame::OnModelGroupExpanded, this);
     modelList_->Bind(wxEVT_DATAVIEW_ITEM_COLLAPSED, &DocumentFrame::OnModelGroupCollapsed, this);
@@ -807,6 +809,9 @@ void DocumentFrame::UpdateCommandState() {
 void DocumentFrame::OnModelSelectionChanged(wxDataViewEvent &) {
     if (updatingModelList_)
         return;
+    SyncModelSelection();
+}
+void DocumentFrame::SyncModelSelection() {
     for (auto &model : models_)
         model->selected = false;
     wxDataViewItemArray selections;
@@ -825,6 +830,56 @@ void DocumentFrame::OnModelSelectionChanged(wxDataViewEvent &) {
     }
     UpdateCommandState();
     canvas_->SelectionChanged();
+}
+void DocumentFrame::OnModelContextMenu(wxDataViewEvent &event) {
+    if (event.GetItem().IsOk()) {
+        wxDataViewItemArray selections;
+        modelList_->GetSelections(selections);
+        if (std::find(selections.begin(), selections.end(), event.GetItem()) ==
+            selections.end()) {
+            wxDataViewItemArray clickedItem;
+            clickedItem.push_back(event.GetItem());
+            updatingModelList_ = true;
+            modelList_->SetSelections(clickedItem);
+            updatingModelList_ = false;
+        }
+        SyncModelSelection();
+    }
+
+    const std::size_t selectedCount = std::count_if(
+        models_.begin(), models_.end(), [](const auto &model) { return model->selected; });
+    const bool modelSelected = selectedCount != 0;
+    const bool slicedSelected = std::any_of(
+        models_.begin(), models_.end(), [](const auto &model) {
+            return model->selected && model->isSliced();
+        });
+    const bool meshSelected = std::any_of(
+        models_.begin(), models_.end(), [](const auto &model) {
+            return model->selected && !model->isSliced();
+        });
+    const bool groupedModelSelected = std::any_of(
+        models_.begin(), models_.end(), [this](const auto &model) {
+            return model->selected && ModelGroupId(model.get()) != 0;
+        });
+
+    wxMenu menu;
+    menu.Append(IdNewModelGroup, "&Group...")->Enable(modelSelected);
+    menu.Append(IdUngroupModels, "&Ungroup")->Enable(groupedModelSelected);
+    menu.AppendSeparator();
+    menu.Append(IdArrangeModels, "&Arrange...")->Enable(modelSelected);
+    menu.Append(IdTransformModels, "&Transform...")->Enable(modelSelected);
+    menu.Append(IdSlice, "&Slice...")->Enable(meshSelected && !slicedSelected);
+    menu.AppendSeparator();
+    auto *exportMenu = new wxMenu;
+    exportMenu->Append(IdExport, "Export &Slices...")->Enable(slicedSelected);
+    exportMenu->Append(IdExportStl, "Export &STL...")->Enable(meshSelected);
+    menu.AppendSubMenu(exportMenu, "&Export")->Enable(slicedSelected || meshSelected);
+    menu.Append(IdDeleteModels, "&Delete")->Enable(modelSelected);
+
+    wxPoint position = event.GetPosition();
+    if (position.x < 0 || position.y < 0)
+        position = wxDefaultPosition;
+    modelList_->PopupMenu(&menu, position);
 }
 void DocumentFrame::OnModelVisibilityChanged(wxDataViewEvent &) {
     canvas_->Refresh();

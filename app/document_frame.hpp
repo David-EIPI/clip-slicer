@@ -100,6 +100,8 @@ class DocumentFrame final : public wxMDIChildFrame {
     void ApplyTransformDialog();
     void OnMoveToOrigin(wxCommandEvent &);
     void OnModelSelectionChanged(wxDataViewEvent &);
+    void OnModelContextMenu(wxDataViewEvent &);
+    void SyncModelSelection();
     void OnModelVisibilityChanged(wxDataViewEvent &);
     void OnModelGroupExpanded(wxDataViewEvent &);
     void OnModelGroupCollapsed(wxDataViewEvent &);
