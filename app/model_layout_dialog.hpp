@@ -20,6 +20,7 @@ class ModelLayoutDialog final : public wxDialog {
     ModelLayoutDialog(wxWindow *parent,
                       const stl_slicer::Vec3 &defaultStride,
                       ModelLayoutOperation initialOperation);
+    ~ModelLayoutDialog() override;
 
     ModelLayoutOperation ActiveOperation() const;
     AlignmentAxis SelectedAlignmentAxis() const;
@@ -33,6 +34,8 @@ class ModelLayoutDialog final : public wxDialog {
     wxNotebook *notebook_ = nullptr;
     wxRadioBox *alignmentAxis_ = nullptr;
     wxRadioBox *alignmentType_ = nullptr;
+    bool alignVisited_ = false;
+    bool multiplyVisited_ = false;
     std::array<wxSpinCtrl *, 3> copies_{};
     std::array<wxSpinCtrlDouble *, 3> strides_{};
 };

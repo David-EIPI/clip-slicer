@@ -10,6 +10,21 @@
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 
+namespace {
+struct RememberedLayoutState {
+    AlignmentAxis axis = AlignmentAxis::Z;
+    AlignmentType type = AlignmentType::Minimum;
+    std::array<unsigned int, 3> copies = {1, 1, 1};
+    stl_slicer::Vec3 stride;
+    bool hasStride = false;
+};
+
+RememberedLayoutState &rememberedLayoutState() {
+    static RememberedLayoutState state;
+    return state;
+}
+} // namespace
+
 ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
                                      const stl_slicer::Vec3 &defaultStride,
                                      ModelLayoutOperation initialOperation)
@@ -35,6 +50,9 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
                                     {"Min", "Center", "Max"},
                                     3,
                                     wxRA_SPECIFY_COLS);
+    const RememberedLayoutState &remembered = rememberedLayoutState();
+    alignmentAxis_->SetSelection(static_cast<int>(remembered.axis));
+    alignmentType_->SetSelection(static_cast<int>(remembered.type));
     auto *alignSizer = new wxBoxSizer(wxVERTICAL);
     alignSizer->Add(alignmentAxis_, 0, wxEXPAND | wxALL, 12);
     alignSizer->Add(alignmentType_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
@@ -48,7 +66,10 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
     grid->Add(new wxStaticText(multiplyPage, wxID_ANY, "Copies"), 0, wxALIGN_CENTER_VERTICAL);
     grid->Add(new wxStaticText(multiplyPage, wxID_ANY, "Stride"), 0, wxALIGN_CENTER_VERTICAL);
     const std::array<wxString, 3> labels = {"X", "Y", "Z"};
-    const std::array<double, 3> defaults = {defaultStride.x, defaultStride.y, defaultStride.z};
+    const stl_slicer::Vec3 defaultOrRememberedStride =
+        remembered.hasStride ? remembered.stride : defaultStride;
+    const std::array<double, 3> defaults = {
+        defaultOrRememberedStride.x, defaultOrRememberedStride.y, defaultOrRememberedStride.z};
     for (std::size_t axis = 0; axis < labels.size(); ++axis) {
         grid->Add(
             new wxStaticText(multiplyPage, wxID_ANY, labels[axis]), 0, wxALIGN_CENTER_VERTICAL);
@@ -60,7 +81,7 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
                                        wxSP_ARROW_KEYS,
                                        1,
                                        65535,
-                                       1);
+                                       static_cast<int>(remembered.copies[axis]));
         grid->Add(copies_[axis], 1, wxEXPAND);
         strides_[axis] = new wxSpinCtrlDouble(multiplyPage,
                                               wxID_ANY,
@@ -82,8 +103,15 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
     multiplyPage->SetSizer(multiplySizer);
     notebook_->AddPage(multiplyPage, "Multiply", false);
 
-    notebook_->SetSelection(initialOperation == ModelLayoutOperation::Align ? 0 : 1);
+    const bool initiallyAligning = initialOperation == ModelLayoutOperation::Align;
+    alignVisited_ = initiallyAligning;
+    multiplyVisited_ = !initiallyAligning;
+    notebook_->SetSelection(initiallyAligning ? 0 : 1);
     notebook_->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this](wxBookCtrlEvent &event) {
+        if (ActiveOperation() == ModelLayoutOperation::Align)
+            alignVisited_ = true;
+        else
+            multiplyVisited_ = true;
         UpdateHelpTopic();
         event.Skip();
     });
@@ -93,6 +121,19 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
     SetMinSize({FromDIP(430), GetSize().y});
     UpdateHelpTopic();
     clip_slicer::help::Enable(this);
+}
+
+ModelLayoutDialog::~ModelLayoutDialog() {
+    RememberedLayoutState &remembered = rememberedLayoutState();
+    if (alignVisited_) {
+        remembered.axis = SelectedAlignmentAxis();
+        remembered.type = SelectedAlignmentType();
+    }
+    if (multiplyVisited_) {
+        remembered.copies = Copies();
+        remembered.stride = Stride();
+        remembered.hasStride = true;
+    }
 }
 
 ModelLayoutOperation ModelLayoutDialog::ActiveOperation() const {
