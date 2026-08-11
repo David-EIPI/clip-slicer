@@ -30,18 +30,23 @@ MainFrame::MainFrame()
     : wxMDIParentFrame(nullptr, wxID_ANY, "CLIP Slicer", wxDefaultPosition, {1200, 800}) {
     settings_.Load();
 #ifdef __WXGTK__
-    GtkWidget *closeDocument =
-        gtk_button_new_from_icon_name("window-close-symbolic", GTK_ICON_SIZE_MENU);
-    gtk_button_set_relief(GTK_BUTTON(closeDocument), GTK_RELIEF_NONE);
-    gtk_widget_set_focus_on_click(closeDocument, FALSE);
-    gtk_widget_set_tooltip_text(closeDocument, "Close active document");
-    g_signal_connect(closeDocument,
-                     "clicked",
-                     G_CALLBACK(CloseActiveDocument),
-                     this);
-    gtk_widget_show(closeDocument);
-    gtk_notebook_set_action_widget(
-        GTK_NOTEBOOK(GetClientWindow()->GetHandle()), closeDocument, GTK_PACK_END);
+    // Attaching an action widget before the MDI notebook has a stable header size
+    // can make some GTK themes briefly allocate a negative header gadget.
+    CallAfter([this] {
+        GtkWidget *closeDocument =
+            gtk_button_new_from_icon_name("window-close-symbolic", GTK_ICON_SIZE_MENU);
+        gtk_button_set_relief(GTK_BUTTON(closeDocument), GTK_RELIEF_NONE);
+        gtk_widget_set_focus_on_click(closeDocument, FALSE);
+        gtk_widget_set_size_request(closeDocument, FromDIP(20), FromDIP(20));
+        gtk_widget_set_tooltip_text(closeDocument, "Close active document");
+        g_signal_connect(closeDocument,
+                         "clicked",
+                         G_CALLBACK(CloseActiveDocument),
+                         this);
+        gtk_widget_show(closeDocument);
+        gtk_notebook_set_action_widget(
+            GTK_NOTEBOOK(GetClientWindow()->GetHandle()), closeDocument, GTK_PACK_END);
+    });
 #endif
     auto *file = new wxMenu;
     file->Append(IdOpen, "&Open...\tCtrl+O");
