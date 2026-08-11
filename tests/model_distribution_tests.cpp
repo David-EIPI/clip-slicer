@@ -77,6 +77,29 @@ void testVariablePlaneGap() {
             "variable-width planes do not preserve the requested gap");
 }
 
+void testInactiveAxesPreserveCoordinates() {
+    const std::vector<stl_slicer::Bounds3> models = {
+        bounds(10, 20, 30, 2, 2, 2),
+        bounds(-4, 8, 2, 2, 2, 2),
+        bounds(7, -3, 9, 2, 2, 2)};
+    DistributionParameters parameters;
+    parameters.cells = {3, 0, 0};
+    parameters.stride = {5, -7, -9};
+
+    require(DistributionCapacity(parameters) == 3,
+            "inactive axes must not reduce distribution capacity");
+    const auto translations = DistributionTranslations(models, parameters);
+    require(close(translations[1].x, 19) && close(translations[2].x, 13),
+            "active-axis placement is wrong when other axes are inactive");
+    for (const stl_slicer::Vec3 &translation : translations)
+        require(close(translation.y, 0) && close(translation.z, 0),
+                "inactive-axis coordinates must remain unchanged");
+
+    parameters.cells = {2, 0, 3};
+    require(DistributionCapacity(parameters) == 6,
+            "capacity must multiply only active axes");
+}
+
 void testInsufficientCapacity() {
     DistributionParameters parameters;
     bool threw = false;
@@ -95,6 +118,7 @@ int main() {
         testCenterDistanceAndAnchor();
         testFillOrder();
         testVariablePlaneGap();
+        testInactiveAxesPreserveCoordinates();
         testInsufficientCapacity();
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

@@ -52,7 +52,7 @@ std::size_t DistributionCapacity(const DistributionParameters &parameters) {
     std::size_t capacity = 1;
     for (const unsigned int count : parameters.cells) {
         if (count == 0)
-            return 0;
+            continue;
         if (capacity > std::numeric_limits<std::size_t>::max() / count)
             return std::numeric_limits<std::size_t>::max();
         capacity *= count;
@@ -73,7 +73,8 @@ DistributionTranslations(const std::vector<stl_slicer::Bounds3> &modelBounds,
         if (!bounds.valid())
             throw std::invalid_argument("model bounds are invalid");
     for (std::size_t axis = 0; axis < 3; ++axis)
-        if (coordinate(parameters.stride, axis) < 0.0)
+        if (parameters.cells[axis] != 0 &&
+            coordinate(parameters.stride, axis) < 0.0)
             throw std::invalid_argument("distribution distance cannot be negative");
 
     std::vector<std::array<std::size_t, 3>> cells(modelBounds.size());
@@ -81,6 +82,8 @@ DistributionTranslations(const std::vector<stl_slicer::Bounds3> &modelBounds,
         std::size_t remaining = model;
         for (const AlignmentAxis orderedAxis : parameters.axisOrder) {
             const std::size_t axis = axisIndex(orderedAxis);
+            if (parameters.cells[axis] == 0)
+                continue;
             cells[model][axis] = remaining % parameters.cells[axis];
             remaining /= parameters.cells[axis];
         }
@@ -91,6 +94,8 @@ DistributionTranslations(const std::vector<stl_slicer::Bounds3> &modelBounds,
                                   center(modelBounds.front(), 2)};
     std::array<std::vector<double>, 3> planeCoordinates;
     for (std::size_t axis = 0; axis < 3; ++axis) {
+        if (parameters.cells[axis] == 0)
+            continue;
         planeCoordinates[axis].resize(parameters.cells[axis], coordinate(anchor, axis));
         const double distance = coordinate(parameters.stride, axis);
         if (parameters.strideModes[axis] == DistributionStrideMode::CenterDistance) {
@@ -116,6 +121,8 @@ DistributionTranslations(const std::vector<stl_slicer::Bounds3> &modelBounds,
     std::vector<stl_slicer::Vec3> translations(modelBounds.size());
     for (std::size_t model = 0; model < modelBounds.size(); ++model) {
         for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (parameters.cells[axis] == 0)
+                continue;
             setCoordinate(translations[model],
                           axis,
                           planeCoordinates[axis][cells[model][axis]] -

@@ -11,7 +11,7 @@
 enum class DistributionStrideMode { CenterDistance, BoundingBoxGap };
 
 struct DistributionParameters {
-    std::array<unsigned int, 3> cells = {1, 1, 1};
+    std::array<unsigned int, 3> cells = {1, 0, 0};
     stl_slicer::Vec3 stride;
     std::array<DistributionStrideMode, 3> strideModes = {
         DistributionStrideMode::CenterDistance,

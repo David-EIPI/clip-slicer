@@ -94,11 +94,15 @@ model's rotation, scale, and placement on the other two axes.
 
 \hypertarget{distribute-dialog}{}The \emph{Distribute} tab places the selected
 models into cells in their current model-list order. Cell counts are specified
-separately for X, Y, and Z; their product must be at least the number of
-selected models. The fill-order control lists the fastest-changing axis first,
-so, for example, X then Y then Z fills an X row before advancing Y and finally
-Z. Unused cells at the end of the lattice are permitted. The center of the
-first selected model remains fixed at the first cell.
+separately for X, Y, and Z. A count of zero makes that axis inactive: model
+coordinates on it remain unchanged and its distance-interpretation selector is
+disabled. A count of one remains an active single plane and aligns model
+centers on that axis. The product of the nonzero counts must be at least the
+number of selected models. The fill-order control lists the fastest-changing
+axis first and skips inactive axes, so, for example, X then Y then Z fills an X
+row before advancing Y and finally Z. Unused cells at the end of the lattice
+are permitted. The center of the first selected model remains fixed at the
+first cell. On first use, unused cell-count axes default to zero.
 
 Each axis has an independent distance interpretation. \emph{Center distance}
 uses a regular lattice step between neighboring cell centers.

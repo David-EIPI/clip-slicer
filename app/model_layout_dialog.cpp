@@ -46,7 +46,7 @@ RememberedLayoutState &rememberedLayoutState() {
 }
 
 std::array<unsigned int, 3> defaultCells(std::size_t modelCount) {
-    std::array<unsigned int, 3> result = {1, 1, 1};
+    std::array<unsigned int, 3> result = {0, 0, 0};
     std::size_t remaining = std::max<std::size_t>(1, modelCount);
     for (std::size_t axis = 0; axis < result.size() && remaining > 1; ++axis) {
         result[axis] = static_cast<unsigned int>(
@@ -112,7 +112,7 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
                               0, wxALIGN_CENTER_VERTICAL);
         distributionCells_[axis] = new wxSpinCtrl(
             distributePage, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize,
-            wxSP_ARROW_KEYS, 1, 65535, static_cast<int>(cellDefaults[axis]));
+            wxSP_ARROW_KEYS, 0, 65535, static_cast<int>(cellDefaults[axis]));
         distributionGrid->Add(distributionCells_[axis], 1, wxEXPAND);
         distributionStrides_[axis] = new wxSpinCtrlDouble(
             distributePage, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize,
@@ -128,6 +128,20 @@ ModelLayoutDialog::ModelLayoutDialog(wxWindow *parent,
         distributionModes_[axis]->SetSelection(
             mode == DistributionStrideMode::CenterDistance ? 0 : 1);
         distributionGrid->Add(distributionModes_[axis], 1, wxEXPAND);
+        const auto updateModeState = [this, axis] {
+            distributionModes_[axis]->Enable(distributionCells_[axis]->GetValue() != 0);
+        };
+        distributionCells_[axis]->Bind(
+            wxEVT_SPINCTRL, [updateModeState](wxSpinEvent &event) {
+                updateModeState();
+                event.Skip();
+            });
+        distributionCells_[axis]->Bind(
+            wxEVT_TEXT, [updateModeState](wxCommandEvent &event) {
+                updateModeState();
+                event.Skip();
+            });
+        updateModeState();
     }
     distributionGrid->AddGrowableCol(1);
     distributionGrid->AddGrowableCol(2);
