@@ -16,6 +16,8 @@
 #include <wx/dataview.h>
 #include <wx/mdi.h>
 
+enum class ModelLayoutOperation;
+
 class ModelCanvas;
 class wxActivateEvent;
 class wxCloseEvent;
@@ -87,7 +89,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnDeleteModels(wxCommandEvent &);
     void OnResetTransform(wxCommandEvent &);
     void OnTransformModels(wxCommandEvent &);
+    void OnAlignModels(wxCommandEvent &);
     void OnMultiplyModels(wxCommandEvent &);
+    void ShowModelLayoutDialog(ModelLayoutOperation initialOperation);
     void OnMoveToOrigin(wxCommandEvent &);
     void OnModelSelectionChanged(wxDataViewEvent &);
     void OnModelVisibilityChanged(wxDataViewEvent &);
@@ -143,6 +147,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     wxMenuItem *deleteModelsItem_ = nullptr;
     wxMenuItem *resetTransformItem_ = nullptr;
     wxMenuItem *transformModelsItem_ = nullptr;
+    wxMenuItem *alignModelsItem_ = nullptr;
     wxMenuItem *multiplyModelsItem_ = nullptr;
     wxMenuItem *newModelGroupItem_ = nullptr;
     wxMenuItem *ungroupModelsItem_ = nullptr;

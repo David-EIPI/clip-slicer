@@ -187,7 +187,8 @@ if(STL_SLICER_BUILD_GUI)
         app/app_settings.cpp
         app/settings_dialog.cpp
         app/model_transform_dialog.cpp
-        app/model_multiply_dialog.cpp
+        app/model_layout_dialog.cpp
+        app/model_alignment.cpp
         app/model_tree_model.cpp
         app/embedded_assets.cpp
         app/embedded_manual.cpp
@@ -236,6 +237,14 @@ if(STL_SLICER_BUILD_TESTS)
     add_executable(stl_slicer_tests tests/tests.cpp)
     target_link_libraries(stl_slicer_tests PRIVATE stl_slicer_lib)
     add_test(NAME stl_slicer_tests COMMAND stl_slicer_tests)
+
+    add_executable(model_alignment_tests
+        tests/model_alignment_tests.cpp
+        app/model_alignment.cpp)
+    target_include_directories(model_alignment_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app)
+    target_link_libraries(model_alignment_tests PRIVATE stl_slicer_lib)
+    target_compile_features(model_alignment_tests PRIVATE cxx_std_17)
+    add_test(NAME model_alignment_tests COMMAND model_alignment_tests)
     if(STL_SLICER_BUILD_GUI)
         add_executable(slice_visualization_tests
             tests/slice_visualization_tests.cpp

@@ -75,9 +75,22 @@ fits tightly in the positive octant and rests on the build plane.
 \hypertarget{transform-dialog}{}The \emph{Transform} dialog provides numeric
 rotation axis and angle, translation, and uniform scale controls.
 
-\hypertarget{multiply-dialog}{}The \emph{Multiply} dialog creates a rectangular
-array of every selected model. Its \emph{Multiply} tab has a copy count and
-stride for each global axis. A count of one leaves that axis unchanged; larger
+The \emph{Align} and \emph{Multiply} commands share the \emph{Arrange selected
+models} dialog. The invoking command initially selects its corresponding tab,
+but the tab active when \emph{OK} is pressed determines which operation is
+performed.
+
+\hypertarget{align-dialog}{}The \emph{Align} command is enabled when at least two
+models are selected. Choose a global X, Y, or Z axis and a Min, Center, or Max
+alignment. Min makes every selected model bounding-box minimum on
+that axis equal to the selection's shared minimum; Max similarly uses the
+shared maximum; Center places every bounding-box center at the center of the
+shared bounds. Alignment changes only the chosen coordinate and preserves each
+model's rotation, scale, and placement on the other two axes.
+
+\hypertarget{multiply-dialog}{}The \emph{Multiply} tab creates a rectangular
+array of every selected model. It has a copy count and stride for each global
+axis. A count of one leaves that axis unchanged; larger
 counts place instances at successive stride offsets. The initial stride values
 are the X, Y, and Z dimensions of the selected models' shared bounding box, so
 the default array places adjacent copies without overlap. The original models

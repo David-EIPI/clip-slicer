@@ -7,7 +7,7 @@
 #include "gl_canvas.hpp"
 #include "main_frame.hpp"
 #include "model_transform_dialog.hpp"
-#include "model_multiply_dialog.hpp"
+#include "model_layout_dialog.hpp"
 #include "slice_visualization.hpp"
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
@@ -61,6 +61,7 @@ enum {
     IdDeleteModels,
     IdResetTransform,
     IdTransformModels,
+    IdAlignModels,
     IdMultiplyModels,
     IdNewModelGroup,
     IdUngroupModels,
@@ -421,6 +422,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     Bind(wxEVT_MENU, &DocumentFrame::OnDeleteModels, this, IdDeleteModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnResetTransform, this, IdResetTransform);
     Bind(wxEVT_MENU, &DocumentFrame::OnTransformModels, this, IdTransformModels);
+    Bind(wxEVT_MENU, &DocumentFrame::OnAlignModels, this, IdAlignModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnMultiplyModels, this, IdMultiplyModels);
     Bind(wxEVT_MENU, &DocumentFrame::OnNewModelGroup, this, IdNewModelGroup);
     Bind(wxEVT_MENU, &DocumentFrame::OnUngroupModels, this, IdUngroupModels);
@@ -490,6 +492,7 @@ void DocumentFrame::BuildMenus() {
     models->AppendSeparator();
     resetTransformItem_ = models->Append(IdResetTransform, "&Reset transformations");
     transformModelsItem_ = models->Append(IdTransformModels, "&Transform...");
+    alignModelsItem_ = models->Append(IdAlignModels, "&Align...");
     multiplyModelsItem_ = models->Append(IdMultiplyModels, "&Multiply...");
     moveToOriginItem_ = models->Append(IdMoveToOrigin, "Move to &Origin");
     models->AppendSeparator();
@@ -678,8 +681,9 @@ void DocumentFrame::RefreshModelList() {
     UpdateCommandState();
 }
 void DocumentFrame::UpdateCommandState() {
-    const bool modelSelected = std::any_of(
+    const std::size_t selectedModelCount = std::count_if(
         models_.begin(), models_.end(), [](const auto &model) { return model->selected; });
+    const bool modelSelected = selectedModelCount != 0;
     const bool sliced = std::any_of(models_.begin(), models_.end(), [](const auto &model) {
         return model->selected && model->isSliced();
     });
@@ -694,6 +698,8 @@ void DocumentFrame::UpdateCommandState() {
         resetTransformItem_->Enable(modelSelected);
     if (transformModelsItem_)
         transformModelsItem_->Enable(modelSelected);
+    if (alignModelsItem_)
+        alignModelsItem_->Enable(selectedModelCount >= 2);
     if (multiplyModelsItem_)
         multiplyModelsItem_->Enable(modelSelected);
     if (newModelGroupItem_)
@@ -1011,15 +1017,15 @@ void DocumentFrame::OnTransformModels(wxCommandEvent &) {
     canvas_->ModelTransformsChanged();
     UpdateStatus();
 }
+void DocumentFrame::OnAlignModels(wxCommandEvent &) {
+    ShowModelLayoutDialog(ModelLayoutOperation::Align);
+}
 void DocumentFrame::OnMultiplyModels(wxCommandEvent &) {
+    ShowModelLayoutDialog(ModelLayoutOperation::Multiply);
+}
+void DocumentFrame::ShowModelLayoutDialog(ModelLayoutOperation initialOperation) {
     const stl_slicer::Bounds3 bounds = SelectedBounds();
     if (!bounds.valid())
-        return;
-
-    MultiplyDialog dialog(
-        this,
-        {bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z});
-    if (dialog.ShowModal() != wxID_OK)
         return;
 
     std::vector<std::shared_ptr<stl_slicer::SceneModel>> selected;
@@ -1028,6 +1034,43 @@ void DocumentFrame::OnMultiplyModels(wxCommandEvent &) {
             selected.push_back(model);
     if (selected.empty())
         return;
+
+    ModelLayoutDialog dialog(
+        this,
+        {bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z},
+        initialOperation);
+    if (dialog.ShowModal() != wxID_OK)
+        return;
+
+    if (dialog.ActiveOperation() == ModelLayoutOperation::Align) {
+        if (selected.size() < 2) {
+            wxMessageBox("Select at least two models to align.",
+                         "Align models",
+                         wxOK | wxICON_INFORMATION,
+                         this);
+            return;
+        }
+        bool changed = false;
+        for (auto &model : selected) {
+            const stl_slicer::Vec3 translation = AlignmentTranslation(
+                model->worldBounds(),
+                bounds,
+                dialog.SelectedAlignmentAxis(),
+                dialog.SelectedAlignmentType());
+            if (translation.x == 0.0 && translation.y == 0.0 && translation.z == 0.0)
+                continue;
+            model->transform =
+                stl_slicer::Mat4::translation(translation.x, translation.y, translation.z) *
+                model->transform;
+            changed = true;
+        }
+        if (changed) {
+            InvalidateUnsupportedAnalysis();
+            canvas_->ModelTransformsChanged();
+            UpdateStatus();
+        }
+        return;
+    }
 
     const auto copies = dialog.Copies();
     const stl_slicer::Vec3 stride = dialog.Stride();

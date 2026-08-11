@@ -20,6 +20,7 @@ inline constexpr char settingsAnalysis[] = "settings-analysis";
 inline constexpr char settingsGenerator[] = "settings-generator";
 inline constexpr char settingsInterface[] = "settings-interface";
 inline constexpr char transformDialog[] = "transform-dialog";
+inline constexpr char alignDialog[] = "align-dialog";
 inline constexpr char multiplyDialog[] = "multiply-dialog";
 inline constexpr char sliceDialog[] = "slice-dialog";
 inline constexpr char sliceOutput[] = "slice-output";
