@@ -5,8 +5,8 @@
 %global soversion 0
 
 Name:           clip-slicer
-Version:        0.1.0
-Release:        3%{?dist}
+Version:        0.2.0
+Release:        1%{?dist}
 Summary:        STL slicing and support-generation applications
 
 License:        PolyForm-Noncommercial-1.0.0 AND CC0-1.0
@@ -74,6 +74,11 @@ sed -i '/<!-- RPM-EXCLUDE-BEGIN:/,/<!-- RPM-EXCLUDE-END -->/d' \
 %{_libdir}/libstl_slicer.so.%{version}
 
 %changelog
+* Tue Aug 11 2026 CLIP Slicer contributors <noreply@example.com> - 0.2.0-1
+- Add memory-efficient model multiplication, grouping, and arrangement tools.
+- Add model-list context menus and operating-system file drag and drop.
+- Improve embedded help, GTK document controls, and startup layout stability.
+
 * Tue Jul 21 2026 CLIP Slicer contributors <noreply@example.com> - 0.1.0-3
 - Add embedded context-sensitive HTML help through wxWebView.
 
