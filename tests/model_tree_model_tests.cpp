@@ -4,6 +4,7 @@
 #include "model_tree_model.hpp"
 #include <iostream>
 #include <stdexcept>
+#include <wx/dvrenderers.h>
 
 using namespace stl_slicer;
 
@@ -33,10 +34,17 @@ void testHierarchyAndAttributes() {
 
     ModelTreeModel model({}, {}, {});
     model.Rebuild(models, {group});
+    require(model.GetColumnCount() == 2, "model tree should expose two columns");
     wxDataViewItemArray roots;
     require(model.GetChildren({}, roots) == 2, "unexpected data-view root count");
     const wxDataViewItem groupItem = model.ItemForGroup(1);
     require(groupItem.IsOk() && model.IsGroup(groupItem), "group node was not created");
+    wxVariant groupValue;
+    model.GetValue(groupValue, groupItem, ModelTreeModel::Name);
+    wxDataViewIconText groupLabel;
+    groupLabel << groupValue;
+    require(groupLabel.GetText() == "Array (2)",
+            "group label did not preserve its model count");
     wxDataViewItemArray children;
     require(model.GetChildren(groupItem, children) == 2, "group members were not created");
     require(model.GetParent(model.ItemForModel(mesh.get())) == groupItem,

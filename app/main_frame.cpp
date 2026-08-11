@@ -7,6 +7,7 @@
 #include "help_window.hpp"
 #include "settings_dialog.hpp"
 #include <wx/dialog.h>
+#include <wx/dnd.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/msgdlg.h>
@@ -17,6 +18,20 @@
 
 namespace {
 enum { IdOpen = wxID_HIGHEST + 1, IdSettings };
+class NewDocumentFileDropTarget final : public wxFileDropTarget {
+  public:
+    explicit NewDocumentFileDropTarget(MainFrame &frame) : frame_(frame) {}
+
+    bool OnDropFiles(wxCoord, wxCoord, const wxArrayString &filenames) override {
+        if (filenames.empty())
+            return false;
+        frame_.OpenFiles(filenames);
+        return true;
+    }
+
+  private:
+    MainFrame &frame_;
+};
 #ifdef __WXGTK__
 void CloseActiveDocument(GtkButton *, gpointer data) {
     auto *frame = static_cast<MainFrame *>(data);
@@ -62,6 +77,11 @@ MainFrame::MainFrame()
     clip_slicer::help::Assign(this, clip_slicer::help::manualTop);
     clip_slicer::help::Enable(this);
     wxStatusBar *statusBar = CreateStatusBar(3);
+    SetDropTarget(new NewDocumentFileDropTarget(*this));
+    if (wxWindow *client = GetClientWindow())
+        client->SetDropTarget(new NewDocumentFileDropTarget(*this));
+    if (statusBar)
+        statusBar->SetDropTarget(new NewDocumentFileDropTarget(*this));
     int buildWidth = 210;
     int sliceWidth = 90;
     if (statusBar) {

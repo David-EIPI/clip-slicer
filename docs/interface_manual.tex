@@ -20,9 +20,15 @@ On Windows, documents retain
 the native MDI window controls supplied by the operating system.
 
 Open and export file dialogs retain the directory of the last accepted file
-for use by subsequent dialogs. The model viewport requires OpenGL 3.2 and GLSL
-1.50. If renderer initialization fails, the application reports the detected
-OpenGL environment and a sample of missing entry points to assist driver
+for use by subsequent dialogs. STL and CLI files may also be dragged from the
+operating system file manager. Dropping files on the active document content,
+including its viewport, section controls, or model list, appends them to that
+document. Dropping files on a common application area, including the parent
+frame, status bar, empty document-tab area, or document toolbar, creates one
+new document containing all dropped files.
+
+The model viewport requires OpenGL 3.2 and GLSL 1.50. If renderer
+initialization fails, the application reports the detected OpenGL environment and a sample of missing entry points to assist driver
 diagnosis.
 
 \subsection{Model List}
@@ -30,9 +36,10 @@ diagnosis.
 
 The model pane controls selection, visibility, type identification, and
 organization. The \emph{Visible} check boxes show or hide geometry without
-deleting it. Surface models use a mesh icon and normal text; generated slice
-models use a stacked-layer icon, italic text, and the type \emph{Slices}.
-Commands and transformations apply to all selected entries.
+deleting it. Surface models use a cube icon and normal text; generated slice
+models use a stacked-layer icon and italic text. A group name includes its
+current model count in parentheses. Commands and transformations apply to all
+selected entries.
 
 Models can be placed in named, collapsible groups. Selecting a group selects
 all of its children for subsequent commands, and changing a group's visibility
@@ -165,7 +172,9 @@ opens the interactive cross-section view, \emph{Supports} generates support
 structures, and \emph{Stop} cancels a running background workflow.
 \emph{Arrange} opens the shared arrangement dialog at its last selected tab.
 \emph{Transform} and \emph{Origin} change selected-model transformations.
-Buttons which cannot operate on the current selection are disabled.
+Buttons which cannot operate on the current selection are disabled. Files
+dropped on this toolbar open together in a new document; drop them on the
+viewport or model list to append them to the active document.
 
 \section{Viewport Guides}
 \label{viewport}

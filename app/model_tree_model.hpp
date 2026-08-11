@@ -19,7 +19,7 @@ struct DocumentModelGroup {
 
 class ModelTreeModel final : public wxDataViewModel {
   public:
-    enum Column : unsigned int { Visibility, Name, Type, Count };
+    enum Column : unsigned int { Visibility, Name, Count };
 
     ModelTreeModel(wxBitmapBundle groupIcon,
                    wxBitmapBundle meshIcon,

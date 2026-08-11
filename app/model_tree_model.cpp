@@ -117,15 +117,12 @@ void ModelTreeModel::GetValue(wxVariant &value,
         if (node->model)
             value << wxDataViewIconText(node->model->name,
                                         node->model->isSliced() ? slicesIcon_ : meshIcon_);
-        else
-            value << wxDataViewIconText(node->groupName, groupIcon_);
+        else {
+            const wxString label = wxString::FromUTF8(node->groupName) +
+                                   wxString::Format(" (%zu)", node->children.size());
+            value << wxDataViewIconText(label, groupIcon_);
+        }
         return;
-    }
-    if (column == Type) {
-        if (node->model)
-            value = node->model->isSliced() ? "Slices" : "Mesh";
-        else
-            value = wxString::Format("%zu models", node->children.size());
     }
 }
 

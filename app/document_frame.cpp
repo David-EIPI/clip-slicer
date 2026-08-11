@@ -27,6 +27,7 @@
 #include <wx/artprov.h>
 #include <wx/checkbox.h>
 #include <wx/dataobj.h>
+#include <wx/dnd.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/msgdlg.h>
@@ -176,6 +177,37 @@ wxBitmapBundle SlicedModelIcon() {
     return wxBitmapBundle::FromSVG(svg, {16, 16});
 }
 
+class AppendDocumentFileDropTarget final : public wxFileDropTarget {
+  public:
+    explicit AppendDocumentFileDropTarget(DocumentFrame &document) : document_(document) {}
+
+    bool OnDropFiles(wxCoord, wxCoord, const wxArrayString &filenames) override {
+        if (filenames.empty())
+            return false;
+        for (const wxString &filename : filenames)
+            document_.OpenPath(filename);
+        return true;
+    }
+
+  private:
+    DocumentFrame &document_;
+};
+
+class NewDocumentFileDropTarget final : public wxFileDropTarget {
+  public:
+    explicit NewDocumentFileDropTarget(MainFrame &frame) : frame_(frame) {}
+
+    bool OnDropFiles(wxCoord, wxCoord, const wxArrayString &filenames) override {
+        if (filenames.empty())
+            return false;
+        frame_.OpenFiles(filenames);
+        return true;
+    }
+
+  private:
+    MainFrame &frame_;
+};
+
 } // namespace
 
 class SliceDialog final : public wxDialog {
@@ -319,6 +351,9 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                       "Move selected models into the positive octant");
     toolbar_->Realize();
     clip_slicer::help::Assign(toolbar_, clip_slicer::help::documentToolbar);
+    auto &mainFrame = *static_cast<MainFrame *>(GetMDIParent());
+    toolbar_->SetDropTarget(new NewDocumentFileDropTarget(mainFrame));
+    SetDropTarget(new AppendDocumentFileDropTarget(*this));
     root->Add(toolbar_, 0, wxEXPAND);
     auto *split = new wxSplitterWindow(this);
     modelList_ = new wxDataViewCtrl(split,
@@ -338,24 +373,27 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
     modelList_->AppendIconTextColumn("Model",
                                      ModelTreeModel::Name,
                                      wxDATAVIEW_CELL_INERT,
-                                     FromDIP(180),
+                                     FromDIP(250),
                                      wxALIGN_LEFT);
-    modelList_->AppendTextColumn("Type",
-                                 ModelTreeModel::Type,
-                                 wxDATAVIEW_CELL_INERT,
-                                 FromDIP(72),
-                                 wxALIGN_LEFT);
     modelList_->EnableDragSource(wxDF_UNICODETEXT);
-    modelList_->EnableDropTarget(wxDF_UNICODETEXT);
+    wxVector<wxDataFormat> modelDropFormats;
+    modelDropFormats.push_back(wxDF_FILENAME);
+    modelDropFormats.push_back(wxDF_UNICODETEXT);
+    modelList_->EnableDropTargets(modelDropFormats);
     clip_slicer::help::Assign(modelList_, clip_slicer::help::modelList);
     auto *viewArea = new wxPanel(split);
+    split->SetDropTarget(new AppendDocumentFileDropTarget(*this));
+    viewArea->SetDropTarget(new AppendDocumentFileDropTarget(*this));
     auto *viewSizer = new wxBoxSizer(wxVERTICAL);
     canvas_ = new ModelCanvas(viewArea, *this);
+    canvas_->SetDropTarget(new AppendDocumentFileDropTarget(*this));
     clip_slicer::help::Assign(canvas_, clip_slicer::help::viewport);
     sectionControls_ = new wxPanel(viewArea);
+    sectionControls_->SetDropTarget(new AppendDocumentFileDropTarget(*this));
     auto *sectionSizer = new wxBoxSizer(wxHORIZONTAL);
     sectionScroll_ = new wxScrollBar(
         sectionControls_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxSB_HORIZONTAL);
+    sectionScroll_->SetDropTarget(new AppendDocumentFileDropTarget(*this));
     sectionScroll_->SetToolTip(
         "Section slice index (Up/Down: 1 slice, Page Up/Page Down: 10 slices)");
     sectionIndex_ = new wxSpinCtrl(sectionControls_,
@@ -367,6 +405,7 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
                                    0,
                                    0,
                                    0);
+    sectionIndex_->SetDropTarget(new AppendDocumentFileDropTarget(*this));
     wxSize sectionIndexSize = sectionIndex_->GetBestSize();
     sectionIndexSize.x = std::max(sectionIndexSize.x, FromDIP(96));
     sectionIndex_->SetMinSize(sectionIndexSize);
@@ -901,12 +940,25 @@ void DocumentFrame::OnModelDragBegin(wxDataViewEvent &event) {
     event.SetDragFlags(wxDrag_AllowMove);
 }
 void DocumentFrame::OnModelDropPossible(wxDataViewEvent &event) {
-    if (event.GetDataFormat() != wxDF_UNICODETEXT)
-        event.Veto();
-    else
+    if (event.GetDataFormat() == wxDF_FILENAME)
+        event.SetDropEffect(wxDragCopy);
+    else if (event.GetDataFormat() == wxDF_UNICODETEXT)
         event.SetDropEffect(wxDragMove);
+    else
+        event.Veto();
 }
 void DocumentFrame::OnModelDrop(wxDataViewEvent &event) {
+    if (event.GetDataFormat() == wxDF_FILENAME) {
+        wxFileDataObject data;
+        if (!data.SetData(event.GetDataSize(), event.GetDataBuffer())) {
+            event.Veto();
+            return;
+        }
+        for (const wxString &filename : data.GetFilenames())
+            OpenPath(filename);
+        event.SetDropEffect(wxDragCopy);
+        return;
+    }
     if (event.GetDataFormat() != wxDF_UNICODETEXT) {
         event.Veto();
         return;
