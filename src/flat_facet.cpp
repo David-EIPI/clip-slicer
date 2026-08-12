@@ -118,7 +118,7 @@ struct FacetCandidate {
     Vec3 normalSum;
     Vec3 seedNormal;
     std::vector<Vec3> memberNormals;
-    double maximumSeedAngle = 0.0;
+    double minimumSeedDot = 1.0;
 };
 
 TriangleInfo triangleInfo(const Triangle &triangle) {
@@ -182,6 +182,68 @@ ProjectionRange facetProjectionRange(const TriangleMesh &mesh,
     return range;
 }
 
+std::vector<Vec3> outerWitnesses(const TriangleMesh &mesh) {
+    std::vector<Vec3> directions;
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            for (int z = -1; z <= 1; ++z) {
+                if (x == 0 && y == 0 && z == 0)
+                    continue;
+                if (x < 0 || (x == 0 && y < 0) || (x == 0 && y == 0 && z < 0))
+                    continue;
+                directions.push_back(normalized(
+                    {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z)}));
+            }
+        }
+    }
+
+    std::vector<Vec3> minimumVertices(directions.size());
+    std::vector<Vec3> maximumVertices(directions.size());
+    std::vector<double> minimum(directions.size(), std::numeric_limits<double>::infinity());
+    std::vector<double> maximum(directions.size(), -std::numeric_limits<double>::infinity());
+    for (const Triangle &triangle : mesh.triangles()) {
+        for (const Vec3 &vertex : triangle.vertices) {
+            for (std::size_t index = 0; index < directions.size(); ++index) {
+                const double projection = dot(directions[index], vertex);
+                if (projection < minimum[index]) {
+                    minimum[index] = projection;
+                    minimumVertices[index] = vertex;
+                }
+                if (projection > maximum[index]) {
+                    maximum[index] = projection;
+                    maximumVertices[index] = vertex;
+                }
+            }
+        }
+    }
+
+    std::vector<Vec3> witnesses;
+    witnesses.reserve(directions.size() * 2);
+    for (std::size_t index = 0; index < directions.size(); ++index) {
+        witnesses.push_back(minimumVertices[index]);
+        witnesses.push_back(maximumVertices[index]);
+    }
+    return witnesses;
+}
+
+bool witnessesCrossFacet(const TriangleMesh &mesh,
+                         const std::vector<Vec3> &witnesses,
+                         const FacetCandidate &candidate,
+                         double tolerance) {
+    const ProjectionRange range = facetProjectionRange(
+        mesh, candidate.facet.triangleIndices, candidate.normal);
+    bool above = false;
+    bool below = false;
+    for (const Vec3 &witness : witnesses) {
+        const double projection = dot(candidate.normal, witness);
+        above = above || projection > range.maximum + tolerance;
+        below = below || projection < range.minimum - tolerance;
+        if (above && below)
+            return true;
+    }
+    return false;
+}
+
 struct NormalBin {
     std::array<std::int64_t, 3> coordinates{};
 
@@ -205,23 +267,32 @@ NormalBin normalBin(const Vec3 &normal, double binWidth) {
               static_cast<std::int64_t>(std::floor(normal.z / binWidth))}}};
 }
 
+double combinedNormalDotLowerBound(double firstSeedDot, double secondSeedDot) {
+    firstSeedDot = std::clamp(firstSeedDot, -1.0, 1.0);
+    secondSeedDot = std::clamp(secondSeedDot, -1.0, 1.0);
+    const double firstSine =
+        std::sqrt(std::max(0.0, 1.0 - firstSeedDot * firstSeedDot));
+    const double secondSine =
+        std::sqrt(std::max(0.0, 1.0 - secondSeedDot * secondSeedDot));
+    return firstSeedDot * secondSeedDot - firstSine * secondSine;
+}
+
 bool normalsCompatible(const FacetCandidate &merged,
                        const FacetCandidate &patch,
                        const FlatFacetOptions &options,
-                       double maximumAngle,
-                       double angleEpsilon,
-                       double &candidateMaximumAngle) {
-    candidateMaximumAngle = 0.0;
+                       double &candidateMinimumSeedDot) {
+    candidateMinimumSeedDot = 1.0;
     for (const Vec3 &normal : patch.memberNormals) {
         const Vec3 aligned = alignedWith(normal, merged.seedNormal);
         const double seedDot = dot(merged.seedNormal, aligned);
         if (!withinFlatness(seedDot, options.flatnessTolerance))
             return false;
-        candidateMaximumAngle = std::max(
-            candidateMaximumAngle,
-            std::acos(std::clamp(seedDot, -1.0, 1.0)));
+        candidateMinimumSeedDot = std::min(candidateMinimumSeedDot, seedDot);
     }
-    if (candidateMaximumAngle + merged.maximumSeedAngle <= maximumAngle + angleEpsilon)
+    if (withinFlatness(
+            combinedNormalDotLowerBound(candidateMinimumSeedDot,
+                                        merged.minimumSeedDot),
+            options.flatnessTolerance))
         return true;
 
     for (const Vec3 &candidateNormal : patch.memberNormals) {
@@ -241,7 +312,7 @@ bool normalsCompatible(const FacetCandidate &merged,
 void appendPatch(FacetCandidate &merged,
                  const FacetCandidate &patch,
                  const std::vector<TriangleInfo> &information,
-                 double candidateMaximumAngle) {
+                 double candidateMinimumSeedDot) {
     merged.facet.triangleIndices.insert(merged.facet.triangleIndices.end(),
                                         patch.facet.triangleIndices.begin(),
                                         patch.facet.triangleIndices.end());
@@ -254,7 +325,7 @@ void appendPatch(FacetCandidate &merged,
         merged.normalSum.z += aligned.z * area;
     }
     merged.facet.area += patch.facet.area;
-    merged.maximumSeedAngle = std::max(merged.maximumSeedAngle, candidateMaximumAngle);
+    merged.minimumSeedDot = std::min(merged.minimumSeedDot, candidateMinimumSeedDot);
     merged.normal = normalized(merged.normalSum);
 }
 
@@ -262,14 +333,12 @@ std::vector<FacetCandidate> mergeCoplanarPatches(
     const TriangleMesh &mesh,
     const std::vector<TriangleInfo> &information,
     std::vector<FacetCandidate> patches,
-    const FlatFacetOptions &options,
-    double maximumAngle) {
+    const FlatFacetOptions &options) {
     std::sort(patches.begin(), patches.end(), [](const auto &first, const auto &second) {
         if (first.facet.area != second.facet.area)
             return first.facet.area > second.facet.area;
         return first.facet.triangleIndices.front() < second.facet.triangleIndices.front();
     });
-    const double angleEpsilon = 8.0 * std::numeric_limits<double>::epsilon();
     const double planeEpsilon = std::max(1e-12, options.coplanarTolerance * 1e-12);
     const double binWidth = std::sqrt(2.0 * options.flatnessTolerance);
     std::unordered_map<NormalBin, std::vector<std::size_t>, NormalBinHash> normalIndex;
@@ -293,13 +362,11 @@ std::vector<FacetCandidate> mergeCoplanarPatches(
                         continue;
                     for (const std::size_t mergedIndex : indexed->second) {
                         FacetCandidate &merged = mergedPatches[mergedIndex];
-                        double candidateMaximumAngle = 0.0;
+                        double candidateMinimumSeedDot = 1.0;
                         if (!normalsCompatible(merged,
                                                patch,
                                                options,
-                                               maximumAngle,
-                                               angleEpsilon,
-                                               candidateMaximumAngle))
+                                               candidateMinimumSeedDot))
                             continue;
 
                         const Vec3 &sample = mesh.triangles()[
@@ -318,7 +385,7 @@ std::vector<FacetCandidate> mergeCoplanarPatches(
                         if (combinedRange.width() > options.coplanarTolerance + planeEpsilon)
                             continue;
 
-                        appendPatch(merged, patch, information, candidateMaximumAngle);
+                        appendPatch(merged, patch, information, candidateMinimumSeedDot);
                         planeRanges[mergedIndex] = combinedRange;
                         wasMerged = true;
                         break;
@@ -411,7 +478,9 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
     std::vector<bool> assigned(triangles.size(), false);
     std::vector<std::size_t> considered(triangles.size(), 0);
     std::size_t regionId = 0;
-    const double maximumAngle = std::acos(1.0 - options_.flatnessTolerance);
+    const double minimumNormalDot = 1.0 - options_.flatnessTolerance;
+    const double maximumNormalSine = std::sqrt(
+        std::max(0.0, 1.0 - minimumNormalDot * minimumNormalDot));
     std::vector<FacetCandidate> candidates;
 
     for (std::size_t seed = 0; seed < triangles.size(); ++seed) {
@@ -429,7 +498,7 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
         std::vector<std::size_t> queue{seed};
         assigned[seed] = true;
         considered[seed] = regionId;
-        double maximumSeedAngle = 0.0;
+        double minimumSeedDot = 1.0;
         double area = information[seed].area;
         Vec3 normalSum{seedNormal.x * area, seedNormal.y * area, seedNormal.z * area};
         ProjectionRange planeRange = triangleProjectionRange(triangles[seed], seedNormal);
@@ -452,9 +521,9 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
                     const double seedDot = dot(seedNormal, candidateNormal);
                     if (!withinFlatness(seedDot, options_.flatnessTolerance))
                         continue;
-                    const double seedAngle = std::acos(std::clamp(seedDot, -1.0, 1.0));
-                    bool compatible = seedAngle + maximumSeedAngle <=
-                                      maximumAngle + 8.0 * std::numeric_limits<double>::epsilon();
+                    bool compatible = withinFlatness(
+                        combinedNormalDotLowerBound(seedDot, minimumSeedDot),
+                        options_.flatnessTolerance);
                     if (!compatible) {
                         compatible = std::all_of(
                             memberNormals.begin(),
@@ -476,7 +545,7 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
                     members.push_back(neighbor);
                     memberNormals.push_back(candidateNormal);
                     queue.push_back(neighbor);
-                    maximumSeedAngle = std::max(maximumSeedAngle, seedAngle);
+                    minimumSeedDot = std::min(minimumSeedDot, seedDot);
                     const double triangleArea = information[neighbor].area;
                     area += triangleArea;
                     normalSum.x += candidateNormal.x * triangleArea;
@@ -494,12 +563,29 @@ std::vector<FlatFacet> FlatFacetDetector::detect(const TriangleMesh &mesh) const
         candidate.normalSum = normalSum;
         candidate.seedNormal = seedNormal;
         candidate.memberNormals = std::move(memberNormals);
-        candidate.maximumSeedAngle = maximumSeedAngle;
+        candidate.minimumSeedDot = minimumSeedDot;
         candidates.push_back(std::move(candidate));
     }
 
+    const Bounds3 &modelBounds = mesh.bounds();
+    const double modelDiagonal = modelBounds.valid()
+                                     ? length(subtract(modelBounds.max, modelBounds.min))
+                                     : 0.0;
+    const double outerPrefilterTolerance = options_.coplanarTolerance +
+                                           modelDiagonal * maximumNormalSine;
+    const std::vector<Vec3> witnesses = outerWitnesses(mesh);
+    candidates.erase(
+        std::remove_if(
+            candidates.begin(),
+            candidates.end(),
+            [&](const FacetCandidate &candidate) {
+                return witnessesCrossFacet(
+                    mesh, witnesses, candidate, outerPrefilterTolerance);
+            }),
+        candidates.end());
+
     candidates = mergeCoplanarPatches(
-        mesh, information, std::move(candidates), options_, maximumAngle);
+        mesh, information, std::move(candidates), options_);
 
     std::sort(candidates.begin(), candidates.end(), [](const auto &first, const auto &second) {
         if (first.facet.area != second.facet.area)

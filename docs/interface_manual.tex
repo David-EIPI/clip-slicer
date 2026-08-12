@@ -97,9 +97,17 @@ several choices. Parallel surfaces farther apart than that thickness remain
 separate. Opposite triangle winding is normalized within a facet, preventing
 an otherwise flat surface from being split by inconsistent STL orientation.
 
-A candidate is retained only when a plane parallel to the facet can support
-the entire model from one side. This rejects internal and concave surfaces and
-also determines which normal direction points away from the model. Candidates
+Before the more expensive disconnected-patch merge, the detector selects actual
+model vertices which are extreme along thirteen distributed directions. A patch
+is discarded early only when these witness vertices prove that model geometry
+lies on both sides of its plane, using a conservative margin for the configured
+normal and coplanar tolerances. This inexpensive test cannot reject a patch
+because of an empty bounding-box corner.
+
+After merging, a candidate is retained only when a plane parallel to the facet
+can support every model vertex from one side. This final exact test rejects
+internal and concave surfaces and also determines which normal direction points
+away from the model. Candidates
 are sorted by decreasing area; surfaces smaller than one percent of the largest
 outer facet are discarded, and at most ten remain. When several facets remain,
 a dialog lists their areas for selection.
