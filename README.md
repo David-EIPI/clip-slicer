@@ -228,8 +228,10 @@ The library API is divided into reusable data and processing components:
   normal.
 - Mouse wheel zooms the camera view. Ctrl+left drag duplicates wheel zoom, and Ctrl+right drag
   duplicates middle drag.
-- Holding Shift with a mouse operation applies the corresponding rotation, translation, or scaling
-  to selected models instead of the camera.
+- Holding Shift with a mouse operation targets selected models instead of the camera. Shift+middle
+  drag translates them in the absolute X-Y build plane, and Shift+right drag translates them along
+  the absolute Z axis, independently of camera orientation. Shift+left drag rotates them and
+  Shift+wheel scales them around their common geometric center.
 - Section mode supports planes normal to the X, Y, or Z axis. Alt+wheel moves the translucent
   section plane and updates a filled, double-sided cross-section on a separate display plane
   outside the selected models. The optional best-view mode faces and fits that plane to the

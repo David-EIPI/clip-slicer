@@ -1021,11 +1021,13 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
     };
     const auto translateParallel = [&]() {
         const stl_slicer::Vec3 screenDelta{dx * worldUnitsPerPixel, -dy * worldUnitsPerPixel, 0};
-        const stl_slicer::Vec3 worldDelta = screenToWorld.transformVector(screenDelta);
         if (transformModels) {
+            // Model placement is defined in build coordinates, so Shift+middle drag
+            // always moves along the absolute X-Y plane regardless of the camera view.
             TransformSelected(
-                stl_slicer::Mat4::translation(worldDelta.x, worldDelta.y, worldDelta.z));
+                stl_slicer::Mat4::translation(screenDelta.x, screenDelta.y, 0.0));
         } else {
+            const stl_slicer::Vec3 worldDelta = screenToWorld.transformVector(screenDelta);
             viewCenter_.x -= worldDelta.x;
             viewCenter_.y -= worldDelta.y;
             viewCenter_.z -= worldDelta.z;
@@ -1034,10 +1036,9 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
     };
     const auto translateNormal = [&]() {
         if (transformModels) {
-            const stl_slicer::Vec3 worldDelta =
-                screenToWorld.transformVector({0, 0, -dy * worldUnitsPerPixel});
-            TransformSelected(
-                stl_slicer::Mat4::translation(worldDelta.x, worldDelta.y, worldDelta.z));
+            // Shift+right drag changes only the absolute build-platform Z coordinate.
+            TransformSelected(stl_slicer::Mat4::translation(
+                0.0, 0.0, -dy * worldUnitsPerPixel));
         } else {
             distance_ = std::max(0.1, distance_ + dy * worldUnitsPerPixel);
             Refresh();
