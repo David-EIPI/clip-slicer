@@ -70,6 +70,8 @@ class ModelCanvas final : public wxGLCanvas {
     void OnPaint(wxPaintEvent &event);
     void OnSize(wxSizeEvent &event);
     void OnMouse(wxMouseEvent &event);
+    void OnAxisKeyDown(wxKeyEvent &event);
+    void OnAxisKeyUp(wxKeyEvent &event);
     void InitializeGl();
     void DrawWorldAxes();
     void DrawModels(const float *viewProjection);
@@ -111,5 +113,6 @@ class ModelCanvas final : public wxGLCanvas {
     stl_slicer::Vec3 viewCenter_;
     ViewState preSectionView_;
     bool preSectionViewSaved_ = false;
+    bool xAxisDown_ = false, yAxisDown_ = false, zAxisDown_ = false;
     wxPoint lastMouse_;
 };

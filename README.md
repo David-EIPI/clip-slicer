@@ -224,6 +224,8 @@ The library API is divided into reusable data and processing components:
 ## CLIP Slicer controls
 
 - Left drag rotates the camera around the models.
+- Holding X, Y, or Z while left-dragging rotates selected models around the corresponding absolute
+  build axis and their common geometric center. Horizontal drag controls the rotation angle.
 - Middle drag translates the camera parallel to the screen; right drag moves it along the screen
   normal.
 - Mouse wheel zooms the camera view. Ctrl+left drag duplicates wheel zoom, and Ctrl+right drag

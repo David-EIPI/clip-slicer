@@ -190,8 +190,12 @@ ModelCanvas::ModelCanvas(wxWindow *parent, DocumentFrame &document)
                              wxEVT_RIGHT_UP,
                              wxEVT_MOUSEWHEEL})
         Bind(event, &ModelCanvas::OnMouse, this);
+    document_.Bind(wxEVT_CHAR_HOOK, &ModelCanvas::OnAxisKeyDown, this);
+    document_.Bind(wxEVT_KEY_UP, &ModelCanvas::OnAxisKeyUp, this);
 }
 ModelCanvas::~ModelCanvas() {
+    document_.Unbind(wxEVT_CHAR_HOOK, &ModelCanvas::OnAxisKeyDown, this);
+    document_.Unbind(wxEVT_KEY_UP, &ModelCanvas::OnAxisKeyUp, this);
     if (context_) {
         SetCurrent(*context_);
         for (auto &entry : buffers_) {
@@ -984,9 +988,33 @@ void ModelCanvas::TransformSelected(const stl_slicer::Mat4 &t) {
     UpdateInteractiveSlice();
     Refresh();
 }
+void ModelCanvas::OnAxisKeyDown(wxKeyEvent &e) {
+    const int key = e.GetKeyCode();
+    xAxisDown_ = xAxisDown_ || key == 'X' || key == 'x';
+    yAxisDown_ = yAxisDown_ || key == 'Y' || key == 'y';
+    zAxisDown_ = zAxisDown_ || key == 'Z' || key == 'z';
+    e.Skip();
+}
+void ModelCanvas::OnAxisKeyUp(wxKeyEvent &e) {
+    const int key = e.GetKeyCode();
+    if (key == 'X' || key == 'x')
+        xAxisDown_ = false;
+    if (key == 'Y' || key == 'y')
+        yAxisDown_ = false;
+    if (key == 'Z' || key == 'z')
+        zAxisDown_ = false;
+    e.Skip();
+}
 void ModelCanvas::OnMouse(wxMouseEvent &e) {
+    if (e.ButtonDown())
+        SetFocus();
     const wxPoint now = e.GetPosition();
     const int dx = now.x - lastMouse_.x, dy = now.y - lastMouse_.y;
+    stl_slicer::Vec3 constrainedRotationAxis;
+    const bool constrainedRotation = xAxisDown_ ? (constrainedRotationAxis = {1, 0, 0}, true)
+                                     : yAxisDown_ ? (constrainedRotationAxis = {0, 1, 0}, true)
+                                     : zAxisDown_ ? (constrainedRotationAxis = {0, 0, 1}, true)
+                                                  : false;
     const bool transformModels = e.ShiftDown();
     const stl_slicer::Mat4 screenToWorld = stl_slicer::Mat4::rotation(-yaw_, {0, 0, 1}) *
                                            stl_slicer::Mat4::rotation(-pitch_, {1, 0, 0});
@@ -1051,6 +1079,12 @@ void ModelCanvas::OnMouse(wxMouseEvent &e) {
                 moveSlicePlane(-dy / 24.0);
             } else if (e.ControlDown()) {
                 scaleTarget(-dy / 24.0);
+            } else if (constrainedRotation) {
+                const auto c = document_.SelectedCenter();
+                const stl_slicer::Mat4 rotation = stl_slicer::Mat4::rotation(
+                    dx * .008, constrainedRotationAxis);
+                TransformSelected(stl_slicer::Mat4::translation(c.x, c.y, c.z) * rotation *
+                                  stl_slicer::Mat4::translation(-c.x, -c.y, -c.z));
             } else if (transformModels) {
                 auto c = document_.SelectedCenter();
                 const stl_slicer::Vec3 axis =
