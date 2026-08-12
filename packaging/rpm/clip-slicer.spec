@@ -5,7 +5,7 @@
 %global soversion 0
 
 Name:           clip-slicer
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        STL slicing and support-generation applications
 
@@ -74,6 +74,10 @@ sed -i '/<!-- RPM-EXCLUDE-BEGIN:/,/<!-- RPM-EXCLUDE-END -->/d' \
 %{_libdir}/libstl_slicer.so.%{version}
 
 %changelog
+* Tue Aug 11 2026 CLIP Slicer contributors <noreply@example.com> - 0.2.1-1
+- Add flat-facet alignment to the build platform.
+- Merge disconnected coplanar facet fragments during processing.
+
 * Tue Aug 11 2026 CLIP Slicer contributors <noreply@example.com> - 0.2.0-1
 - Add memory-efficient model multiplication, grouping, and arrangement tools.
 - Add model-list context menus and operating-system file drag and drop.

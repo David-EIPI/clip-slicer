@@ -7,7 +7,7 @@ if(POLICY CMP0091)
     cmake_policy(SET CMP0091 NEW)
 endif()
 
-project(stl_slicer VERSION 0.2.0 LANGUAGES CXX)
+project(stl_slicer VERSION 0.2.1 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
