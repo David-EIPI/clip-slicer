@@ -7,9 +7,13 @@ slice inspection and support generation. It grew out of my experience with
 models that developed printing artifacts because of defects in STL geometry or
 insufficient support.
 
-CLIP Slicer currently accepts 3D models in
-[STL format](https://en.wikipedia.org/wiki/STL_(file_format)) and exports slices
-in [Common Layer Interface (CLI) format](https://www.hmilch.net/downloads/cli_format.html).
+CLIP Slicer accepts 3D models in
+[STL format](https://en.wikipedia.org/wiki/STL_(file_format)), reads and exports
+slices in [Common Layer Interface (CLI) format](https://www.hmilch.net/downloads/cli_format.html),
+and saves complete document layouts as compressed `.clipslicer` workspaces.
+A workspace preserves groups, visibility, selections, and model transformation
+matrices. Model files may either remain linked or be embedded to make the
+workspace self-contained.
 Before export, the Section tool can inspect
 the contours produced at the configured layer thickness and first-layer offset.
 Z-axis sections correspond to the layers produced by normal slicing; X- and

@@ -142,7 +142,7 @@ if(STL_SLICER_BUILD_GUI)
             set(wxUSE_RICHTEXT OFF CACHE BOOL "" FORCE)
             set(wxUSE_STC OFF CACHE BOOL "" FORCE)
             set(wxUSE_XRC OFF CACHE BOOL "" FORCE)
-            set(wxUSE_XML OFF CACHE BOOL "" FORCE)
+            set(wxUSE_XML ON CACHE BOOL "" FORCE)
             set(wxUSE_HTML OFF CACHE BOOL "" FORCE)
             add_subdirectory("${STL_SLICER_WINDOWS_WX_SOURCE_DIR}" wxwidgets EXCLUDE_FROM_ALL)
             set(STL_SLICER_USE_LOCAL_WX_SOURCE ON)
@@ -170,10 +170,10 @@ if(STL_SLICER_BUILD_GUI)
                 INTERFACE_COMPILE_DEFINITIONS
                     "WXUSINGDLL;__WXMSW__;UNICODE;_UNICODE;wxMSVC_VERSION_ABI_COMPAT"
                 INTERFACE_LINK_LIBRARIES
-                    "${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_gl.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_core.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxbase32${STL_SLICER_WINDOWS_WX_SUFFIX}.lib")
+                    "${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_gl.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxmsw32${STL_SLICER_WINDOWS_WX_SUFFIX}_core.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxbase32${STL_SLICER_WINDOWS_WX_SUFFIX}_xml.lib;${STL_SLICER_WINDOWS_WX_LIB_DIR}/wxbase32${STL_SLICER_WINDOWS_WX_SUFFIX}.lib")
         endif()
     else()
-        find_package(wxWidgets 3.2 REQUIRED COMPONENTS core base gl webview)
+        find_package(wxWidgets 3.2 REQUIRED COMPONENTS core base gl webview xml)
         include(${wxWidgets_USE_FILE})
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
@@ -192,6 +192,7 @@ if(STL_SLICER_BUILD_GUI)
         app/model_alignment.cpp
         app/model_distribution.cpp
         app/model_tree_model.cpp
+        app/workspace_io.cpp
         app/embedded_assets.cpp
         app/embedded_manual.cpp
         app/help_window.cpp
@@ -204,6 +205,7 @@ if(STL_SLICER_BUILD_GUI)
         if(STL_SLICER_USE_LOCAL_WX_SOURCE)
             target_link_libraries(clip-slicer PRIVATE
                 stl_slicer_lib
+                wx::xml
                 wx::gl
                 wx::webview
                 wx::core
@@ -299,5 +301,29 @@ if(STL_SLICER_BUILD_TESTS)
         endif()
         target_compile_features(model_tree_model_tests PRIVATE cxx_std_17)
         add_test(NAME model_tree_model_tests COMMAND model_tree_model_tests)
+
+        add_executable(workspace_io_tests
+            tests/workspace_io_tests.cpp
+            app/workspace_io.cpp)
+        target_include_directories(workspace_io_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app)
+        if(WIN32)
+            if(STL_SLICER_USE_LOCAL_WX_SOURCE)
+                target_link_libraries(workspace_io_tests PRIVATE
+                    stl_slicer_lib
+                    wx::core
+                    wx::base
+                    wx::xml)
+            else()
+                target_link_libraries(workspace_io_tests PRIVATE
+                    stl_slicer_lib
+                    wxWidgets::wxWidgets)
+            endif()
+        else()
+            target_link_libraries(workspace_io_tests PRIVATE
+                stl_slicer_lib
+                ${wxWidgets_LIBRARIES})
+        endif()
+        target_compile_features(workspace_io_tests PRIVATE cxx_std_17)
+        add_test(NAME workspace_io_tests COMMAND workspace_io_tests)
     endif()
 endif()

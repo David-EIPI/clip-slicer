@@ -18,6 +18,7 @@
 #include "stl_slicer/stl_writer.hpp"
 #include "stl_slicer/support_generator.hpp"
 #include "stl_slicer/unsupported_area.hpp"
+#include "workspace_io.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -31,6 +32,7 @@
 #include <wx/dataobj.h>
 #include <wx/dnd.h>
 #include <wx/filedlg.h>
+#include <wx/filedlgcustomize.h>
 #include <wx/filename.h>
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
@@ -210,6 +212,27 @@ class NewDocumentFileDropTarget final : public wxFileDropTarget {
 
   private:
     MainFrame &frame_;
+};
+
+class WorkspaceFileDialogHook final : public wxFileDialogCustomizeHook {
+  public:
+    explicit WorkspaceFileDialogHook(bool initialValue) : value_(initialValue) {}
+
+    void AddCustomControls(wxFileDialogCustomize &customizer) override {
+        checkbox_ = customizer.AddCheckBox("Embed model files in workspace");
+        checkbox_->SetValue(value_);
+    }
+
+    void TransferDataFromCustomControls() override {
+        if (checkbox_)
+            value_ = checkbox_->GetValue();
+    }
+
+    bool Value() const { return value_; }
+
+  private:
+    wxFileDialogCheckBox *checkbox_ = nullptr;
+    bool value_ = false;
 };
 
 } // namespace
@@ -449,6 +472,8 @@ DocumentFrame::DocumentFrame(wxMDIParentFrame *parent, const wxString &title)
         [this](wxCommandEvent &) { static_cast<MainFrame *>(GetMDIParent())->OpenDialog(); },
         IdOpen);
     Bind(wxEVT_MENU, &DocumentFrame::OnOpen, this, IdOpenIntoDocument);
+    Bind(wxEVT_MENU, &DocumentFrame::OnSave, this, wxID_SAVE);
+    Bind(wxEVT_MENU, &DocumentFrame::OnSaveAs, this, wxID_SAVEAS);
     Bind(wxEVT_MENU, &DocumentFrame::OnExport, this, IdExport);
     Bind(wxEVT_MENU, &DocumentFrame::OnExportStl, this, IdExportStl);
     Bind(wxEVT_MENU, &DocumentFrame::OnSlice, this, IdSlice);
@@ -538,6 +563,9 @@ void DocumentFrame::BuildMenus() {
     auto *file = new wxMenu;
     file->Append(IdOpen, "&Open...\tCtrl+O");
     file->Append(IdOpenIntoDocument, "Open into &document...");
+    file->Append(wxID_SAVE, "&Save Workspace\tCtrl+S");
+    file->Append(wxID_SAVEAS, "Save Workspace &As...\tCtrl+Shift+S");
+    file->AppendSeparator();
     exportItem_ = file->Append(IdExport, "&Export Slices...");
     exportStlItem_ = file->Append(IdExportStl, "Export &STL...");
     file->Append(IdSettings, "&Settings...");
@@ -692,27 +720,187 @@ double DocumentFrame::CrossSectionDisplayDistance() const {
 }
 void DocumentFrame::OpenPath(const wxString &path) {
     try {
-        const auto extension = wxFileName(path).GetExt().Lower();
-        if (extension == "stl")
-            AddModel(std::make_shared<stl_slicer::MeshSceneModel>(
+        const clip_slicer::InputFileFormat format = clip_slicer::DetectInputFileFormat(path);
+        if (format == clip_slicer::InputFileFormat::Workspace) {
+            LoadWorkspaceDocument(path, false);
+            return;
+        }
+
+        wxFileName absolutePath(path);
+        absolutePath.MakeAbsolute();
+        std::shared_ptr<stl_slicer::SceneModel> model;
+        if (format == clip_slicer::InputFileFormat::Stl) {
+            model = std::make_shared<stl_slicer::MeshSceneModel>(
                 wxFileName(path).GetFullName().ToStdString(),
-                stl_slicer::BinaryStlReader{}.read(path.ToStdString())));
-        else if (extension == "cli")
-            AddModel(std::make_shared<stl_slicer::SliceSceneModel>(
+                stl_slicer::BinaryStlReader{}.read(path.ToStdString()));
+        } else if (format == clip_slicer::InputFileFormat::Cli) {
+            model = std::make_shared<stl_slicer::SliceSceneModel>(
                 wxFileName(path).GetFullName().ToStdString(),
-                stl_slicer::CliReader{}.read(path.ToStdString())));
-        else
-            throw std::runtime_error("Unsupported file extension");
+                stl_slicer::CliReader{}.read(path.ToStdString()));
+        } else {
+            throw std::runtime_error("Unsupported or unrecognized file format");
+        }
+        model->sourcePath = absolutePath.GetFullPath().ToStdString(wxConvUTF8);
+        AddModel(std::move(model));
     } catch (const std::exception &e) {
         wxMessageBox(e.what(), "Open failed", wxOK | wxICON_ERROR, this);
     }
 }
+void DocumentFrame::OpenWorkspace(const wxString &path) {
+    LoadWorkspaceDocument(path, true);
+}
+
+bool DocumentFrame::LoadWorkspaceDocument(const wxString &path,
+                                          bool establishWorkspacePath) {
+    try {
+        clip_slicer::WorkspaceData data = clip_slicer::LoadWorkspace(path);
+        InvalidateUnsupportedAnalysis();
+
+        models_.insert(models_.end(), data.models.begin(), data.models.end());
+        for (DocumentModelGroup &group : data.groups) {
+            group.id = nextModelGroupId_++;
+            modelGroups_.push_back(std::move(group));
+        }
+
+        if (establishWorkspacePath) {
+            wxFileName absolutePath(path);
+            absolutePath.MakeAbsolute();
+            workspacePath_ = absolutePath.GetFullPath();
+        }
+
+        RefreshModelList();
+        canvas_->ModelsChanged();
+        UpdateStatus();
+        ShowMissingWorkspaceFiles(data.missingExternalFiles);
+        return true;
+    } catch (const std::exception &e) {
+        wxMessageBox(e.what(), "Open workspace failed", wxOK | wxICON_ERROR, this);
+        return false;
+    }
+}
+
+void DocumentFrame::ShowMissingWorkspaceFiles(const std::vector<wxString> &paths) {
+    if (paths.empty())
+        return;
+
+    wxString message = wxString::Format(
+        "%zu linked model file%s could not be found. The rest of the workspace was loaded.\n\n",
+        paths.size(),
+        paths.size() == 1 ? "" : "s");
+    const std::size_t shown = std::min<std::size_t>(3, paths.size());
+    for (std::size_t index = 0; index < shown; ++index)
+        message += wxString::Format("• %s\n", paths[index]);
+    if (paths.size() > shown)
+        message += wxString::Format("… and %zu more.", paths.size() - shown);
+
+    wxMessageBox(message, "Missing workspace files", wxOK | wxICON_ERROR, this);
+}
+
+void DocumentFrame::OnSave(wxCommandEvent &) {
+    SaveWorkspaceDocument(false);
+}
+
+void DocumentFrame::OnSaveAs(wxCommandEvent &) {
+    SaveWorkspaceDocument(true);
+}
+
+bool DocumentFrame::SaveWorkspaceDocument(bool saveAs) {
+    wxString destination = workspacePath_;
+    bool embedModels = embedModelsOnSave_;
+
+    if (saveAs || destination.empty()) {
+        const bool firstWorkspaceSave = workspacePath_.empty();
+        wxString initialDirectory;
+        wxString initialName;
+        if (!destination.empty()) {
+            wxFileName current(destination);
+            initialDirectory = current.GetPath();
+            initialName = current.GetFullName();
+        } else {
+            initialName = GetTitle();
+            if (initialName.empty())
+                initialName = "workspace";
+            wxFileName initialFile(initialName);
+            initialFile.SetExt("clipslicer");
+            initialName = initialFile.GetFullName();
+        }
+
+        wxFileDialog dialog(this,
+                            "Save workspace",
+                            initialDirectory,
+                            initialName,
+                            "CLIP Slicer workspace (*.clipslicer)|*.clipslicer",
+                            wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+        WorkspaceFileDialogHook hook(embedModels);
+        const bool customized = dialog.SetCustomizeHook(hook);
+        if (dialog.ShowModal() != wxID_OK)
+            return false;
+
+        destination = dialog.GetPath();
+        if (wxFileName(destination).GetExt().empty())
+            destination += ".clipslicer";
+        if (customized) {
+            embedModels = hook.Value();
+        } else if (firstWorkspaceSave) {
+            wxDialog options(this, wxID_ANY, "Workspace model files");
+            auto *root = new wxBoxSizer(wxVERTICAL);
+            auto *embed = new wxCheckBox(
+                &options, wxID_ANY, "Embed model files in the workspace archive");
+            embed->SetValue(embedModels);
+            root->Add(new wxStaticText(
+                          &options,
+                          wxID_ANY,
+                          "Embedded workspaces are self-contained but may be much larger."),
+                      0,
+                      wxALL,
+                      FromDIP(12));
+            root->Add(embed, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(12));
+            root->Add(options.CreateStdDialogButtonSizer(wxOK | wxCANCEL),
+                      0,
+                      wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,
+                      FromDIP(12));
+            options.SetSizerAndFit(root);
+            if (options.ShowModal() != wxID_OK)
+                return false;
+            embedModels = embed->GetValue();
+        }
+    }
+
+    try {
+        clip_slicer::SaveWorkspace(
+            destination,
+            models_,
+            modelGroups_,
+            embedModels,
+            [this](std::uint64_t completed, std::uint64_t total) {
+                const unsigned long long percent =
+                    total ? static_cast<unsigned long long>(completed * 100 / total) : 100;
+                workspaceProgress_ =
+                    wxString::Format("Saving workspace: %llu%%", percent);
+                PublishStatus();
+                wxYieldIfNeeded();
+            });
+        wxFileName absolutePath(destination);
+        absolutePath.MakeAbsolute();
+        workspacePath_ = absolutePath.GetFullPath();
+        embedModelsOnSave_ = embedModels;
+        workspaceProgress_.clear();
+        PublishStatus();
+        return true;
+    } catch (const std::exception &e) {
+        workspaceProgress_.clear();
+        PublishStatus();
+        wxMessageBox(e.what(), "Save workspace failed", wxOK | wxICON_ERROR, this);
+        return false;
+    }
+}
+
 void DocumentFrame::OnOpen(wxCommandEvent &) {
     wxFileDialog d(this,
                    "Open model",
                    {},
                    {},
-                   "3D model files (*.stl;*.cli)|*.stl;*.cli",
+                   "Supported files (*.clipslicer;*.stl;*.cli)|*.clipslicer;*.stl;*.cli|CLIP Slicer workspace (*.clipslicer)|*.clipslicer|STL files (*.stl)|*.stl|CLI files (*.cli)|*.cli",
                    wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR | wxFD_MULTIPLE);
     clip_slicer::help::Assign(&d, clip_slicer::help::openIntoDocumentDialog);
     clip_slicer::help::Enable(&d);
@@ -1566,7 +1754,10 @@ void DocumentFrame::PublishStatus() {
     } else {
         optimizationProgress << supportGenerationSummary_;
     }
-    parent->SetDocumentStatus(buildVolume.str(), slicePosition.str(), optimizationProgress.str());
+    parent->SetDocumentStatus(buildVolume.str(),
+                              slicePosition.str(),
+                              workspaceProgress_.empty() ? optimizationProgress.str()
+                                                         : workspaceProgress_);
 }
 void DocumentFrame::OnActivate(wxActivateEvent &event) {
     if (event.GetActive())

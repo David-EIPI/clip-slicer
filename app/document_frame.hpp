@@ -52,6 +52,7 @@ class DocumentFrame final : public wxMDIChildFrame {
     void RefreshModelList();
     void UpdateStatus();
     void OpenPath(const wxString &path);
+    void OpenWorkspace(const wxString &path);
     void InvalidateUnsupportedAnalysis();
     void SettingsChanged();
     void InteractiveSlicePositionChanged();
@@ -67,6 +68,8 @@ class DocumentFrame final : public wxMDIChildFrame {
   private:
     void BuildMenus();
     void OnOpen(wxCommandEvent &);
+    void OnSave(wxCommandEvent &);
+    void OnSaveAs(wxCommandEvent &);
     void OnActivate(wxActivateEvent &);
     void OnClose(wxCloseEvent &);
     void OnDPIChanged(wxDPIChangedEvent &event);
@@ -112,6 +115,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     void OnNewModelGroup(wxCommandEvent &);
     void OnUngroupModels(wxCommandEvent &);
     void PublishStatus();
+    bool SaveWorkspaceDocument(bool saveAs);
+    bool LoadWorkspaceDocument(const wxString &path, bool establishWorkspacePath);
+    void ShowMissingWorkspaceFiles(const std::vector<wxString> &paths);
     void UpdateCommandState();
     void UpdateSectionControls();
     void UpdateToolbarBitmaps();
@@ -142,6 +148,9 @@ class DocumentFrame final : public wxMDIChildFrame {
     ModelTreeModel *modelListModel_ = nullptr;
     std::vector<DocumentModelGroup> modelGroups_;
     std::uint64_t nextModelGroupId_ = 1;
+    wxString workspacePath_;
+    wxString workspaceProgress_;
+    bool embedModelsOnSave_ = false;
     bool updatingModelList_ = false;
     ModelCanvas *canvas_ = nullptr;
     wxPanel *sectionControls_ = nullptr;

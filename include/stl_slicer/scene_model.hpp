@@ -68,6 +68,7 @@ class SceneModel {
     virtual std::shared_ptr<SceneModel> replica(std::string modelName) const = 0;
 
     std::string name;
+    std::string sourcePath;
     Mat4 transform;
     bool selected = true;
     bool visible = true;

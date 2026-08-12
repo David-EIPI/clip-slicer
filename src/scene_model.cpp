@@ -139,7 +139,9 @@ MeshSceneModel::MeshSceneModel(std::string modelName,
                                std::shared_ptr<const SceneModelGeometry> geometry)
     : SceneModel(std::move(modelName), std::move(geometry)) {}
 std::shared_ptr<SceneModel> MeshSceneModel::replica(std::string modelName) const {
-    return std::make_shared<MeshSceneModel>(std::move(modelName), geometry_);
+    auto copy = std::make_shared<MeshSceneModel>(std::move(modelName), geometry_);
+    copy->sourcePath = sourcePath;
+    return copy;
 }
 
 SliceSceneModel::SliceSceneModel(std::string modelName, SliceData slices)
@@ -148,7 +150,9 @@ SliceSceneModel::SliceSceneModel(std::string modelName,
                                  std::shared_ptr<const SceneModelGeometry> geometry)
     : SceneModel(std::move(modelName), std::move(geometry)) {}
 std::shared_ptr<SceneModel> SliceSceneModel::replica(std::string modelName) const {
-    return std::make_shared<SliceSceneModel>(std::move(modelName), geometry_);
+    auto copy = std::make_shared<SliceSceneModel>(std::move(modelName), geometry_);
+    copy->sourcePath = sourcePath;
+    return copy;
 }
 
 TriangleMesh transformedMesh(const SceneModel &model) {

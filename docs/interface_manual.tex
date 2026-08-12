@@ -19,9 +19,9 @@ the right edge of the document tab row closes this document.
 On Windows, documents retain
 the native MDI window controls supplied by the operating system.
 
-Open and export file dialogs retain the directory of the last accepted file
-for use by subsequent dialogs. STL and CLI files may also be dragged from the
-operating system file manager. Dropping files on the active document content,
+Open, save, and export file dialogs retain the directory of the last accepted
+file for use by subsequent dialogs. STL, CLI, and CLIP Slicer workspace files
+may also be dragged from the operating system file manager. Dropping files on the active document content,
 including its viewport, section controls, or model list, appends them to that
 document. Dropping files on a common application area, including the parent
 frame, status bar, empty document-tab area, or document toolbar, creates one
@@ -55,16 +55,19 @@ commands. The Export submenu selects either CLI slices or STL surface geometry.
 \section{Menu Commands}
 \label{document-menus}
 
-The \emph{File} menu opens one or more models in a new document or in the
-active document,
-exports selected slices as CLI, exports selected surface models as STL, opens
-Settings, and closes the document or application. On GTK, the close button at
+The \emph{File} menu opens one or more models or workspaces in a new document
+or in the active document, saves the current document as a CLIP Slicer
+workspace, exports selected slices as CLI, exports selected surface models as
+STL, opens Settings, and closes the document or application. On GTK, the close button at
 the right end of the document tab row closes the active tab; platforms with
 native MDI child controls retain their document-window close buttons.
 \hypertarget{open-model-dialog}{}The \emph{Open} command uses the Open Model
-dialog and creates one new document containing all selected STL and CLI files.
+dialog and creates a document containing the selected STL and CLI files.
+Each selected \texttt{.clipslicer} workspace opens in its own document.
+The program identifies these formats from file contents rather than filename
+extensions.
 \hypertarget{open-into-document-dialog}{}The \emph{Open into document}
-dialog adds all chosen STL and CLI files to the active document.
+dialog adds all chosen STL, CLI, or workspace contents to the active document.
 \hypertarget{export-slices-dialog}{}The \emph{Export Slices} dialog writes the
 selected sliced models to a CLI file.
 \hypertarget{export-stl-dialog}{}The \emph{Export STL} dialog writes selected
@@ -360,6 +363,33 @@ or generation operations, and the controls return to their idle state after
 all workers have exited. Interactive Section previews are calculated directly
 for immediate feedback and do not enable the Stop button.
 
+\subsection{Workspace Files}
+\label{workspace-files}
+
+The File menu's \emph{Save Workspace} command stores the current document
+layout in a compressed \texttt{.clipslicer} archive. The archive contains a hierarchical
+XML manifest recording every model and group, model names, selection and
+visibility state, group expansion state, and each model's independent
+transformation matrix. Saving a document that was opened directly from STL or
+CLI invokes \emph{Save Workspace As}, because the source model filename and
+workspace filename are maintained separately.
+
+The Save As dialog offers \emph{Embed model files in workspace}. When enabled,
+the source STL and CLI data are compressed into the archive, producing a
+self-contained workspace. Otherwise, the manifest links to the original model
+files. Files in the workspace directory or one of its subdirectories use
+relative paths so that their directory tree can be moved together; files
+elsewhere use absolute paths. Geometry created within the application is always
+embedded because it has no source file. Embedding large models reports write
+progress in the rightmost status field.
+
+Opening a workspace restores all available models and its group structure.
+File type is detected from archive or model contents rather than the filename
+extension. If linked files have moved or been deleted, CLIP Slicer continues
+loading the available portion of the workspace and then reports one summary
+containing the number of missing source files and up to the first three names.
+Replicas that share one missing source are counted once.
+
 \subsection{STL Export}
 
 The \emph{File > Export STL} command writes all selected surface models into
@@ -567,7 +597,9 @@ operating system's user configuration directory.
         \toprule
         \normalfont\bfseries Shortcut & \bfseries Action \\
         \midrule
-        Ctrl+O & Open a model in a new document. \\
+        Ctrl+O & Open a model or workspace in a new document. \\
+        Ctrl+S & Save the current workspace. \\
+        Ctrl+Shift+S & Save the current workspace under a new name. \\
         Alt+F  & Open the File menu. \\
         Alt+M  & Open the Models menu for visibility and transformation commands. \\
         Alt+S  & Open the Slice menu. \\

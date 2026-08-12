@@ -6,6 +6,7 @@
 #include "help_topics.hpp"
 #include "help_window.hpp"
 #include "settings_dialog.hpp"
+#include "workspace_io.hpp"
 #include <wx/dialog.h>
 #include <wx/dnd.h>
 #include <wx/filedlg.h>
@@ -176,7 +177,7 @@ void MainFrame::OpenDialog() {
                         "Open model",
                         {},
                         {},
-                        "3D model files (*.stl;*.cli)|*.stl;*.cli|STL files|*.stl|CLI files|*.cli",
+                        "Supported files (*.clipslicer;*.stl;*.cli)|*.clipslicer;*.stl;*.cli|CLIP Slicer workspace (*.clipslicer)|*.clipslicer|STL files (*.stl)|*.stl|CLI files (*.cli)|*.cli",
                         wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR | wxFD_MULTIPLE);
     clip_slicer::help::Assign(&dialog, clip_slicer::help::openModelDialog);
     clip_slicer::help::Enable(&dialog);
@@ -194,12 +195,28 @@ void MainFrame::OpenFile(const wxString &path) {
 void MainFrame::OpenFiles(const wxArrayString &paths) {
     if (paths.empty())
         return;
-    wxString title = wxFileName(paths.front()).GetFullName();
-    if (paths.size() > 1)
-        title += wxString::Format(" (+%zu)", paths.size() - 1);
+
+    wxArrayString modelPaths;
+    for (const wxString &path : paths) {
+        if (clip_slicer::DetectInputFileFormat(path) ==
+            clip_slicer::InputFileFormat::Workspace) {
+            auto *child =
+                new DocumentFrame(this, wxFileName(path).GetFullName());
+            child->Show();
+            child->OpenWorkspace(path);
+        } else {
+            modelPaths.push_back(path);
+        }
+    }
+
+    if (modelPaths.empty())
+        return;
+    wxString title = wxFileName(modelPaths.front()).GetFullName();
+    if (modelPaths.size() > 1)
+        title += wxString::Format(" (+%zu)", modelPaths.size() - 1);
     auto *child = new DocumentFrame(this, title);
     child->Show();
-    for (const wxString &path : paths)
+    for (const wxString &path : modelPaths)
         child->OpenPath(path);
 }
 void MainFrame::SetDocumentStatus(const wxString &buildVolume,
