@@ -5,7 +5,7 @@
 %global soversion 0
 
 Name:           clip-slicer
-Version:        0.2.1
+Version:        0.2.2
 Release:        1%{?dist}
 Summary:        STL slicing and support-generation applications
 
@@ -74,6 +74,12 @@ sed -i '/<!-- RPM-EXCLUDE-BEGIN:/,/<!-- RPM-EXCLUDE-END -->/d' \
 %{_libdir}/libstl_slicer.so.%{version}
 
 %changelog
+* Tue Aug 11 2026 CLIP Slicer contributors <noreply@example.com> - 0.2.2-1
+- Add compressed workspace saving with optional embedded model sources.
+- Add absolute-axis model movement and axis-constrained rotation controls.
+- Restore workspace groups, visibility, selections, and transformations.
+- Summarize missing linked workspace files after loading completes.
+
 * Tue Aug 11 2026 CLIP Slicer contributors <noreply@example.com> - 0.2.1-1
 - Add flat-facet alignment to the build platform.
 - Merge disconnected coplanar facet fragments during processing.
