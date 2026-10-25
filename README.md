@@ -219,11 +219,12 @@ show Z upward; the Z view shows Y upward.
 
 For a closed, consistently wound STL shell, the library also computes material volume directly
 from its triangles, independently of slice thickness. The cached `TriangleMesh::materialVolume()`
-value follows model scaling when the transformed mesh is sliced. CLI exports carry the volume in
-cubic millimeters as `$$USERDATA/matvolume,len,value`, where `len` includes the trailing newline.
-The exported value is rounded to three decimal places.
-When multiple sliced models are exported together, their volumes are added; overlapping models
-are not boolean-unioned. Open or inconsistently wound input meshes can give unreliable volumes.
+value follows model scaling and remains available for GUI use. CLI export independently estimates
+printed volume by uniting filled contours of overlapping layer slabs and integrating their areas
+over height. This avoids counting overlap between models twice, but its accuracy depends on slice
+thickness. CLI stores the result in cubic millimeters as `$$USERDATA/matvolume,len,value`; `len`
+includes the trailing newline and the value is rounded to three decimal places. Open or
+inconsistently wound input meshes can give unreliable per-mesh volumes.
 
 The library API is divided into reusable data and processing components:
 

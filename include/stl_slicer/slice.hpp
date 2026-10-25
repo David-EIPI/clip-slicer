@@ -31,5 +31,6 @@ struct SliceData {
 };
 
 SliceData mergeSlices(const std::vector<std::reference_wrapper<const SliceData>> &inputs);
+double printedMaterialVolume(const SliceData &data);
 
 } // namespace stl_slicer

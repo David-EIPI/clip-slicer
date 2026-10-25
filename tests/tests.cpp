@@ -341,8 +341,10 @@ void testCliWriters() {
             "CLI reader compatibility directive");
     require(ascii.str().find("$$USERDATA/matvolume,6,1.000\n") != std::string::npos,
             "ASCII CLI material volume or USERDATA byte length is incorrect");
-    SliceData fractional = data;
-    fractional.materialVolume = 10.12345;
+    SliceData fractional;
+    fractional.thickness = 10.12345;
+    fractional.layers.push_back(
+        {20.0, {{PathType::External, {{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}}}}});
     std::ostringstream rounded;
     CliWriter{{CliEncoding::Ascii, 1.0, 3}}.write(fractional, rounded);
     require(rounded.str().find("$$USERDATA/matvolume,7,10.123\n") != std::string::npos,
@@ -487,8 +489,7 @@ void testMergeSlices() {
                      {0.3, {{{PathType::External, {{4, 0}, {5, 0}}}}}}};
 
     const SliceData merged = mergeSlices({std::cref(first), std::cref(second)});
-    require(merged.materialVolume && *merged.materialVolume == 20.0,
-            "Merged slices lost the combined material volume");
+    require(!merged.materialVolume, "Merged slices retained a misleading sum of mesh volumes");
     require(merged.layers.size() == 4, "Merged slices lost a model's layers");
     require(merged.layers[0].z == 0.1 && merged.layers[1].z == 0.2 && merged.layers[2].z == 0.3 &&
                 merged.layers[3].z == 0.3,
@@ -501,10 +502,45 @@ void testMergeSlices() {
     CliWriter{}.write(merged, output);
     std::istringstream input(output.str(), std::ios::binary);
     const SliceData roundTrip = CliReader{}.read(input);
-    require(roundTrip.materialVolume && *roundTrip.materialVolume == 20.0,
-            "Merged CLI lost the combined material volume");
+    require(roundTrip.materialVolume && *roundTrip.materialVolume == 0.0,
+            "Open contours incorrectly contributed to printed volume");
     require(roundTrip.layers.size() == 4,
             "CLI export did not preserve layers from every merged model");
+}
+
+void testPrintedMaterialVolume() {
+    TriangleMesh first;
+    TriangleMesh second;
+    addBox(first, 0, 0, 0, 2, 2, 1);
+    addBox(second, 1, 0, 0, 3, 2, 1);
+    const SliceData firstSlices = Slicer{{0.5, 1e-7}}.slice(first);
+    const SliceData secondSlices = Slicer{{0.5, 1e-7}}.slice(second);
+    const SliceData merged = mergeSlices({std::cref(firstSlices), std::cref(secondSlices)});
+    require(std::abs(first.materialVolume() - 4.0) < 1e-9 &&
+                std::abs(second.materialVolume() - 4.0) < 1e-9,
+            "Per-mesh material volumes changed during export");
+    require(std::abs(printedMaterialVolume(merged) - 6.0) < 1e-6,
+            "Printed volume counted an overlapping region twice");
+    std::ostringstream output;
+    CliWriter{{CliEncoding::Ascii}}.write(merged, output);
+    require(output.str().find("$$USERDATA/matvolume,6,6.000\n") != std::string::npos,
+            "CLI did not write the union volume");
+
+    SliceData staggered;
+    staggered.thickness = 1.0;
+    const SlicePath square =
+        {PathType::External, {{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}}};
+    staggered.layers = {{0.5, {square}}, {0.75, {square}}};
+    require(std::abs(printedMaterialVolume(staggered) - 1.25) < 1e-9,
+            "Printed volume double-counted staggered overlapping layer slabs");
+
+    SliceData hollow;
+    hollow.thickness = 1.0;
+    hollow.layers = {{0.5,
+                      {{PathType::External, {{0, 0}, {4, 0}, {4, 4}, {0, 4}, {0, 0}}},
+                       {PathType::Internal, {{1, 1}, {1, 3}, {3, 3}, {3, 1}, {1, 1}}}}}};
+    require(std::abs(printedMaterialVolume(hollow) - 12.0) < 1e-9,
+            "Printed volume did not subtract a hollow contour");
 }
 
 SlicePath square(double x0, double y0, double x1, double y1) {
@@ -1277,6 +1313,7 @@ int main() {
         testCliPreviews();
         testSingleAndOffsetSlices();
         testMergeSlices();
+        testPrintedMaterialVolume();
         testUnsupportedAreas();
         testOrientationOptimizer();
         testSupportGenerationScheduling();

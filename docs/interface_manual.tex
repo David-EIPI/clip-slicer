@@ -87,11 +87,11 @@ first run is allowed. The run lengths must total \texttt{width*height}.
 For slices generated from STL meshes, the CLI header also stores
 \texttt{\$\$USERDATA/matvolume} as a decimal volume in cubic millimeters.
 The exported number uses three digits after the decimal point.
-The value is calculated from the triangulated surface rather than from slice
-areas, so it does not depend on layer thickness. A closed surface with
-consistent triangle winding is required for an accurate result. When several
-sliced models are exported together their volumes are added, without removing
-overlap between models.
+The exported value is estimated from the union of filled slice areas over
+each layer's thickness, so overlapping model regions are counted only once.
+Its accuracy depends on slice thickness. Separately, each loaded STL mesh
+retains a volume computed from its triangles for later display in the GUI;
+that per-mesh value assumes a closed surface with consistent triangle winding.
 \hypertarget{export-stl-dialog}{}The \emph{Export STL} dialog writes selected
 surface models to a binary STL file.
 
