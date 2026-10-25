@@ -19,6 +19,7 @@ class MainFrame final : public wxMDIParentFrame {
         return settings_;
     }
     void SetDocumentStatus(const wxString &buildVolume,
+                           const wxString &materialVolume,
                            const wxString &slicePosition,
                            const wxString &optimizationProgress);
 

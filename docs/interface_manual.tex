@@ -249,7 +249,14 @@ Its upper surface lies on the global Z=0 plane.
 The upper surface is dark gray. The underside remains visible when viewed from
 below and is shown in silver gray, making the platform orientation apparent.
 The first section of the application status bar reports the current build
-volume as width, length, and height.
+volume as width, length, and height. The next section reports the summed
+material volume of the selected models with a \texttt{V:} prefix. Material
+volume follows model scaling and is shown to three decimal places; it displays
+\texttt{--} when no model is selected. For legacy CLI models without stored
+volume metadata, an approximate value is calculated by integrating the filled
+slice areas over their layer slabs. Stored volume metadata is used when it is
+available. The following section reports the active cross-section plane
+position.
 
 \subsection{Coordinate Axes}
 

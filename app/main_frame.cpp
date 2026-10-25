@@ -77,23 +77,25 @@ MainFrame::MainFrame()
     SetMenuBar(bar);
     clip_slicer::help::Assign(this, clip_slicer::help::manualTop);
     clip_slicer::help::Enable(this);
-    wxStatusBar *statusBar = CreateStatusBar(3);
+    wxStatusBar *statusBar = CreateStatusBar(4);
     SetDropTarget(new NewDocumentFileDropTarget(*this));
     if (wxWindow *client = GetClientWindow())
         client->SetDropTarget(new NewDocumentFileDropTarget(*this));
     if (statusBar)
         statusBar->SetDropTarget(new NewDocumentFileDropTarget(*this));
     int buildWidth = 210;
+    int volumeWidth = 120;
     int sliceWidth = 90;
     if (statusBar) {
         statusBar->GetTextExtent("0000.00 x 0000.00 x 0000.00", &buildWidth, nullptr);
+        statusBar->GetTextExtent("V: 000000000.000", &volumeWidth, nullptr);
         statusBar->GetTextExtent("Z: -000000000.000", &sliceWidth, nullptr);
     }
-    const int statusWidths[] = {buildWidth + 12, sliceWidth + 16, -1};
-    const int statusStyles[] = {wxSB_SUNKEN, wxSB_SUNKEN, wxSB_SUNKEN};
-    SetStatusWidths(3, statusWidths);
+    const int statusWidths[] = {buildWidth + 12, volumeWidth + 16, sliceWidth + 16, -1};
+    const int statusStyles[] = {wxSB_SUNKEN, wxSB_SUNKEN, wxSB_SUNKEN, wxSB_SUNKEN};
+    SetStatusWidths(4, statusWidths);
     if (statusBar)
-        statusBar->SetStatusStyles(3, statusStyles);
+        statusBar->SetStatusStyles(4, statusStyles);
     ClearDocumentStatus();
     Bind(wxEVT_MENU, &MainFrame::OnOpen, this, IdOpen);
     Bind(wxEVT_MENU, &MainFrame::OnSettings, this, IdSettings);
@@ -220,19 +222,21 @@ void MainFrame::OpenFiles(const wxArrayString &paths) {
         child->OpenPath(path);
 }
 void MainFrame::SetDocumentStatus(const wxString &buildVolume,
+                                  const wxString &materialVolume,
                                   const wxString &slicePosition,
                                   const wxString &optimizationProgress) {
     const std::uint64_t revision = ++statusUpdateRevision_;
-    CallAfter([this, revision, buildVolume, slicePosition, optimizationProgress] {
+    CallAfter([this, revision, buildVolume, materialVolume, slicePosition, optimizationProgress] {
         if (revision != statusUpdateRevision_)
             return;
         SetStatusText(buildVolume, 0);
-        SetStatusText(slicePosition, 1);
-        SetStatusText(optimizationProgress, 2);
+        SetStatusText(materialVolume, 1);
+        SetStatusText(slicePosition, 2);
+        SetStatusText(optimizationProgress, 3);
     });
 }
 void MainFrame::ClearDocumentStatus() {
-    SetDocumentStatus({}, {}, {});
+    SetDocumentStatus({}, {}, {}, {});
 }
 void MainFrame::OnExit(wxCommandEvent &) {
     Close();

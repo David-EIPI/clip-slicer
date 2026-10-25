@@ -1030,6 +1030,7 @@ void DocumentFrame::SyncModelSelection() {
     }
     UpdateCommandState();
     canvas_->SelectionChanged();
+    UpdateStatus();
 }
 void DocumentFrame::OnModelContextMenu(wxDataViewEvent &event) {
     if (event.GetItem().IsOk()) {
@@ -1716,6 +1717,26 @@ void DocumentFrame::PublishStatus() {
                     << (b.max.z - b.min.z);
     else
         buildVolume << "0.00 x 0.00 x 0.00";
+    std::ostringstream materialVolume;
+    materialVolume << "V: ";
+    bool hasSelectedModel = false;
+    bool hasUnknownVolume = false;
+    double selectedVolume = 0.0;
+    for (const auto &model : models_) {
+        if (!model->selected)
+            continue;
+        hasSelectedModel = true;
+        const std::optional<double> volume = model->materialVolume();
+        if (!volume) {
+            hasUnknownVolume = true;
+            break;
+        }
+        selectedVolume += *volume;
+    }
+    if (hasSelectedModel && !hasUnknownVolume)
+        materialVolume << std::fixed << std::setprecision(3) << selectedVolume;
+    else
+        materialVolume << "--";
     std::ostringstream slicePosition;
     const char axisLetter = canvas_->SliceAxis() == SectionAxis::X
                                 ? 'X'
@@ -1755,6 +1776,7 @@ void DocumentFrame::PublishStatus() {
         optimizationProgress << supportGenerationSummary_;
     }
     parent->SetDocumentStatus(buildVolume.str(),
+                              materialVolume.str(),
                               slicePosition.str(),
                               workspaceProgress_.empty() ? optimizationProgress.str()
                                                          : workspaceProgress_);
@@ -1813,7 +1835,7 @@ void DocumentFrame::UpdateToolbarBitmaps() {
 void DocumentFrame::OnClose(wxCloseEvent &event) {
     auto *parent = static_cast<MainFrame *>(GetMDIParent());
     if (parent->GetActiveChild() == this)
-        parent->SetDocumentStatus({}, {}, {});
+        parent->SetDocumentStatus({}, {}, {}, {});
     event.Skip();
 }
 void DocumentFrame::OnSlice(wxCommandEvent &) {

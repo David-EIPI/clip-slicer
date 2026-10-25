@@ -225,6 +225,8 @@ over height. This avoids counting overlap between models twice, but its accuracy
 thickness. CLI stores the result in cubic millimeters as `$$USERDATA/matvolume,len,value`; `len`
 includes the trailing newline and the value is rounded to three decimal places. Open or
 inconsistently wound input meshes can give unreliable per-mesh volumes.
+When an imported legacy CLI file has no material-volume entry, the reader estimates one by
+integrating its filled slice areas over the layer slabs. Existing metadata remains authoritative.
 
 The library API is divided into reusable data and processing components:
 

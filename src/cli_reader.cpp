@@ -102,6 +102,8 @@ SliceData CliReader::read(std::istream &input) const {
         for (const auto &path : layer.paths)
             for (const auto &p : path.points)
                 result.sourceBounds.include({p.x, p.y, layer.z});
+    if (!result.materialVolume)
+        result.materialVolume = printedMaterialVolume(result);
     return result;
 }
 } // namespace stl_slicer

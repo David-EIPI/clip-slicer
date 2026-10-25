@@ -410,6 +410,28 @@ void testCliWriters() {
     require(roundTrip.layers.size() == data.layers.size(), "binary CLI reader layer count");
     require(roundTrip.layers.front().paths.size() == data.layers.front().paths.size(),
             "binary CLI reader path count");
+
+    std::string legacyOutput = output;
+    const std::string volumeRecord = "$$USERDATA/matvolume,6,1.000\n";
+    const auto volumeAt = legacyOutput.find(volumeRecord);
+    require(volumeAt != std::string::npos, "binary CLI volume record for legacy test");
+    legacyOutput.erase(volumeAt, volumeRecord.size());
+    std::istringstream legacyInput(legacyOutput, std::ios::binary);
+    const auto legacyRoundTrip = CliReader{}.read(legacyInput);
+    require(legacyRoundTrip.materialVolume &&
+                std::abs(*legacyRoundTrip.materialVolume - 1.0) < 1e-9,
+            "CLI reader did not estimate missing legacy material volume");
+
+    std::string authoritativeOutput = output;
+    const auto payloadAt = authoritativeOutput.find(volumeRecord);
+    require(payloadAt != std::string::npos, "binary CLI volume record for metadata test");
+    authoritativeOutput.replace(payloadAt, volumeRecord.size(),
+                                "$$USERDATA/matvolume,6,9.000\n");
+    std::istringstream authoritativeInput(authoritativeOutput, std::ios::binary);
+    const auto authoritativeRoundTrip = CliReader{}.read(authoritativeInput);
+    require(authoritativeRoundTrip.materialVolume &&
+                std::abs(*authoritativeRoundTrip.materialVolume - 9.0) < 1e-9,
+            "CLI reader did not prefer stored material volume");
 }
 
 void testCliPreviews() {
