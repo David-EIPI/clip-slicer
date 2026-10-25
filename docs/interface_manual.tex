@@ -69,7 +69,21 @@ extensions.
 \hypertarget{open-into-document-dialog}{}The \emph{Open into document}
 dialog adds all chosen STL, CLI, or workspace contents to the active document.
 \hypertarget{export-slices-dialog}{}The \emph{Export Slices} dialog writes the
-selected sliced models to a CLI file.
+selected sliced models to a CLI file. The CLI header also contains three small
+monochrome previews of the combined exported layers. They are orthographic
+views looking from negative X, Y, and Z toward the positive ends. The X and Y
+views show Z upward; the Z view shows Y upward. Each view fits within 64 by 128
+pixels while preserving its aspect ratio.
+Closed direction-2 contours use their winding to distinguish filled regions
+from holes; open contours remain visible as traces.
+
+The previews use \texttt{\$\$USERDATA/mini-x}, \texttt{mini-y}, and
+\texttt{mini-z} commands. Each payload is the ASCII sequence
+\texttt{width,height,base64} followed by a newline; the CLI \texttt{len}
+parameter counts all bytes of that sequence, including the newline. Decoding
+base64 yields unsigned LEB128 run lengths for row-major pixels, alternating
+background (zero) and solid (one), starting with a background run. A zero
+first run is allowed. The run lengths must total \texttt{width*height}.
 \hypertarget{export-stl-dialog}{}The \emph{Export STL} dialog writes selected
 surface models to a binary STL file.
 

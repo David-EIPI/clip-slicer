@@ -70,6 +70,7 @@ add_library(stl_slicer_lib
     src/orientation_optimizer.cpp
     src/flat_facet.cpp
     src/cli_writer.cpp
+    src/cli_preview.cpp
     src/scene_model.cpp)
 target_include_directories(stl_slicer_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(stl_slicer_lib PUBLIC Clipper2::Clipper2)

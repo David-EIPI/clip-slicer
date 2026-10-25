@@ -211,12 +211,18 @@ matching during initial segment connection and also defaults to 0.01 model units
 The writer includes the custom header directive `$$USERDATA/CLIPSlicer,0,`. This compatibility
 instruction tells the target third-party reader to join open contours automatically and determine
 filled and empty regions from the winding rule. It is emitted for both ASCII and binary CLI files.
+The header also embeds 1-bit X, Y, and Z projection previews as `mini-x`, `mini-y`, and `mini-z`
+USERDATA entries. Each image fits within 64 x 128 pixels. Its payload is `w,h,base64` plus a
+newline; the CLI length counts those bytes. Base64 decodes to unsigned LEB128 run lengths of
+row-major pixels, alternating background and solid, starting with background. The X and Y views
+show Z upward; the Z view shows Y upward.
 
 The library API is divided into reusable data and processing components:
 
 - `TriangleMesh`, `Triangle`, `Vec2`, `Vec3`, and `Bounds3` store model geometry.
 - `BinaryStlReader` validates and reads little-endian binary STL streams or files.
 - `Slicer` produces reusable `SliceData`, `SliceLayer`, and `SlicePath` objects.
+- `makeCliPreviews` and its codec produce reusable monochrome layer projections.
 - `FlatFacetDetector` finds ranked outer planar facets and merges disconnected coplanar
   fragments within its configured plane tolerance; `alignFacetToBuildPlatform`
   produces a non-destructive placement transform.

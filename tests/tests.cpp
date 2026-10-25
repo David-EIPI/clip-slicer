@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "stl_slicer/cli_reader.hpp"
+#include "stl_slicer/cli_preview.hpp"
 #include "stl_slicer/cli_writer.hpp"
 #include "stl_slicer/orientation_optimizer.hpp"
 #include "stl_slicer/scene_model.hpp"
@@ -300,10 +301,39 @@ void testCliWriters() {
     const auto data = Slicer{{0.5, 1e-7}}.slice(cube);
     std::ostringstream ascii;
     CliWriter{{CliEncoding::Ascii, 1.0, 3}}.write(data, ascii);
+    const auto previews = makeCliPreviews(data);
     require(ascii.str().find("$$DIMENSION/0,0,0,1,1,1\n") != std::string::npos,
             "ASCII CLI dimensions start at origin");
     require(ascii.str().find("$$USERDATA/CLIPSlicer,0,\n") != std::string::npos,
             "CLI reader compatibility directive");
+    std::size_t previewIndex = 0;
+    for (const char *id : {"mini-x", "mini-y", "mini-z"}) {
+        const std::string prefix = std::string("$$USERDATA/") + id + ',';
+        const std::size_t start = ascii.str().find(prefix);
+        require(start != std::string::npos, "ASCII CLI preview is missing");
+        const std::size_t lengthStart = start + prefix.size();
+        const std::size_t payloadStart = ascii.str().find(',', lengthStart) + 1;
+        const std::size_t length = std::stoul(
+            ascii.str().substr(lengthStart, payloadStart - lengthStart - 1));
+        require(length > 4 && ascii.str()[payloadStart + length - 1] == '\n' &&
+                    ascii.str().compare(payloadStart + length, 2, "$$") == 0,
+                "CLI preview USERDATA byte length is incorrect");
+        const std::string payload = ascii.str().substr(payloadStart, length - 1);
+        const std::size_t firstComma = payload.find(',');
+        const std::size_t secondComma = payload.find(',', firstComma + 1);
+        require(firstComma != std::string::npos && secondComma != std::string::npos,
+                "CLI preview payload dimensions are missing");
+        const auto decoded = decodeCliPreviewBase64(
+            static_cast<std::uint16_t>(std::stoul(payload.substr(0, firstComma))),
+            static_cast<std::uint16_t>(
+                std::stoul(payload.substr(firstComma + 1, secondComma - firstComma - 1))),
+            payload.substr(secondComma + 1));
+        require(decoded.width == previews[previewIndex].width &&
+                    decoded.height == previews[previewIndex].height &&
+                    decoded.pixels == previews[previewIndex].pixels,
+                "CLI preview payload does not reproduce the projected image");
+        ++previewIndex;
+    }
     require(ascii.str().find("$$LAYER/0.25\n") != std::string::npos,
             "ASCII CLI first layer at half step");
     require(ascii.str().find("$$POLYLINE/3,1,") != std::string::npos, "ASCII CLI polyline");
@@ -317,6 +347,8 @@ void testCliWriters() {
     const std::string output = binary.str();
     require(output.find("$$USERDATA/CLIPSlicer,0,\n") != std::string::npos,
             "binary CLI reader compatibility directive");
+    require(output.find("$$USERDATA/mini-z,") != std::string::npos,
+            "binary CLI top preview is missing");
     const auto end = output.find("$$HEADEREND");
     require(end != std::string::npos, "binary CLI header");
     const std::size_t geometry = end + std::strlen("$$HEADEREND");
@@ -331,6 +363,50 @@ void testCliWriters() {
     require(roundTrip.layers.size() == data.layers.size(), "binary CLI reader layer count");
     require(roundTrip.layers.front().paths.size() == data.layers.front().paths.size(),
             "binary CLI reader path count");
+}
+
+void testCliPreviews() {
+    SliceData data;
+    data.thickness = 1.0;
+    data.layers = {
+        {0.5, {{PathType::External, {{0, 0}, {4, 0}, {4, 4}, {0, 4}, {0, 0}}},
+               {PathType::Internal, {{1, 1}, {1, 3}, {3, 3}, {3, 1}, {1, 1}}}}},
+        {2.5, {{PathType::External, {{0, 0}, {4, 0}, {4, 4}, {0, 4}, {0, 0}}}}}};
+    const auto previews = makeCliPreviews(data);
+    require(previews[0].width == 64 && previews[0].height == 48 &&
+                previews[1].width == 64 && previews[1].height == 48 &&
+                previews[2].width == 64 && previews[2].height == 64,
+            "CLI preview dimensions or aspect ratio are incorrect");
+    require(previews[0].pixels[0] == 1 &&
+                previews[0].pixels[24 * previews[0].width + 32] == 0 &&
+                previews[0].pixels[47 * previews[0].width] == 1,
+            "side preview does not preserve the layer gap");
+    require(previews[2].pixels[32 * previews[2].width + 32] == 1,
+            "top preview does not combine layers");
+
+    SliceData hollow;
+    hollow.thickness = 1.0;
+    hollow.layers = {data.layers.front()};
+    const auto hollowTop = makeCliPreviews(hollow)[2];
+    require(hollowTop.pixels[32 * hollowTop.width + 32] == 0 &&
+                hollowTop.pixels[8 * hollowTop.width + 8] == 1,
+            "top preview did not preserve the inner void");
+
+    hollow.layers.front().paths[0].type = PathType::Open;
+    hollow.layers.front().paths[1].type = PathType::Open;
+    const auto windingTop = makeCliPreviews(hollow)[2];
+    require(windingTop.pixels[32 * windingTop.width + 32] == 0 &&
+                windingTop.pixels[8 * windingTop.width + 8] == 1,
+            "direction-2 closed contours did not follow their winding");
+
+    CliPreview tiny{5, 1, {0, 0, 1, 1, 0}};
+    require(encodeCliPreviewBase64(tiny) == "AgIB",
+            "CLI preview run-length and base64 encoding are incorrect");
+    require(decodeCliPreviewBase64(5, 1, "AgIB").pixels == tiny.pixels,
+            "CLI preview decoding does not recover the image");
+    require(decodeCliPreviewBase64(1, 1, "AAE=").pixels ==
+                std::vector<std::uint8_t>{1},
+            "CLI preview decoder did not handle an initial solid pixel");
 }
 
 void testSingleAndOffsetSlices() {
@@ -1146,6 +1222,7 @@ int main() {
         testSmallGapHealing();
         testReversedSharedEdgeInterpolation();
         testCliWriters();
+        testCliPreviews();
         testSingleAndOffsetSlices();
         testMergeSlices();
         testUnsupportedAreas();

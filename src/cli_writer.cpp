@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "stl_slicer/cli_writer.hpp"
+#include "stl_slicer/cli_preview.hpp"
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -120,6 +121,15 @@ void CliWriter::write(const SliceData &data, std::ostream &output) const {
     output << "$$LAYERS/" << data.layers.size() << "\n";
     output << "$$USERDATA/CLIPSlicer,0,"
            << "\n";
+    const auto previews = makeCliPreviews(data);
+    constexpr const char *previewIds[] = {"mini-x", "mini-y", "mini-z"};
+    for (std::size_t index = 0; index < previews.size(); ++index) {
+        const CliPreview &preview = previews[index];
+        const std::string payload = std::to_string(preview.width) + ',' +
+                                    std::to_string(preview.height) + ',' +
+                                    encodeCliPreviewBase64(preview) + '\n';
+        output << "$$USERDATA/" << previewIds[index] << ',' << payload.size() << ',' << payload;
+    }
     output << "$$LABEL/" << options_.modelId << ",part\n$$HEADEREND";
 
     if (options_.encoding == CliEncoding::Binary) {
