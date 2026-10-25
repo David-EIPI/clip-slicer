@@ -217,6 +217,13 @@ newline; the CLI length counts those bytes. Base64 decodes to unsigned LEB128 ru
 row-major pixels, alternating background and solid, starting with background. The X and Y views
 show Z upward; the Z view shows Y upward.
 
+For a closed, consistently wound STL shell, the library also computes material volume directly
+from its triangles, independently of slice thickness. The cached `TriangleMesh::materialVolume()`
+value follows model scaling when the transformed mesh is sliced. CLI exports carry the volume in
+cubic millimeters as `$$USERDATA/matvolume,len,value`, where `len` includes the trailing newline.
+When multiple sliced models are exported together, their volumes are added; overlapping models
+are not boolean-unioned. Open or inconsistently wound input meshes can give unreliable volumes.
+
 The library API is divided into reusable data and processing components:
 
 - `TriangleMesh`, `Triangle`, `Vec2`, `Vec3`, and `Bounds3` store model geometry.

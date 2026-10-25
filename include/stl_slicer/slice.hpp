@@ -6,6 +6,7 @@
 #include "stl_slicer/geometry.hpp"
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace stl_slicer {
@@ -25,6 +26,7 @@ struct SliceLayer {
 struct SliceData {
     Bounds3 sourceBounds;
     double thickness = 0.1;
+    std::optional<double> materialVolume;
     std::vector<SliceLayer> layers;
 };
 

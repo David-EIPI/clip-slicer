@@ -7,6 +7,7 @@
 #include "stl_slicer/slice.hpp"
 #include "stl_slicer/transform.hpp"
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -56,6 +57,7 @@ class SceneModel {
     const TriangleMesh &triangleMesh() const {
         return geometry_->triangleMesh();
     }
+    std::optional<double> materialVolume() const;
     const SceneModelGeometry *geometryIdentity() const noexcept {
         return geometry_.get();
     }

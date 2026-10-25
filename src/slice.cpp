@@ -12,14 +12,22 @@ SliceData mergeSlices(const std::vector<std::reference_wrapper<const SliceData>>
         return result;
 
     result.thickness = inputs.front().get().thickness;
+    double materialVolume = 0.0;
+    bool hasAllVolumes = true;
     std::size_t layerCount = 0;
     for (const SliceData &input : inputs) {
         layerCount += input.layers.size();
+        if (input.materialVolume)
+            materialVolume += *input.materialVolume;
+        else
+            hasAllVolumes = false;
         if (input.sourceBounds.valid()) {
             result.sourceBounds.include(input.sourceBounds.min);
             result.sourceBounds.include(input.sourceBounds.max);
         }
     }
+    if (hasAllVolumes)
+        result.materialVolume = materialVolume;
     result.layers.reserve(layerCount);
     for (const SliceData &input : inputs)
         result.layers.insert(result.layers.end(), input.layers.begin(), input.layers.end());

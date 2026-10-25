@@ -434,6 +434,7 @@ SliceData Slicer::slice(const TriangleMesh &mesh, const std::atomic<bool> *cance
     SliceData result;
     result.sourceBounds = mesh.bounds();
     result.thickness = options_.layerThickness;
+    result.materialVolume = mesh.materialVolume();
 
     const auto &triangles = mesh.triangles();
     std::vector<std::size_t> minZIndex(triangles.size());

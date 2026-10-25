@@ -133,6 +133,19 @@ SceneModelGeometry::SceneModelGeometry(TriangleMesh mesh,
 SceneModel::SceneModel(std::string modelName, std::shared_ptr<const SceneModelGeometry> geometry)
     : name(std::move(modelName)), geometry_(std::move(geometry)) {}
 
+std::optional<double> SceneModel::materialVolume() const {
+    const SliceData *sliceData = slices();
+    const std::optional<double> localVolume =
+        sliceData ? sliceData->materialVolume : std::optional<double>{triangleMesh().materialVolume()};
+    if (!localVolume)
+        return std::nullopt;
+    const auto &m = transform.values();
+    const double determinant = m[0] * (m[5] * m[10] - m[9] * m[6]) -
+                               m[4] * (m[1] * m[10] - m[9] * m[2]) +
+                               m[8] * (m[1] * m[6] - m[5] * m[2]);
+    return *localVolume * std::abs(determinant);
+}
+
 MeshSceneModel::MeshSceneModel(std::string modelName, TriangleMesh mesh)
     : SceneModel(std::move(modelName), meshGeometry(std::move(mesh))) {}
 MeshSceneModel::MeshSceneModel(std::string modelName,

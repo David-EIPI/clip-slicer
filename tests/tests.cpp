@@ -59,6 +59,37 @@ void addBox(TriangleMesh &mesh,
     addFace(mesh, d, a, e, h, inverted);
 }
 
+void testMaterialVolume() {
+    TriangleMesh box;
+    addBox(box, 1000000, -2000000, 3000000, 1000002, -1999997, 3000004);
+    require(std::abs(box.materialVolume() - 24.0) < 1e-9,
+            "closed mesh material volume is incorrect");
+
+    TriangleMesh inverted;
+    addBox(inverted, 0, 0, 0, 2, 3, 4, true);
+    require(std::abs(inverted.materialVolume() - 24.0) < 1e-9,
+            "inward mesh material volume is incorrect");
+
+    MeshSceneModel scene("box", std::move(box));
+    scene.transform = Mat4::translation(10, 20, 30) * Mat4::scale(2);
+    require(scene.materialVolume() && std::abs(*scene.materialVolume() - 192.0) < 1e-7,
+            "scene-model volume did not follow its transform");
+    const TriangleMesh world = transformedMesh(scene);
+    require(std::abs(world.materialVolume() - 192.0) < 1e-7,
+            "model scale was not applied to material volume");
+    const SliceData slices = Slicer{{1.0}}.slice(world);
+    require(slices.materialVolume && std::abs(*slices.materialVolume - 192.0) < 1e-7,
+            "slicing did not retain the source mesh volume");
+
+    TriangleMesh combined;
+    combined.append(std::move(inverted));
+    TriangleMesh second;
+    addBox(second, 5, 0, 0, 6, 3, 4, true);
+    combined.append(std::move(second));
+    require(std::abs(combined.materialVolume() - 36.0) < 1e-9,
+            "appending triangle meshes lost material volume");
+}
+
 double area(const SlicePath &path) {
     double result = 0;
     for (std::size_t i = 0; i + 1 < path.points.size(); ++i)
@@ -299,6 +330,8 @@ void testCliWriters() {
     TriangleMesh cube;
     addBox(cube, -20, 50, 10, -19, 51, 11);
     const auto data = Slicer{{0.5, 1e-7}}.slice(cube);
+    require(data.materialVolume && std::abs(*data.materialVolume - 1.0) < 1e-9,
+            "sliced cube volume");
     std::ostringstream ascii;
     CliWriter{{CliEncoding::Ascii, 1.0, 3}}.write(data, ascii);
     const auto previews = makeCliPreviews(data);
@@ -306,6 +339,8 @@ void testCliWriters() {
             "ASCII CLI dimensions start at origin");
     require(ascii.str().find("$$USERDATA/CLIPSlicer,0,\n") != std::string::npos,
             "CLI reader compatibility directive");
+    require(ascii.str().find("$$USERDATA/matvolume,2,1\n") != std::string::npos,
+            "ASCII CLI material volume or USERDATA byte length is incorrect");
     std::size_t previewIndex = 0;
     for (const char *id : {"mini-x", "mini-y", "mini-z"}) {
         const std::string prefix = std::string("$$USERDATA/") + id + ',';
@@ -349,6 +384,8 @@ void testCliWriters() {
             "binary CLI reader compatibility directive");
     require(output.find("$$USERDATA/mini-z,") != std::string::npos,
             "binary CLI top preview is missing");
+    require(output.find("$$USERDATA/matvolume,2,1\n") != std::string::npos,
+            "binary CLI material volume is missing");
     const auto end = output.find("$$HEADEREND");
     require(end != std::string::npos, "binary CLI header");
     const std::size_t geometry = end + std::strlen("$$HEADEREND");
@@ -360,6 +397,8 @@ void testCliWriters() {
 
     std::istringstream cliInput(output, std::ios::binary);
     const auto roundTrip = CliReader{}.read(cliInput);
+    require(roundTrip.materialVolume && std::abs(*roundTrip.materialVolume - 1.0) < 1e-9,
+            "CLI reader did not retain material volume");
     require(roundTrip.layers.size() == data.layers.size(), "binary CLI reader layer count");
     require(roundTrip.layers.front().paths.size() == data.layers.front().paths.size(),
             "binary CLI reader path count");
@@ -432,14 +471,18 @@ void testSingleAndOffsetSlices() {
 void testMergeSlices() {
     SliceData first;
     first.thickness = 0.1;
+    first.materialVolume = 12.0;
     first.layers = {{0.1, {{{PathType::External, {{0, 0}, {1, 0}}}}}},
                     {0.3, {{{PathType::External, {{3, 0}, {4, 0}}}}}}};
     SliceData second;
     second.thickness = 0.1;
+    second.materialVolume = 8.0;
     second.layers = {{0.2, {{{PathType::External, {{1, 0}, {2, 0}}}}}},
                      {0.3, {{{PathType::External, {{4, 0}, {5, 0}}}}}}};
 
     const SliceData merged = mergeSlices({std::cref(first), std::cref(second)});
+    require(merged.materialVolume && *merged.materialVolume == 20.0,
+            "Merged slices lost the combined material volume");
     require(merged.layers.size() == 4, "Merged slices lost a model's layers");
     require(merged.layers[0].z == 0.1 && merged.layers[1].z == 0.2 && merged.layers[2].z == 0.3 &&
                 merged.layers[3].z == 0.3,
@@ -452,6 +495,8 @@ void testMergeSlices() {
     CliWriter{}.write(merged, output);
     std::istringstream input(output.str(), std::ios::binary);
     const SliceData roundTrip = CliReader{}.read(input);
+    require(roundTrip.materialVolume && *roundTrip.materialVolume == 20.0,
+            "Merged CLI lost the combined material volume");
     require(roundTrip.layers.size() == 4,
             "CLI export did not preserve layers from every merged model");
 }
@@ -1210,6 +1255,7 @@ void testInternalPillarGeneration() {
 
 int main() {
     try {
+        testMaterialVolume();
         testBinaryStlReader();
         testBinaryStlWriter();
         testSceneModelReplicasShareGeometry();

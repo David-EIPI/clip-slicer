@@ -3,6 +3,7 @@
 
 #include "stl_slicer/cli_reader.hpp"
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -61,6 +62,22 @@ SliceData CliReader::read(std::istream &input) const {
     if (!binary)
         throw std::runtime_error("Only binary CLI input is currently supported");
     SliceData result;
+    const std::string volumePrefix = "$$USERDATA/matvolume,";
+    const std::size_t volumeAt = header.find(volumePrefix);
+    if (volumeAt != std::string::npos) {
+        const std::size_t lengthStart = volumeAt + volumePrefix.size();
+        const std::size_t payloadStart = header.find(',', lengthStart);
+        if (payloadStart != std::string::npos) {
+            const std::size_t length =
+                std::stoull(header.substr(lengthStart, payloadStart - lengthStart));
+            if (length > 0 && length <= header.size() - payloadStart - 1) {
+                const std::string payload = header.substr(payloadStart + 1, length);
+                const double volume = std::stod(payload);
+                if (std::isfinite(volume) && volume >= 0.0)
+                    result.materialVolume = volume;
+            }
+        }
+    }
     while (input.peek() != std::char_traits<char>::eof()) {
         const auto command = readU16(input);
         if (command == 127) {
