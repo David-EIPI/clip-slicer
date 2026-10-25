@@ -339,8 +339,14 @@ void testCliWriters() {
             "ASCII CLI dimensions start at origin");
     require(ascii.str().find("$$USERDATA/CLIPSlicer,0,\n") != std::string::npos,
             "CLI reader compatibility directive");
-    require(ascii.str().find("$$USERDATA/matvolume,2,1\n") != std::string::npos,
+    require(ascii.str().find("$$USERDATA/matvolume,6,1.000\n") != std::string::npos,
             "ASCII CLI material volume or USERDATA byte length is incorrect");
+    SliceData fractional = data;
+    fractional.materialVolume = 10.12345;
+    std::ostringstream rounded;
+    CliWriter{{CliEncoding::Ascii, 1.0, 3}}.write(fractional, rounded);
+    require(rounded.str().find("$$USERDATA/matvolume,7,10.123\n") != std::string::npos,
+            "CLI material volume was not rounded to three decimal places");
     std::size_t previewIndex = 0;
     for (const char *id : {"mini-x", "mini-y", "mini-z"}) {
         const std::string prefix = std::string("$$USERDATA/") + id + ',';
@@ -384,7 +390,7 @@ void testCliWriters() {
             "binary CLI reader compatibility directive");
     require(output.find("$$USERDATA/mini-z,") != std::string::npos,
             "binary CLI top preview is missing");
-    require(output.find("$$USERDATA/matvolume,2,1\n") != std::string::npos,
+    require(output.find("$$USERDATA/matvolume,6,1.000\n") != std::string::npos,
             "binary CLI material volume is missing");
     const auto end = output.find("$$HEADEREND");
     require(end != std::string::npos, "binary CLI header");

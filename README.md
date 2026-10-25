@@ -221,6 +221,7 @@ For a closed, consistently wound STL shell, the library also computes material v
 from its triangles, independently of slice thickness. The cached `TriangleMesh::materialVolume()`
 value follows model scaling when the transformed mesh is sliced. CLI exports carry the volume in
 cubic millimeters as `$$USERDATA/matvolume,len,value`, where `len` includes the trailing newline.
+The exported value is rounded to three decimal places.
 When multiple sliced models are exported together, their volumes are added; overlapping models
 are not boolean-unioned. Open or inconsistently wound input meshes can give unreliable volumes.
 

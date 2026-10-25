@@ -123,7 +123,7 @@ void CliWriter::write(const SliceData &data, std::ostream &output) const {
            << "\n";
     if (data.materialVolume && std::isfinite(*data.materialVolume)) {
         std::ostringstream volumeText;
-        volumeText << std::setprecision(15) << *data.materialVolume << '\n';
+        volumeText << std::fixed << std::setprecision(3) << *data.materialVolume << '\n';
         const std::string payload = volumeText.str();
         output << "$$USERDATA/matvolume," << payload.size() << ',' << payload;
     }
