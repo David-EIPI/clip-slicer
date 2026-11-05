@@ -12,9 +12,9 @@
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
 #include "stl_slicer/flat_facet.hpp"
+#include "stl_slicer/mesh_reader.hpp"
 #include "stl_slicer/orientation_optimizer.hpp"
 #include "stl_slicer/slicer.hpp"
-#include "stl_slicer/stl_reader.hpp"
 #include "stl_slicer/stl_writer.hpp"
 #include "stl_slicer/support_generator.hpp"
 #include "stl_slicer/unsupported_area.hpp"
@@ -729,10 +729,11 @@ void DocumentFrame::OpenPath(const wxString &path) {
         wxFileName absolutePath(path);
         absolutePath.MakeAbsolute();
         std::shared_ptr<stl_slicer::SceneModel> model;
-        if (format == clip_slicer::InputFileFormat::Stl) {
+        if (format == clip_slicer::InputFileFormat::Stl ||
+            format == clip_slicer::InputFileFormat::Obj) {
             model = std::make_shared<stl_slicer::MeshSceneModel>(
                 wxFileName(path).GetFullName().ToStdString(),
-                stl_slicer::BinaryStlReader{}.read(path.ToStdString()));
+                stl_slicer::MeshReader{}.read(path.ToStdString()));
         } else if (format == clip_slicer::InputFileFormat::Cli) {
             model = std::make_shared<stl_slicer::SliceSceneModel>(
                 wxFileName(path).GetFullName().ToStdString(),
@@ -900,7 +901,7 @@ void DocumentFrame::OnOpen(wxCommandEvent &) {
                    "Open model",
                    {},
                    {},
-                   "Supported files (*.clipslicer;*.stl;*.cli)|*.clipslicer;*.stl;*.cli|CLIP Slicer workspace (*.clipslicer)|*.clipslicer|STL files (*.stl)|*.stl|CLI files (*.cli)|*.cli",
+                   "Supported files (*.clipslicer;*.stl;*.obj;*.cli)|*.clipslicer;*.stl;*.obj;*.cli|CLIP Slicer workspace (*.clipslicer)|*.clipslicer|STL files (*.stl)|*.stl|OBJ files (*.obj)|*.obj|CLI files (*.cli)|*.cli|All files (*.*)|*.*",
                    wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR | wxFD_MULTIPLE);
     clip_slicer::help::Assign(&d, clip_slicer::help::openIntoDocumentDialog);
     clip_slicer::help::Enable(&d);

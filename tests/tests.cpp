@@ -4,6 +4,8 @@
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_preview.hpp"
 #include "stl_slicer/cli_writer.hpp"
+#include "stl_slicer/mesh_reader.hpp"
+#include "stl_slicer/obj_reader.hpp"
 #include "stl_slicer/orientation_optimizer.hpp"
 #include "stl_slicer/scene_model.hpp"
 #include "stl_slicer/slicer.hpp"
@@ -136,6 +138,160 @@ void testBinaryStlReader() {
         rejected = true;
     }
     require(rejected, "truncated STL rejected");
+}
+
+void testAsciiStlReader() {
+    const std::string text =
+        "solid first\n"
+        "  facet normal 0 0 1\n"
+        "    outer loop\n"
+        "      vertex 0 0 0\n"
+        "      vertex 2 0 0\n"
+        "      vertex 0 3 0\n"
+        "    endloop\n"
+        "  endfacet\n"
+        "endsolid first\n"
+        "solid second\n"
+        "facet normal 0 0 -1\n"
+        "outer loop\n"
+        "vertex 0 3 1\n"
+        "vertex 2 0 1\n"
+        "vertex 0 0 1\n"
+        "endloop\n"
+        "endfacet\n"
+        "endsolid second\n";
+    require(detectMeshFormat(
+                reinterpret_cast<const unsigned char *>(text.data()), text.size(), text.size()) ==
+                MeshFormat::AsciiStl,
+            "ASCII STL was not detected");
+    std::istringstream input(text);
+    const TriangleMesh mesh = MeshReader{}.read(input);
+    require(mesh.triangles().size() == 2 && mesh.bounds().max.x == 2 &&
+                mesh.bounds().max.y == 3 && mesh.bounds().max.z == 1,
+            "ASCII STL facets did not become mesh triangles");
+    require(mesh.triangles()[1].normal.z == -1,
+            "ASCII STL facet normal was not retained");
+    const std::string stlWithBom = std::string("\xef\xbb\xbf") + text;
+    require(detectMeshFormat(
+                reinterpret_cast<const unsigned char *>(stlWithBom.data()),
+                stlWithBom.size(),
+                stlWithBom.size()) == MeshFormat::AsciiStl,
+            "ASCII STL with a UTF-8 BOM was not detected");
+    std::istringstream bomInput(stlWithBom);
+    require(AsciiStlReader{}.read(bomInput).triangles().size() == 2,
+            "ASCII STL with a UTF-8 BOM was not parsed");
+
+    std::string invalid = text;
+    invalid.insert(invalid.find("    endloop"), "      vertex 1 1 0\n");
+    std::istringstream malformed(invalid);
+    bool rejected = false;
+    try {
+        (void)AsciiStlReader{}.read(malformed);
+    } catch (const std::runtime_error &) {
+        rejected = true;
+    }
+    require(rejected, "Non-triangular ASCII STL facet was accepted");
+
+    TriangleMesh triangle;
+    triangle.addTriangle({{}, {{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}}, 0});
+    std::ostringstream binary(std::ios::binary);
+    BinaryStlWriter{{"solid binary STL"}}.write(triangle, binary);
+    const std::string bytes = binary.str();
+    require(detectMeshFormat(reinterpret_cast<const unsigned char *>(bytes.data()),
+                             bytes.size(),
+                             bytes.size()) == MeshFormat::BinaryStl,
+            "Binary STL with a solid header was mistaken for ASCII");
+    std::istringstream binaryInput(bytes, std::ios::binary);
+    require(MeshReader{}.read(binaryInput).triangles().size() == 1,
+            "Generic reader failed a binary STL with a solid header");
+}
+
+void testObjReader() {
+    const std::string concave =
+        "# concave polygon in millimeters\n"
+        "o test\n"
+        "v 0 0 0\n"
+        "v 3 0 0\n"
+        "v 3 1 0\n"
+        "v 1 1 0\n"
+        "v 1 3 0\n"
+        "v 0 3 0\n"
+        "f 1 2 3 4 5 6\n";
+    require(detectMeshFormat(reinterpret_cast<const unsigned char *>(concave.data()),
+                             concave.size(),
+                             concave.size()) == MeshFormat::Obj,
+            "OBJ geometry was not detected");
+    std::istringstream concaveInput(concave);
+    const TriangleMesh mesh = MeshReader{}.read(concaveInput);
+    require(mesh.triangles().size() == 4, "Concave OBJ polygon did not triangulate");
+    double totalArea = 0.0;
+    for (const Triangle &triangle : mesh.triangles()) {
+        const Vec3 &a = triangle.vertices[0];
+        const Vec3 &b = triangle.vertices[1];
+        const Vec3 &c = triangle.vertices[2];
+        totalArea += ((b.x - a.x) * (c.y - a.y) -
+                      (b.y - a.y) * (c.x - a.x)) * 0.5;
+        require(triangle.normal.z > 0.0, "OBJ triangle winding was reversed");
+    }
+    require(std::abs(totalArea - 5.0) < 1e-9,
+            "Concave OBJ polygon was filled outside its boundary");
+    std::string reversed = concave;
+    reversed.replace(reversed.find("f 1 2 3 4 5 6"),
+                     std::string("f 1 2 3 4 5 6").size(),
+                     "f 6 5 4 3 2 1");
+    std::istringstream reversedInput(reversed);
+    const TriangleMesh reversedMesh = ObjReader{}.read(reversedInput);
+    require(reversedMesh.triangles().size() == 4 &&
+                std::all_of(reversedMesh.triangles().begin(),
+                            reversedMesh.triangles().end(),
+                            [](const Triangle &triangle) { return triangle.normal.z < 0.0; }),
+            "OBJ triangulation did not preserve reversed face winding");
+    const std::string objWithBom = std::string("\xef\xbb\xbf") + concave;
+    std::istringstream bomObjInput(objWithBom);
+    require(MeshReader{}.read(bomObjInput).triangles().size() == 4,
+            "OBJ with a UTF-8 BOM was not detected and parsed");
+
+    const std::string textured =
+        "mtllib ignored.mtl\n"
+        "v 0 0 0\n"
+        "v 2 0 0\n"
+        "v 2 2 0\n"
+        "v 0 2 0\n"
+        "vt 0 0\n"
+        "vn 0 0 -1\n"
+        "usemtl ignored\n"
+        "s 1\n"
+        "f -4/1/1 -3/1/1 -2/1/1 -1/1/1\n";
+    std::istringstream texturedInput(textured);
+    const TriangleMesh quad = ObjReader{}.read(texturedInput);
+    require(quad.triangles().size() == 2 && quad.bounds().max.x == 2,
+            "OBJ quad with negative indices did not triangulate");
+    require(quad.triangles()[0].normal.z > 0,
+            "OBJ smoothing normal incorrectly replaced the geometric face normal");
+
+    const std::string cubeText =
+        "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
+        "v 0 0 1\nv 1 0 1\nv 1 1 1\nv 0 1 1\n"
+        "f 1 4 3 2\nf 5 6 7 8\n"
+        "f 1 2 6 5\nf 2 3 7 6\n"
+        "f 3 4 8 7\nf 4 1 5 8\n";
+    std::istringstream cubeInput(cubeText);
+    const TriangleMesh cube = ObjReader{}.read(cubeInput);
+    require(cube.triangles().size() == 12 &&
+                std::abs(cube.materialVolume() - 1.0) < 1e-9,
+            "Closed OBJ quad mesh has incorrect volume");
+    const SliceData cubeSlices = Slicer{{0.5, 1e-7}}.slice(cube);
+    require(!cubeSlices.layers.empty() && cubeSlices.layers.front().paths.size() == 1,
+            "OBJ cube did not produce a closed slice");
+
+    std::istringstream badIndex("v 0 0 0\nf 1 2 3\n");
+    bool rejected = false;
+    try {
+        (void)ObjReader{}.read(badIndex);
+    } catch (const std::exception &) {
+        rejected = true;
+    }
+    require(rejected, "OBJ out-of-range face reference was accepted");
 }
 
 void testBinaryStlWriter() {
@@ -1321,6 +1477,8 @@ int main() {
     try {
         testMaterialVolume();
         testBinaryStlReader();
+        testAsciiStlReader();
+        testObjReader();
         testBinaryStlWriter();
         testSceneModelReplicasShareGeometry();
         testCubeSlices();

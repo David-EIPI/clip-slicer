@@ -10,20 +10,24 @@ models in an interactive OpenGL view and keeps model transformations separate
 from the source coordinates, allowing a model to be repositioned, rotated, or
 scaled without modifying the loaded geometry.
 
-The application currently supports two model formats:
+The application currently supports these model formats:
 
 \begin{description}
-    \item[Binary STL] A triangulated surface model. CLIP Slicer reads triangle
-        vertices and normals and displays the resulting mesh. Selected surface
-        models can be combined and exported to binary STL after applying their
-        document transformations.
+    \item[STL] Binary and ASCII STL are triangulated surface formats. CLIP
+        Slicer reads triangle vertices and normals and displays the resulting
+        mesh. Selected surface models can be combined and exported to binary
+        STL after applying their document transformations.
+    \item[Wavefront OBJ] Surface geometry from vertices and polygon faces.
+        Polygon faces, including concave ones, are triangulated on import.
+        Texture coordinates, materials, groups, and smoothing data are not
+        imported. Coordinates are assumed to be in millimeters.
     \item[CLI] A sliced model represented by layers and contours. CLIP Slicer
         reads binary CLI files and displays their layers as a three-dimensional
         model. It exports sliced models in CLI format.
 \end{description}
 
 CLIP Slicer uses a multiple-document interface. A document can contain one or
-more STL and CLI models, and each model can be selected and shown or hidden
+more STL, OBJ, and CLI models, and each model can be selected and shown or hidden
 independently. Opening a file normally creates a new document. The
 \emph{Open into document} command adds another model to the active document so
 that several models can be viewed, positioned, and processed together.

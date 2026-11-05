@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "stl_slicer/cli_writer.hpp"
+#include "stl_slicer/mesh_reader.hpp"
 #include "stl_slicer/slicer.hpp"
-#include "stl_slicer/stl_reader.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -16,7 +16,7 @@ void usage(const char *program) {
     std::cerr << "Usage: " << program
               << " [--ascii] [--tolerance value] [--healing-threshold value]"
                  " [--gap-multiplier value]"
-                 " input.stl output.cli [layer-thickness]\n";
+                 " input.{stl,obj} output.cli [layer-thickness]\n";
 }
 
 double parsePositive(const char *text, const char *name) {
@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
         if (compatibilityGapMultiplier)
             healingThreshold = tolerance * *compatibilityGapMultiplier;
 
-        const auto mesh = stl_slicer::BinaryStlReader{}.read(argv[arg]);
+        const auto mesh = stl_slicer::MeshReader{}.read(argv[arg]);
         const auto slices =
             stl_slicer::Slicer{{thickness, tolerance, healingThreshold}}.slice(mesh);
         stl_slicer::CliWriter{

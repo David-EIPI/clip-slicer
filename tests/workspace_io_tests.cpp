@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 #include "workspace_io.hpp"
+#include "stl_slicer/mesh_reader.hpp"
 #include "stl_slicer/stl_writer.hpp"
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <wx/init.h>
@@ -116,6 +118,59 @@ void testEmbeddedWorkspaceIsSelfContained() {
     require(loaded.models.size() == 1 && loaded.models.front()->name == "embedded",
             "embedded model did not round trip");
 }
+
+void testAsciiStlAndObjWorkspaceSources() {
+    TemporaryDirectory temporary;
+    const auto stlPath = temporary.path / "models" / "ascii.geometry";
+    const auto objPath = temporary.path / "models" / "polygon.geometry";
+    {
+        std::ofstream output(stlPath);
+        output << "solid part\n"
+                  "facet normal 0 0 1\n"
+                  "outer loop\n"
+                  "vertex 0 0 0\n"
+                  "vertex 1 0 0\n"
+                  "vertex 0 1 0\n"
+                  "endloop\n"
+                  "endfacet\n"
+                  "endsolid part\n";
+    }
+    {
+        std::ofstream output(objPath);
+        output << "v 0 0 0\nv 2 0 0\nv 2 2 0\nv 0 2 0\n"
+                  "f 1 2 3 4\n";
+    }
+    require(clip_slicer::DetectInputFileFormat(wxString(stlPath.string())) ==
+                clip_slicer::InputFileFormat::Stl,
+            "GUI did not detect ASCII STL independently of extension");
+    require(clip_slicer::DetectInputFileFormat(wxString(objPath.string())) ==
+                clip_slicer::InputFileFormat::Obj,
+            "GUI did not detect OBJ independently of extension");
+
+    auto stl = std::make_shared<MeshSceneModel>(
+        "ASCII STL", MeshReader{}.read(stlPath));
+    stl->sourcePath = stlPath.string();
+    auto obj = std::make_shared<MeshSceneModel>(
+        "OBJ", MeshReader{}.read(objPath));
+    obj->sourcePath = objPath.string();
+    const wxString linkedWorkspace((temporary.path / "linked-meshes.clipslicer").string());
+    clip_slicer::SaveWorkspace(linkedWorkspace, {stl, obj}, {}, false);
+    const auto linked = clip_slicer::LoadWorkspace(linkedWorkspace);
+    require(linked.models.size() == 2 && linked.missingExternalFiles.empty(),
+            "Linked ASCII STL and OBJ models did not reopen");
+
+    const wxString workspace((temporary.path / "mesh-inputs.clipslicer").string());
+    clip_slicer::SaveWorkspace(workspace, {stl, obj}, {}, true);
+    std::filesystem::remove(stlPath);
+    std::filesystem::remove(objPath);
+
+    const auto loaded = clip_slicer::LoadWorkspace(workspace);
+    require(loaded.models.size() == 2 && loaded.missingExternalFiles.empty(),
+            "Embedded ASCII STL and OBJ models did not reopen");
+    require(loaded.models[0]->triangleMesh().triangles().size() == 1 &&
+                loaded.models[1]->triangleMesh().triangles().size() == 2,
+            "Workspace changed imported mesh geometry");
+}
 } // namespace
 
 int main() {
@@ -127,6 +182,7 @@ int main() {
     try {
         testExternalRoundTripAndMissingSummaryData();
         testEmbeddedWorkspaceIsSelfContained();
+        testAsciiStlAndObjWorkspaceSources();
         std::cout << "Workspace tests passed\n";
         return 0;
     } catch (const std::exception &error) {

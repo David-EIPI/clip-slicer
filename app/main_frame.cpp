@@ -179,7 +179,7 @@ void MainFrame::OpenDialog() {
                         "Open model",
                         {},
                         {},
-                        "Supported files (*.clipslicer;*.stl;*.cli)|*.clipslicer;*.stl;*.cli|CLIP Slicer workspace (*.clipslicer)|*.clipslicer|STL files (*.stl)|*.stl|CLI files (*.cli)|*.cli",
+                        "Supported files (*.clipslicer;*.stl;*.obj;*.cli)|*.clipslicer;*.stl;*.obj;*.cli|CLIP Slicer workspace (*.clipslicer)|*.clipslicer|STL files (*.stl)|*.stl|OBJ files (*.obj)|*.obj|CLI files (*.cli)|*.cli|All files (*.*)|*.*",
                         wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_CHANGE_DIR | wxFD_MULTIPLE);
     clip_slicer::help::Assign(&dialog, clip_slicer::help::openModelDialog);
     clip_slicer::help::Enable(&dialog);

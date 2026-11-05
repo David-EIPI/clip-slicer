@@ -4,7 +4,7 @@
 #include "workspace_io.hpp"
 #include "stl_slicer/cli_reader.hpp"
 #include "stl_slicer/cli_writer.hpp"
-#include "stl_slicer/stl_reader.hpp"
+#include "stl_slicer/mesh_reader.hpp"
 #include "stl_slicer/stl_writer.hpp"
 #include <algorithm>
 #include <array>
@@ -100,22 +100,23 @@ bool HasZipMagic(const unsigned char *header, std::size_t count) {
             (header[2] == 7 && header[3] == 8));
 }
 
-std::uint32_t LittleEndian32(const unsigned char *value) {
-    return static_cast<std::uint32_t>(value[0]) |
-           (static_cast<std::uint32_t>(value[1]) << 8) |
-           (static_cast<std::uint32_t>(value[2]) << 16) |
-           (static_cast<std::uint32_t>(value[3]) << 24);
-}
-
-InputFileFormat DetectBytes(const unsigned char *data, std::size_t size) {
+InputFileFormat DetectBytes(const unsigned char *data,
+                            std::size_t sampleSize,
+                            std::uint64_t totalSize) {
+    if (sampleSize == 0)
+        return InputFileFormat::Unknown;
     static constexpr char cliMagic[] = "$$HEADERSTART";
-    if (size >= sizeof(cliMagic) - 1 &&
+    if (sampleSize >= sizeof(cliMagic) - 1 &&
         std::memcmp(data, cliMagic, sizeof(cliMagic) - 1) == 0)
         return InputFileFormat::Cli;
-    if (size >= 84) {
-        const std::uint64_t triangles = LittleEndian32(data + 80);
-        if (84ULL + triangles * 50ULL == size)
-            return InputFileFormat::Stl;
+    switch (stl_slicer::detectMeshFormat(data, sampleSize, totalSize)) {
+    case stl_slicer::MeshFormat::BinaryStl:
+    case stl_slicer::MeshFormat::AsciiStl:
+        return InputFileFormat::Stl;
+    case stl_slicer::MeshFormat::Obj:
+        return InputFileFormat::Obj;
+    case stl_slicer::MeshFormat::Unknown:
+        return InputFileFormat::Unknown;
     }
     return InputFileFormat::Unknown;
 }
@@ -123,9 +124,9 @@ InputFileFormat DetectBytes(const unsigned char *data, std::size_t size) {
 std::shared_ptr<stl_slicer::SceneModel>
 LoadModelStream(InputFileFormat format, const std::string &bytes) {
     std::istringstream input(bytes, std::ios::in | std::ios::binary);
-    if (format == InputFileFormat::Stl)
+    if (format == InputFileFormat::Stl || format == InputFileFormat::Obj)
         return std::make_shared<stl_slicer::MeshSceneModel>(
-            "source", stl_slicer::BinaryStlReader{}.read(input));
+            "source", stl_slicer::MeshReader{}.read(input));
     if (format == InputFileFormat::Cli)
         return std::make_shared<stl_slicer::SliceSceneModel>(
             "source", stl_slicer::CliReader{}.read(input));
@@ -134,9 +135,9 @@ LoadModelStream(InputFileFormat format, const std::string &bytes) {
 
 std::shared_ptr<stl_slicer::SceneModel> LoadModelFile(const wxString &path) {
     const InputFileFormat format = DetectInputFileFormat(path);
-    if (format == InputFileFormat::Stl)
+    if (format == InputFileFormat::Stl || format == InputFileFormat::Obj)
         return std::make_shared<stl_slicer::MeshSceneModel>(
-            "source", stl_slicer::BinaryStlReader{}.read(FileSystemPath(path)));
+            "source", stl_slicer::MeshReader{}.read(FileSystemPath(path)));
     if (format == InputFileFormat::Cli)
         return std::make_shared<stl_slicer::SliceSceneModel>(
             "source", stl_slicer::CliReader{}.read(FileSystemPath(path)));
@@ -344,16 +345,9 @@ InputFileFormat DetectInputFileFormat(const wxString &path) {
             return InputFileFormat::Unknown;
         }
     }
-    static constexpr char cliMagic[] = "$$HEADERSTART";
-    if (count >= sizeof(cliMagic) - 1 &&
-        std::memcmp(header.data(), cliMagic, sizeof(cliMagic) - 1) == 0)
-        return InputFileFormat::Cli;
-    if (length >= 84 && count >= 84) {
-        const std::uint64_t triangles = LittleEndian32(header.data() + 80);
-        if (84ULL + triangles * 50ULL == static_cast<std::uint64_t>(length))
-            return InputFileFormat::Stl;
-    }
-    return InputFileFormat::Unknown;
+    if (length < 0)
+        return InputFileFormat::Unknown;
+    return DetectBytes(header.data(), count, static_cast<std::uint64_t>(length));
 }
 
 void SaveWorkspace(const wxString &path,
@@ -367,8 +361,16 @@ void SaveWorkspace(const wxString &path,
 
     for (const auto &model : models) {
         const wxString sourcePath = FromUtf8(model->sourcePath);
+        const InputFileFormat detectedSource =
+            sourcePath.empty() ? InputFileFormat::Unknown : DetectInputFileFormat(sourcePath);
+        const bool sourceIsObj =
+            !model->isSliced() && !sourcePath.empty() &&
+            (detectedSource == InputFileFormat::Obj ||
+             (detectedSource == InputFileFormat::Unknown &&
+              wxFileName(sourcePath).GetExt().Lower() == "obj"));
+        const wxString kind = model->isSliced() ? "cli" : (sourceIsObj ? "obj" : "stl");
         std::ostringstream key;
-        key << (model->isSliced() ? "cli:" : "stl:");
+        key << Utf8(kind) << ':';
         if (!sourcePath.empty())
             key << Utf8(AbsolutePath(sourcePath));
         else
@@ -377,7 +379,7 @@ void SaveWorkspace(const wxString &path,
         if (inserted) {
             SaveSource source;
             source.id = wxString::Format("source-%zu", sources.size() + 1);
-            source.kind = model->isSliced() ? "cli" : "stl";
+            source.kind = kind;
             source.sourcePath = sourcePath.empty() ? wxString() : AbsolutePath(sourcePath);
             source.embedded = embedModelFiles || source.sourcePath.empty();
             source.representative = model;
@@ -522,7 +524,7 @@ WorkspaceData LoadWorkspace(const wxString &path) {
         source.location = node->GetAttribute("location");
         source.embedded = ParseBoolean(node->GetAttribute("embedded"));
         if (source.id.empty() || source.location.empty() ||
-            (source.kind != "stl" && source.kind != "cli"))
+            (source.kind != "stl" && source.kind != "obj" && source.kind != "cli"))
             throw std::runtime_error("Workspace contains an invalid source entry");
         if (!sourceIds.insert(Utf8(source.id)).second)
             throw std::runtime_error("Workspace contains duplicate source identifiers");
@@ -576,9 +578,13 @@ WorkspaceData LoadWorkspace(const wxString &path) {
             if (wanted == embeddedByLocation.end())
                 continue;
             const std::vector<unsigned char> bytes = ReadCurrentEntry(zip);
-            const InputFileFormat detected = DetectBytes(bytes.data(), bytes.size());
-            const InputFileFormat expected =
-                wanted->second.kind == "stl" ? InputFileFormat::Stl : InputFileFormat::Cli;
+            const InputFileFormat detected =
+                DetectBytes(bytes.data(), std::min<std::size_t>(bytes.size(), 4096), bytes.size());
+            const InputFileFormat expected = wanted->second.kind == "stl"
+                                                 ? InputFileFormat::Stl
+                                                 : wanted->second.kind == "obj"
+                                                       ? InputFileFormat::Obj
+                                                       : InputFileFormat::Cli;
             if (detected != expected)
                 throw std::runtime_error("Embedded model content does not match its workspace type");
             std::string content(reinterpret_cast<const char *>(bytes.data()), bytes.size());

@@ -59,6 +59,9 @@ set(STL_SLICER_ARCH "" CACHE STRING
 
 add_library(stl_slicer_lib
     src/stl_reader.cpp
+    src/ascii_stl_reader.cpp
+    src/obj_reader.cpp
+    src/mesh_reader.cpp
     src/stl_writer.cpp
     src/cli_reader.cpp
     src/slice.cpp

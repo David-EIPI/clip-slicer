@@ -15,4 +15,10 @@ class BinaryStlReader {
     TriangleMesh read(std::istream &input) const;
 };
 
+class AsciiStlReader {
+  public:
+    TriangleMesh read(const std::filesystem::path &path) const;
+    TriangleMesh read(std::istream &input) const;
+};
+
 } // namespace stl_slicer

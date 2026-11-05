@@ -12,7 +12,7 @@
 
 namespace clip_slicer {
 
-enum class InputFileFormat { Workspace, Stl, Cli, Unknown };
+enum class InputFileFormat { Workspace, Stl, Obj, Cli, Unknown };
 
 struct WorkspaceData {
     std::vector<std::shared_ptr<stl_slicer::SceneModel>> models;

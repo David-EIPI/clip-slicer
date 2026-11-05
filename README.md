@@ -7,8 +7,9 @@ slice inspection and support generation. It grew out of my experience with
 models that developed printing artifacts because of defects in STL geometry or
 insufficient support.
 
-CLIP Slicer accepts 3D models in
-[STL format](https://en.wikipedia.org/wiki/STL_(file_format)), reads and exports
+CLIP Slicer accepts 3D models in binary or ASCII
+[STL format](https://en.wikipedia.org/wiki/STL_(file_format)) and geometry from
+[Wavefront OBJ](https://en.wikipedia.org/wiki/Wavefront_.obj_file), reads and exports
 slices in [Common Layer Interface (CLI) format](https://www.hmilch.net/downloads/cli_format.html),
 and saves complete document layouts as compressed `.clipslicer` workspaces.
 A workspace preserves groups, visibility, selections, and model transformation
@@ -189,13 +190,17 @@ c++ -std=c++17 -O3 -march=native -fopt-info-vec-all=vectorization.txt \
 
 ```sh
 ./build-cli/stl-slicer model.stl layers.cli 0.1
+./build-cli/stl-slicer model.obj layers.cli 0.1
 ./build-cli/stl-slicer --ascii --tolerance 0.00001 model.stl layers.cli 0.1
 ./build-cli/stl-slicer --healing-threshold 0.01 model.stl layers.cli 0.1
 ```
 
 The layer thickness defaults to 0.1 mm. Binary CLI output using PolyLine Long commands is the
-default; `--ascii` is useful for inspection. STL coordinates are treated as millimeters because
-STL itself does not store units. When writing CLI geometry, layer Z coordinates are translated so
+default; `--ascii` is useful for inspecting CLI output, not for selecting the input STL encoding.
+Binary STL, ASCII STL, and OBJ inputs are detected from their contents. STL and OBJ coordinates
+are treated as millimeters because these formats do not define print units. OBJ vertex and face
+geometry is imported; polygon faces are triangulated, while materials, texture coordinates, and
+smoothing data are ignored. When writing CLI geometry, layer Z coordinates are translated so
 the lowest generated layer is positioned at half the layer thickness above the build platform.
 X and Y coordinates are translated by their minimum emitted values. The resulting CLI model has
 its bounding-box origin at `(0, 0, 0)`, while the reusable slice objects retain their original
@@ -231,7 +236,8 @@ integrating its filled slice areas over the layer slabs. Existing metadata remai
 The library API is divided into reusable data and processing components:
 
 - `TriangleMesh`, `Triangle`, `Vec2`, `Vec3`, and `Bounds3` store model geometry.
-- `BinaryStlReader` validates and reads little-endian binary STL streams or files.
+- `MeshReader` detects and loads binary STL, ASCII STL, and geometry-only OBJ files.
+- `BinaryStlReader`, `AsciiStlReader`, and `ObjReader` provide format-specific parsers.
 - `Slicer` produces reusable `SliceData`, `SliceLayer`, and `SlicePath` objects.
 - `makeCliPreviews` and its codec produce reusable monochrome layer projections.
 - `FlatFacetDetector` finds ranked outer planar facets and merges disconnected coplanar
