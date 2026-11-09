@@ -5,7 +5,7 @@
 %global soversion 0
 
 Name:           clip-slicer
-Version:        0.2.2
+Version:        0.2.3
 Release:        1%{?dist}
 Summary:        STL slicing and support-generation applications
 
@@ -74,6 +74,10 @@ sed -i '/<!-- RPM-EXCLUDE-BEGIN:/,/<!-- RPM-EXCLUDE-END -->/d' \
 %{_libdir}/libstl_slicer.so.%{version}
 
 %changelog
+* Sun Nov 08 2026 CLIP Slicer contributors <noreply@example.com> - 0.2.3-1
+- Add ASCII STL and Wavefront OBJ mesh import.
+- Preserve imported OBJ and ASCII STL sources in saved workspaces.
+
 * Tue Aug 11 2026 CLIP Slicer contributors <noreply@example.com> - 0.2.2-1
 - Add compressed workspace saving with optional embedded model sources.
 - Add absolute-axis model movement and axis-constrained rotation controls.

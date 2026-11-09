@@ -107,8 +107,8 @@ spec and run `rpmbuild`:
 
 ```sh
 rpmdev-setuptree
-git archive --format=tar.gz --prefix=clip-slicer-0.2.2/ \
-  --output="$HOME/rpmbuild/SOURCES/v0.2.2.tar.gz" HEAD
+git archive --format=tar.gz --prefix=clip-slicer-0.2.3/ \
+  --output="$HOME/rpmbuild/SOURCES/v0.2.3.tar.gz" HEAD
 rpmbuild -ba packaging/rpm/clip-slicer.spec
 ```
 
